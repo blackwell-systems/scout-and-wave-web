@@ -36,7 +36,7 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("POST /api/impl/{slug}/approve", s.handleApprove)
 	s.mux.HandleFunc("POST /api/impl/{slug}/reject", s.handleReject)
 	s.mux.HandleFunc("GET /api/wave/{slug}/events", s.handleWaveEvents)
-	sub, err := fs.Sub(staticFiles, "web/dist")
+	sub, err := fs.Sub(staticFiles, "dist")
 	if err != nil {
 		panic("saw: failed to sub embed.FS: " + err.Error())
 	}

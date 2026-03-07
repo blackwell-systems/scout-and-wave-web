@@ -1,6 +1,7 @@
 package api
 
-import "embed"
+import (
+	"github.com/blackwell-systems/scout-and-wave-go/web"
+)
 
-//go:embed all:web/dist
-var staticFiles embed.FS
+var staticFiles = web.StaticFiles
