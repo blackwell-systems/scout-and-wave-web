@@ -29,31 +29,51 @@ interface TimelineNode {
   agentCount?: number
 }
 
-function TimelineDot({ type, filled }: { type: NodeType; filled: boolean }) {
-  if (filled) {
-    // Completed state — filled dots
-    switch (type) {
-      case 'wave':
-        return <div className="w-5 h-5 rounded-full bg-primary border-2 border-primary" />
-      case 'complete':
-        return <div className="w-5 h-5 rounded-full bg-primary border-2 border-primary ring-2 ring-primary/20" />
-      case 'merge':
-        return <div className="w-3 h-3 rounded-full bg-muted-foreground/60 border-2 border-muted-foreground/60" />
-      default:
-        return <div className="w-3 h-3 rounded-full bg-muted-foreground/60 border-2 border-muted-foreground/60" />
-    }
-  }
-  // Pending state — hollow dots
-  switch (type) {
-    case 'wave':
-      return <div className="w-5 h-5 rounded-full border-2 border-primary" />
-    case 'complete':
-      return <div className="w-5 h-5 rounded-full border-2 border-primary ring-2 ring-primary/20" />
-    case 'merge':
-      return <div className="w-3 h-3 rounded-full border-2 border-muted-foreground/40" />
-    default:
-      return <div className="w-3 h-3 rounded-full border-2 border-muted-foreground/40" />
-  }
+const JEWEL_CONFIGS: Record<NodeType, { size: number; colors: [string, string, string] }> = {
+  wave: { size: 20, colors: ['#60a5fa', '#3b82f6', '#1d4ed8'] },
+  complete: { size: 20, colors: ['#a78bfa', '#7c3aed', '#5b21b6'] },
+  merge: { size: 12, colors: ['#94a3b8', '#64748b', '#475569'] },
+  orchestrator: { size: 12, colors: ['#94a3b8', '#64748b', '#475569'] },
+}
+
+function Jewel({ type, filled }: { type: NodeType; filled: boolean }) {
+  const config = JEWEL_CONFIGS[type]
+  const { size, colors } = config
+  const id = `jewel-${type}-${filled ? 'f' : 'h'}`
+  const r = size / 2
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="flex-shrink-0">
+      <defs>
+        <radialGradient id={`${id}-grad`} cx="35%" cy="35%" r="65%">
+          <stop offset="0%" stopColor={filled ? colors[0] : colors[1]} stopOpacity={filled ? 0.9 : 0.3} />
+          <stop offset="60%" stopColor={colors[1]} stopOpacity={filled ? 0.7 : 0.15} />
+          <stop offset="100%" stopColor={colors[2]} stopOpacity={filled ? 0.5 : 0.05} />
+        </radialGradient>
+        <radialGradient id={`${id}-highlight`} cx="30%" cy="25%" r="40%">
+          <stop offset="0%" stopColor="white" stopOpacity={filled ? 0.6 : 0.3} />
+          <stop offset="100%" stopColor="white" stopOpacity="0" />
+        </radialGradient>
+        <filter id={`${id}-glow`}>
+          <feGaussianBlur stdDeviation={filled ? 2 : 1} result="blur" />
+          <feMerge>
+            <feMergeNode in="blur" />
+            <feMergeNode in="SourceGraphic" />
+          </feMerge>
+        </filter>
+      </defs>
+      {/* Outer glow */}
+      <circle cx={r} cy={r} r={r - 1} fill={colors[1]} opacity={filled ? 0.2 : 0.08} filter={`url(#${id}-glow)`} />
+      {/* Body */}
+      <circle cx={r} cy={r} r={r - 1.5} fill={`url(#${id}-grad)`} stroke={colors[1]} strokeWidth={filled ? 1 : 0.75} strokeOpacity={filled ? 0.6 : 0.4} />
+      {/* Inner highlight */}
+      <circle cx={r} cy={r} r={r - 2.5} fill={`url(#${id}-highlight)`} />
+      {/* Ring for complete type */}
+      {type === 'complete' && (
+        <circle cx={r} cy={r} r={r - 0.5} fill="none" stroke={colors[0]} strokeWidth="0.5" strokeOpacity={filled ? 0.4 : 0.2} />
+      )}
+    </svg>
+  )
 }
 
 export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): JSX.Element {
@@ -105,7 +125,7 @@ export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): J
             <div key={i} className={`relative ${i > 0 ? (node.type === 'wave' ? 'mt-6' : 'mt-4') : ''}`}>
               {/* Dot on rail */}
               <div className="absolute -left-8 flex items-center justify-center w-5" style={{ top: node.type === 'wave' ? 14 : 2 }}>
-                <TimelineDot type={node.type} filled={isComplete} />
+                <Jewel type={node.type} filled={isComplete} />
               </div>
 
               {node.type === 'wave' ? (

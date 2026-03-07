@@ -77,7 +77,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
 
         {/* Toggle buttons - grayed out if NOT SUITABLE */}
         <div className={isNotSuitable ? 'opacity-40 pointer-events-none' : ''}>
-          <div ref={sentinelRef} className="h-0" />
+          <div ref={sentinelRef} className="h-px -mt-px" />
           <div
             className={`sticky top-0 z-40 py-3 mb-6 transition-colors duration-200 ${
               isStuck

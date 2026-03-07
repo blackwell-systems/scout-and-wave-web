@@ -19,6 +19,7 @@ All notable changes to this project will be documented in this file.
 - **Click-ordered panels** — toggled panels render in click order, not fixed order
 - **Sticky toggle bar** — panel buttons pin to top on scroll with full-width backdrop blur and subtle tint; activates only when scrolled (IntersectionObserver)
 - **Timeline status** — wave/merge/complete dots reflect IMPL doc_status: hollow when active, filled when complete
+- **Astral jewel dots** — SVG timeline nodes with radial gradients, inner highlights, and outer glow filters replace flat CSS circles; jewels dim when pending, illuminate when complete
 
 **Markdown rendering**
 - **Full markdown in all panels** — shared `MarkdownContent` component renders proper markdown (headings, lists, bold, inline code) across Agent Prompts, Interface Contracts, Post-Merge Checklist, and Known Issues
