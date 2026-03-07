@@ -31,6 +31,24 @@ export interface ScaffoldInfo {
   contracts: ContractEntry[]
 }
 
+export interface KnownIssueEntry {
+  description: string
+  status: string
+  workaround: string
+}
+
+export interface ScaffoldFileEntry {
+  file_path: string
+  contents: string
+  import_path: string
+}
+
+export interface AgentPromptEntry {
+  wave: number
+  agent: string
+  prompt: string
+}
+
 export interface IMPLDocResponse {
   slug: string
   doc_status: string // "ACTIVE" or "COMPLETE"
@@ -40,6 +58,12 @@ export interface IMPLDocResponse {
   file_ownership_col4_name: string // detected 4th column header (e.g. "Action", "Depends On")
   waves: WaveInfo[]
   scaffold: ScaffoldInfo
+  known_issues: KnownIssueEntry[]
+  scaffolds_detail: ScaffoldFileEntry[]
+  interface_contracts_text: string
+  dependency_graph_text: string
+  post_merge_checklist_text: string
+  agent_prompts: AgentPromptEntry[]
 }
 
 export interface IMPLListEntry {
