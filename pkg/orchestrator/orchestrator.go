@@ -9,11 +9,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"golang.org/x/sync/errgroup"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	apiclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
+	cliclient "github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
@@ -63,11 +67,49 @@ var waitForCompletionFunc = func(implDocPath, agentLetter string, timeout, pollI
 	return agent.WaitForCompletion(implDocPath, agentLetter, timeout, pollInterval)
 }
 
+// BackendConfig carries backend selection + credentials for newBackendFunc.
+type BackendConfig struct {
+	Kind      string // "api" | "cli" | "auto"
+	APIKey    string
+	Model     string
+	MaxTokens int
+	MaxTurns  int
+}
+
+// newBackendFunc constructs a backend.Backend from config. Seam for tests.
+var newBackendFunc = func(cfg BackendConfig) (backend.Backend, error) {
+	bcfg := backend.Config{
+		Model:     cfg.Model,
+		MaxTokens: cfg.MaxTokens,
+		MaxTurns:  cfg.MaxTurns,
+	}
+	switch cfg.Kind {
+	case "api":
+		apiKey := cfg.APIKey
+		if apiKey == "" {
+			apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		}
+		return apiclient.New(apiKey, bcfg), nil
+	case "cli":
+		return cliclient.New("", bcfg), nil
+	case "auto", "":
+		apiKey := cfg.APIKey
+		if apiKey == "" {
+			apiKey = os.Getenv("ANTHROPIC_API_KEY")
+		}
+		if apiKey != "" {
+			return apiclient.New(apiKey, bcfg), nil
+		}
+		return cliclient.New("", bcfg), nil
+	default:
+		return nil, fmt.Errorf("orchestrator: unknown backend kind %q; valid values: api, cli, auto", cfg.Kind)
+	}
+}
+
 // newRunnerFunc is a seam for tests: constructs the agent.Runner used by RunWave.
-// Tests can replace this to inject a fake Sender without real API calls.
-var newRunnerFunc = func(wm *worktree.Manager) *agent.Runner {
-	client := agent.NewClient("") // reads ANTHROPIC_API_KEY from environment
-	return agent.NewRunner(client, wm)
+// Tests can replace this to inject a fake Backend without real API calls.
+var newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+	return agent.NewRunner(b, wm)
 }
 
 // Orchestrator drives SAW protocol wave coordination.
@@ -144,7 +186,7 @@ func (o *Orchestrator) TransitionTo(newState types.State) error {
 }
 
 // RunWave executes all agents in wave waveNum concurrently. Each agent receives
-// its own git worktree and is given full file/shell tool access via ExecuteWithTools.
+// its own git worktree and the backend handles all LLM interaction internally.
 // RunWave blocks until all agents complete (or one fails), then returns.
 func (o *Orchestrator) RunWave(waveNum int) error {
 	if o.implDoc == nil {
@@ -174,7 +216,11 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 
 	// Build the worktree manager and agent runner.
 	wm := worktree.New(o.repoPath)
-	runner := newRunnerFunc(wm)
+	b, err := newBackendFunc(BackendConfig{Kind: "auto"})
+	if err != nil {
+		return fmt.Errorf("orchestrator.RunWave: failed to create backend: %w", err)
+	}
+	runner := newRunnerFunc(b, wm)
 
 	// Launch all agents concurrently and collect the first error.
 	eg, ctx := errgroup.WithContext(context.Background())
@@ -202,7 +248,7 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 	return nil
 }
 
-// launchAgent creates a worktree for one agent, calls ExecuteWithTools, then
+// launchAgent creates a worktree for one agent, calls Execute, then
 // polls WaitForCompletion. Returns the first non-nil error encountered.
 func (o *Orchestrator) launchAgent(
 	ctx context.Context,
@@ -237,11 +283,8 @@ func (o *Orchestrator) launchAgent(
 		},
 	})
 
-	// b. Build the standard tool set scoped to the worktree.
-	tools := agent.StandardTools(wtPath)
-
-	// c. Execute the agent with tools.
-	if _, err := runner.ExecuteWithTools(ctx, &agentSpec, wtPath, tools, 50); err != nil {
+	// b. Execute the agent via the backend.
+	if _, err := runner.Execute(ctx, &agentSpec, wtPath); err != nil {
 		o.publish(OrchestratorEvent{
 			Event: "agent_failed",
 			Data: AgentFailedPayload{
@@ -252,10 +295,10 @@ func (o *Orchestrator) launchAgent(
 				Message:     err.Error(),
 			},
 		})
-		return fmt.Errorf("orchestrator: agent %s: ExecuteWithTools: %w", agentSpec.Letter, err)
+		return fmt.Errorf("orchestrator: agent %s: Execute: %w", agentSpec.Letter, err)
 	}
 
-	// d. Poll for the completion report.
+	// c. Poll for the completion report.
 	report, err := waitForCompletionFunc(o.implDocPath, agentSpec.Letter, defaultAgentTimeout, defaultAgentPollInterval)
 	if err != nil {
 		o.publish(OrchestratorEvent{

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
@@ -35,31 +36,27 @@ func makeOrchWithWave(waveNum int, letters ...string) *Orchestrator {
 	return newFromDoc(doc, "/repo", "/repo/IMPL.md")
 }
 
-// fakeToolSender is a Sender+ToolRunner that records calls and optionally
-// returns an error for a specific agent letter.
-type fakeToolSender struct {
+// fakeBackend is a backend.Backend test double that records Run calls and
+// optionally returns an error for a specific agent prompt.
+type fakeBackend struct {
 	mu         sync.Mutex
 	called     []string
-	failLetter string
+	failPrompt string
 	// runFn, if non-nil, is called instead of the default behaviour.
-	runFn func(prompt string) (string, error)
+	runFn func(systemPrompt string) (string, error)
 }
 
-func (f *fakeToolSender) SendMessage(_, _ string) (string, error) {
-	return "ok", nil
-}
-
-func (f *fakeToolSender) RunWithTools(_ context.Context, prompt string, _ []agent.Tool, _ int) (string, error) {
+func (f *fakeBackend) Run(_ context.Context, systemPrompt, _, _ string) (string, error) {
 	f.mu.Lock()
-	f.called = append(f.called, prompt)
+	f.called = append(f.called, systemPrompt)
 	fn := f.runFn
-	failLetter := f.failLetter
+	failPrompt := f.failPrompt
 	f.mu.Unlock()
 
 	if fn != nil {
-		return fn(prompt)
+		return fn(systemPrompt)
 	}
-	if failLetter != "" && prompt == failLetter {
+	if failPrompt != "" && systemPrompt == failPrompt {
 		return "", errors.New("simulated agent failure")
 	}
 	return "response", nil
@@ -159,7 +156,7 @@ func TestRunWave_WaveNotFound(t *testing.T) {
 	}
 }
 
-// TestRunWave_LaunchesAllAgents verifies that RunWave calls ExecuteWithTools
+// TestRunWave_LaunchesAllAgents verifies that RunWave calls Execute
 // for every agent in the wave, and does so concurrently (both goroutines are
 // in-flight at the same time, proven by an overlap barrier).
 func TestRunWave_LaunchesAllAgents(t *testing.T) {
@@ -170,8 +167,8 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 	var inFlight int32
 	barrier := make(chan struct{})
 
-	fake := &fakeToolSender{}
-	fake.runFn = func(prompt string) (string, error) {
+	fake := &fakeBackend{}
+	fake.runFn = func(systemPrompt string) (string, error) {
 		if atomic.AddInt32(&inFlight, 1) == 2 {
 			// Both goroutines have arrived — release the barrier.
 			close(barrier)
@@ -189,9 +186,13 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 	var worktreeCount int32
 	origCreator := worktreeCreatorFunc
 	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
 	t.Cleanup(func() {
 		worktreeCreatorFunc = origCreator
 		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
 	})
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		atomic.AddInt32(&worktreeCount, 1)
@@ -199,6 +200,12 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 	}
 	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
 		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b, wm)
 	}
 
 	doc := &types.IMPLDoc{
@@ -213,12 +220,6 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 		},
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
-
-	origNewRunner := newRunnerFunc
-	t.Cleanup(func() { newRunnerFunc = origNewRunner })
-	newRunnerFunc = func(wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(fake, wm)
-	}
 
 	if err := o.RunWave(1); err != nil {
 		t.Fatalf("RunWave returned unexpected error: %v", err)
@@ -234,26 +235,37 @@ func TestRunWave_LaunchesAllAgents(t *testing.T) {
 	calledCount := len(fake.called)
 	fake.mu.Unlock()
 	if calledCount != 2 {
-		t.Errorf("expected 2 ExecuteWithTools calls, got %d", calledCount)
+		t.Errorf("expected 2 Execute calls, got %d", calledCount)
 	}
 }
 
 // TestRunWave_ReturnsErrorOnAgentFailure verifies that RunWave propagates an
-// error when one agent's ExecuteWithTools call fails.
+// error when one agent's Execute call fails.
 func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
-	fake := &fakeToolSender{failLetter: "B"}
+	// Agent B prompt is "B" — fakeBackend fails when systemPrompt == failPrompt.
+	fake := &fakeBackend{failPrompt: "B"}
 
 	origCreator := worktreeCreatorFunc
 	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
+	origNewRunner := newRunnerFunc
 	t.Cleanup(func() {
 		worktreeCreatorFunc = origCreator
 		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
+		newRunnerFunc = origNewRunner
 	})
 	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
 		return "/tmp/fake-wt-" + letter, nil
 	}
 	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
 		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b, wm)
 	}
 
 	doc := &types.IMPLDoc{
@@ -268,12 +280,6 @@ func TestRunWave_ReturnsErrorOnAgentFailure(t *testing.T) {
 		},
 	}
 	o := newFromDoc(doc, "/repo", "/repo/IMPL.md")
-
-	origNewRunner := newRunnerFunc
-	t.Cleanup(func() { newRunnerFunc = origNewRunner })
-	newRunnerFunc = func(wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(fake, wm)
-	}
 
 	err := o.RunWave(1)
 	if err == nil {
@@ -423,10 +429,12 @@ func TestNewFromDoc(t *testing.T) {
 func TestSetEventPublisher_NilPublisher_NoOp(t *testing.T) {
 	origCreator := worktreeCreatorFunc
 	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
 	origNewRunner := newRunnerFunc
 	t.Cleanup(func() {
 		worktreeCreatorFunc = origCreator
 		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
 		newRunnerFunc = origNewRunner
 	})
 
@@ -437,9 +445,12 @@ func TestSetEventPublisher_NilPublisher_NoOp(t *testing.T) {
 		return &types.CompletionReport{Status: types.StatusComplete}, nil
 	}
 
-	fake := &fakeToolSender{}
-	newRunnerFunc = func(wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(fake, wm)
+	fake := &fakeBackend{}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b, wm)
 	}
 
 	o := makeOrchWithWave(1, "A")
@@ -455,10 +466,12 @@ func TestSetEventPublisher_NilPublisher_NoOp(t *testing.T) {
 func TestPublish_EmitsAgentStarted(t *testing.T) {
 	origCreator := worktreeCreatorFunc
 	origWait := waitForCompletionFunc
+	origNewBackend := newBackendFunc
 	origNewRunner := newRunnerFunc
 	t.Cleanup(func() {
 		worktreeCreatorFunc = origCreator
 		waitForCompletionFunc = origWait
+		newBackendFunc = origNewBackend
 		newRunnerFunc = origNewRunner
 	})
 
@@ -469,9 +482,12 @@ func TestPublish_EmitsAgentStarted(t *testing.T) {
 		return &types.CompletionReport{Status: types.StatusComplete}, nil
 	}
 
-	fake := &fakeToolSender{}
-	newRunnerFunc = func(wm *worktree.Manager) *agent.Runner {
-		return agent.NewRunner(fake, wm)
+	fake := &fakeBackend{}
+	newBackendFunc = func(_ BackendConfig) (backend.Backend, error) {
+		return fake, nil
+	}
+	newRunnerFunc = func(b backend.Backend, wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(b, wm)
 	}
 
 	// Capture all published events.
