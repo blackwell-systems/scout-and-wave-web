@@ -173,7 +173,7 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 
 		// ── File ownership table rows
 		case state == stateFileOwner && strings.HasPrefix(line, "|"):
-			parseFileOwnershipRow(line, doc.FileOwnership)
+			parseFileOwnershipRow(line, doc.FileOwnership, &doc.FileOwnershipCol4)
 
 		// ── Accumulate agent prompt text; extract **wave:** N metadata
 		case state == stateAgent:
@@ -407,7 +407,8 @@ func extractAgentLetter(line string) string {
 //	| pkg/protocol/parser.go | A | 1 | — |
 //
 // and populates the ownership map (file -> FileOwnershipInfo).
-func parseFileOwnershipRow(line string, ownership map[string]types.FileOwnershipInfo) {
+// col4Header is detected from the header row and stored for the caller.
+func parseFileOwnershipRow(line string, ownership map[string]types.FileOwnershipInfo, col4Header *string) {
 	// Split on "|" and trim whitespace from each cell.
 	parts := strings.Split(line, "|")
 	// A valid data row has at least 4 cells (leading empty + 3+ columns).
@@ -417,12 +418,24 @@ func parseFileOwnershipRow(line string, ownership map[string]types.FileOwnership
 	file := strings.TrimSpace(parts[1])
 	agent := strings.TrimSpace(parts[2])
 
-	// Skip header rows or separator rows.
-	if file == "" || file == "file" || file == "File" ||
-		strings.Contains(file, "---") || strings.Contains(agent, "---") {
+	// Skip separator rows.
+	if strings.Contains(file, "---") || strings.Contains(agent, "---") {
 		return
 	}
-	if agent == "" || agent == "agent-letter" || agent == "Agent" {
+
+	// Detect header row and extract 4th column name.
+	fileLower := strings.ToLower(file)
+	if fileLower == "file" || fileLower == "" {
+		if len(parts) >= 6 && col4Header != nil {
+			h := strings.TrimSpace(parts[4])
+			if h != "" {
+				*col4Header = h
+			}
+		}
+		return
+	}
+	agentLower := strings.ToLower(agent)
+	if agentLower == "agent" || agentLower == "agent-letter" {
 		return
 	}
 
@@ -432,7 +445,6 @@ func parseFileOwnershipRow(line string, ownership map[string]types.FileOwnership
 
 	// Infer action from file path annotations like "(new)" or "(modify)" before
 	// stripping backticks, since annotations appear outside the backtick-wrapped path.
-	fileLower := strings.ToLower(file)
 	switch {
 	case strings.Contains(fileLower, "(new)"):
 		info.Action = "new"
@@ -460,25 +472,51 @@ func parseFileOwnershipRow(line string, ownership map[string]types.FileOwnership
 		}
 	}
 
-	// Parse action from 4th column if present (e.g. "new", "modify", "—").
-	if info.Action == "" && len(parts) >= 6 {
-		action := strings.TrimSpace(parts[4])
-		action = strings.Trim(action, "`")
-		action = strings.ToLower(action)
-		if action != "" && action != "—" && action != "-" {
+	// Parse 4th column based on detected header.
+	if len(parts) >= 6 {
+		val := strings.TrimSpace(parts[4])
+		val = strings.Trim(val, "`")
+
+		col4Name := ""
+		if col4Header != nil {
+			col4Name = strings.ToLower(*col4Header)
+		}
+
+		if val != "" && val != "—" && val != "-" {
 			switch {
-			case strings.HasPrefix(action, "new") || strings.HasPrefix(action, "create"):
-				info.Action = "new"
-			case strings.HasPrefix(action, "mod") || strings.HasPrefix(action, "edit"):
-				info.Action = "modify"
-			case strings.HasPrefix(action, "del") || strings.HasPrefix(action, "remove"):
-				info.Action = "delete"
+			case strings.Contains(col4Name, "depends"):
+				info.DependsOn = val
+			case strings.Contains(col4Name, "action"):
+				info.Action = classifyAction(val)
 			default:
-				info.Action = action
+				// No header detected or unknown — try to classify as action,
+				// fall back to DependsOn.
+				classified := classifyAction(val)
+				if classified != val {
+					info.Action = classified
+				} else {
+					info.DependsOn = val
+				}
 			}
 		}
 	}
 
 	ownership[file] = info
+}
+
+// classifyAction normalizes an action string to "new", "modify", or "delete".
+// Returns the original string if it doesn't match any known action.
+func classifyAction(s string) string {
+	lower := strings.ToLower(s)
+	switch {
+	case strings.HasPrefix(lower, "new") || strings.HasPrefix(lower, "create"):
+		return "new"
+	case strings.HasPrefix(lower, "mod") || strings.HasPrefix(lower, "edit"):
+		return "modify"
+	case strings.HasPrefix(lower, "del") || strings.HasPrefix(lower, "remove"):
+		return "delete"
+	default:
+		return s
+	}
 }
 

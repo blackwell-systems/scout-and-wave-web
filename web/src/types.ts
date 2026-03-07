@@ -9,7 +9,8 @@ export interface FileOwnershipEntry {
   file: string
   agent: string
   wave: number
-  action: string // "create" or "modify"
+  action: string // "new", "modify", "delete", or ""
+  depends_on: string // populated when 4th column is "Depends On"
 }
 
 export interface WaveInfo {
@@ -34,6 +35,7 @@ export interface IMPLDocResponse {
   slug: string
   suitability: SuitabilityInfo
   file_ownership: FileOwnershipEntry[]
+  file_ownership_col4_name: string // detected 4th column header (e.g. "Action", "Depends On")
   waves: WaveInfo[]
   scaffold: ScaffoldInfo
 }

@@ -59,8 +59,9 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 			Verdict:   suitabilityVerdict(doc.Status),
 			Rationale: "",
 		},
-		FileOwnership: mapFileOwnership(doc.FileOwnership),
-		Waves:         mapWaves(doc.Waves),
+		FileOwnership:         mapFileOwnership(doc.FileOwnership),
+		FileOwnershipCol4Name: doc.FileOwnershipCol4,
+		Waves:                 mapWaves(doc.Waves),
 		Scaffold: ScaffoldInfo{
 			Required:  false,
 			Files:     []string{},
@@ -131,10 +132,11 @@ func mapFileOwnership(ownership map[string]types.FileOwnershipInfo) []FileOwners
 	entries := make([]FileOwnershipEntry, 0, len(ownership))
 	for file, info := range ownership {
 		entries = append(entries, FileOwnershipEntry{
-			File:   file,
-			Agent:  info.Agent,
-			Wave:   info.Wave,
-			Action: info.Action,
+			File:      file,
+			Agent:     info.Agent,
+			Wave:      info.Wave,
+			Action:    info.Action,
+			DependsOn: info.DependsOn,
 		})
 	}
 	return entries

@@ -2,6 +2,7 @@ import { FileOwnershipEntry } from '../types'
 
 interface FileOwnershipTableProps {
   fileOwnership: FileOwnershipEntry[]
+  col4Name?: string // detected 4th column header (e.g. "Action", "Depends On")
 }
 
 const ROW_COLORS = [
@@ -16,12 +17,20 @@ function getAgentColor(agentIndex: number): string {
   return ROW_COLORS[agentIndex % ROW_COLORS.length]
 }
 
-export default function FileOwnershipTable({ fileOwnership }: FileOwnershipTableProps): JSX.Element {
+export default function FileOwnershipTable({ fileOwnership, col4Name }: FileOwnershipTableProps): JSX.Element {
   const agents = Array.from(new Set(fileOwnership.map(e => e.agent))).sort()
   const agentColorMap = new Map(agents.map((agent, i) => [agent, getAgentColor(i)]))
 
   const hasWaves = fileOwnership.some(e => e.wave > 0)
-  const hasActions = fileOwnership.some(e => e.action && e.action !== 'unknown')
+
+  // Determine 4th column: use detected header name, show if any row has data
+  const isCol4DependsOn = col4Name ? col4Name.toLowerCase().includes('depends') : false
+  const col4Label = col4Name || 'Action'
+  const hasCol4 = fileOwnership.some(e =>
+    isCol4DependsOn
+      ? e.depends_on && e.depends_on !== ''
+      : e.action && e.action !== 'unknown'
+  )
 
   const sorted = [...fileOwnership].sort((a, b) => {
     if (a.agent < b.agent) return -1
@@ -39,7 +48,7 @@ export default function FileOwnershipTable({ fileOwnership }: FileOwnershipTable
               <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">File</th>
               <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">Agent</th>
               {hasWaves && <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">Wave</th>}
-              {hasActions && <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">Action</th>}
+              {hasCol4 && <th className="px-4 py-3 text-left font-medium text-gray-600 dark:text-gray-300">{col4Label}</th>}
             </tr>
           </thead>
           <tbody>
@@ -50,7 +59,7 @@ export default function FileOwnershipTable({ fileOwnership }: FileOwnershipTable
                   <td className="px-4 py-2 font-mono text-xs text-gray-800 dark:text-gray-100">{entry.file}</td>
                   <td className="px-4 py-2 text-gray-700 dark:text-gray-300">{entry.agent}</td>
                   {hasWaves && <td className="px-4 py-2 text-gray-700 dark:text-gray-300">{entry.wave || ''}</td>}
-                  {hasActions && <td className="px-4 py-2 text-gray-700 dark:text-gray-300 capitalize">{entry.action || ''}</td>}
+                  {hasCol4 && <td className="px-4 py-2 text-gray-700 dark:text-gray-300 capitalize">{isCol4DependsOn ? (entry.depends_on || '') : (entry.action || '')}</td>}
                 </tr>
               )
             })}

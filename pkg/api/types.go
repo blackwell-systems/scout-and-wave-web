@@ -2,11 +2,12 @@ package api
 
 // IMPLDocResponse is the JSON body for GET /api/impl/{slug}.
 type IMPLDocResponse struct {
-	Slug          string               `json:"slug"`
-	Suitability   SuitabilityInfo      `json:"suitability"`
-	FileOwnership []FileOwnershipEntry `json:"file_ownership"`
-	Waves         []WaveInfo           `json:"waves"`
-	Scaffold      ScaffoldInfo         `json:"scaffold"`
+	Slug                  string               `json:"slug"`
+	Suitability           SuitabilityInfo      `json:"suitability"`
+	FileOwnership         []FileOwnershipEntry `json:"file_ownership"`
+	FileOwnershipCol4Name string               `json:"file_ownership_col4_name"` // detected 4th column header (e.g. "Action", "Depends On")
+	Waves                 []WaveInfo           `json:"waves"`
+	Scaffold              ScaffoldInfo         `json:"scaffold"`
 }
 
 // SuitabilityInfo is the suitability sub-object in IMPLDocResponse.
@@ -17,10 +18,11 @@ type SuitabilityInfo struct {
 
 // FileOwnershipEntry is one row of the file ownership table.
 type FileOwnershipEntry struct {
-	File   string `json:"file"`
-	Agent  string `json:"agent"`
-	Wave   int    `json:"wave"`
-	Action string `json:"action"` // "create" or "modify"
+	File      string `json:"file"`
+	Agent     string `json:"agent"`
+	Wave      int    `json:"wave"`
+	Action    string `json:"action"`     // "new", "modify", "delete", or ""
+	DependsOn string `json:"depends_on"` // populated when 4th column is "Depends On"
 }
 
 // WaveInfo describes one wave in the IMPL doc.

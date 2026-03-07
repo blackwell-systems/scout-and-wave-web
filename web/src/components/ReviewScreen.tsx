@@ -30,7 +30,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
 
         {/* Rest of content - grayed out if NOT SUITABLE */}
         <div className={isNotSuitable ? 'opacity-40 pointer-events-none' : ''}>
-          <FileOwnershipTable fileOwnership={impl.file_ownership} />
+          <FileOwnershipTable fileOwnership={impl.file_ownership} col4Name={impl.file_ownership_col4_name} />
           <WaveStructureDiagram waves={impl.waves} scaffold={impl.scaffold} />
           <InterfaceContracts contracts={impl.scaffold.contracts} />
         </div>
