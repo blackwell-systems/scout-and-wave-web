@@ -10,6 +10,9 @@ import (
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
@@ -564,5 +567,90 @@ func TestRunStatus_SummaryLine(t *testing.T) {
 	// Expect the summary line with accurate counts.
 	if !strings.Contains(output, "Agents: 1 complete, 1 pending, 0 blocked") {
 		t.Errorf("output missing expected summary line; got:\n%s", output)
+	}
+}
+
+// TestResolveBackend_API verifies that kind="api" returns an *api.Client.
+func TestResolveBackend_API(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	b, err := resolveBackend("api", backend.Config{})
+	if err != nil {
+		t.Fatalf("resolveBackend(api) returned error: %v", err)
+	}
+	if _, ok := b.(*api.Client); !ok {
+		t.Errorf("resolveBackend(api) returned %T, want *api.Client", b)
+	}
+}
+
+// TestResolveBackend_CLI verifies that kind="cli" returns a *cli.Client.
+func TestResolveBackend_CLI(t *testing.T) {
+	b, err := resolveBackend("cli", backend.Config{})
+	if err != nil {
+		t.Fatalf("resolveBackend(cli) returned error: %v", err)
+	}
+	if _, ok := b.(*cli.Client); !ok {
+		t.Errorf("resolveBackend(cli) returned %T, want *cli.Client", b)
+	}
+}
+
+// TestResolveBackend_Auto_WithKey verifies that kind="auto" with ANTHROPIC_API_KEY
+// set returns an *api.Client.
+func TestResolveBackend_Auto_WithKey(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "test-key-auto")
+	b, err := resolveBackend("auto", backend.Config{})
+	if err != nil {
+		t.Fatalf("resolveBackend(auto) returned error: %v", err)
+	}
+	if _, ok := b.(*api.Client); !ok {
+		t.Errorf("resolveBackend(auto) with key returned %T, want *api.Client", b)
+	}
+}
+
+// TestResolveBackend_Auto_WithoutKey verifies that kind="auto" with no
+// ANTHROPIC_API_KEY set returns a *cli.Client.
+func TestResolveBackend_Auto_WithoutKey(t *testing.T) {
+	t.Setenv("ANTHROPIC_API_KEY", "")
+	b, err := resolveBackend("auto", backend.Config{})
+	if err != nil {
+		t.Fatalf("resolveBackend(auto) returned error: %v", err)
+	}
+	if _, ok := b.(*cli.Client); !ok {
+		t.Errorf("resolveBackend(auto) without key returned %T, want *cli.Client", b)
+	}
+}
+
+// TestResolveBackend_EnvFallback verifies that when kind is empty, the
+// SAW_BACKEND env var is used as the backend selector.
+func TestResolveBackend_EnvFallback(t *testing.T) {
+	t.Setenv("SAW_BACKEND", "cli")
+	t.Setenv("ANTHROPIC_API_KEY", "") // ensure auto would pick cli anyway, but we test env routing
+	b, err := resolveBackend("", backend.Config{})
+	if err != nil {
+		t.Fatalf("resolveBackend via SAW_BACKEND=cli returned error: %v", err)
+	}
+	if _, ok := b.(*cli.Client); !ok {
+		t.Errorf("resolveBackend via SAW_BACKEND=cli returned %T, want *cli.Client", b)
+	}
+
+	// Also verify that SAW_BACKEND=api routes to api.Client.
+	t.Setenv("SAW_BACKEND", "api")
+	t.Setenv("ANTHROPIC_API_KEY", "test-key")
+	b2, err := resolveBackend("", backend.Config{})
+	if err != nil {
+		t.Fatalf("resolveBackend via SAW_BACKEND=api returned error: %v", err)
+	}
+	if _, ok := b2.(*api.Client); !ok {
+		t.Errorf("resolveBackend via SAW_BACKEND=api returned %T, want *api.Client", b2)
+	}
+}
+
+// TestResolveBackend_Invalid verifies that an unknown kind returns a non-nil error.
+func TestResolveBackend_Invalid(t *testing.T) {
+	_, err := resolveBackend("bogus", backend.Config{})
+	if err == nil {
+		t.Fatal("resolveBackend(bogus) expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "bogus") {
+		t.Errorf("error should mention the unknown kind; got: %v", err)
 	}
 }

@@ -13,6 +13,9 @@ import (
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/api"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend/cli"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
@@ -37,6 +40,31 @@ type waveOrchestrator interface {
 // repo path and IMPL doc path. Tests can replace this to inject a fake.
 var orchestratorNewFunc = func(repoPath, implPath string) (waveOrchestrator, error) {
 	return orchestrator.New(repoPath, implPath)
+}
+
+// resolveBackend returns a backend.Backend based on kind and cfg.
+// kind precedence: explicit flag value > SAW_BACKEND env var > "auto".
+// "auto" selects api when ANTHROPIC_API_KEY is set, otherwise cli.
+func resolveBackend(kind string, cfg backend.Config) (backend.Backend, error) {
+	if kind == "" {
+		kind = os.Getenv("SAW_BACKEND")
+	}
+	if kind == "" {
+		kind = "auto"
+	}
+	switch kind {
+	case "api":
+		return api.New(os.Getenv("ANTHROPIC_API_KEY"), cfg), nil
+	case "cli":
+		return cli.New("", cfg), nil
+	case "auto":
+		if os.Getenv("ANTHROPIC_API_KEY") != "" {
+			return api.New(os.Getenv("ANTHROPIC_API_KEY"), cfg), nil
+		}
+		return cli.New("", cfg), nil
+	default:
+		return nil, fmt.Errorf("unknown backend kind %q; valid: api, cli, auto", kind)
+	}
 }
 
 // runWave executes a wave from an IMPL doc.
@@ -350,6 +378,7 @@ func runScout(args []string) error {
 	feature := fs.String("feature", "", "One-line feature description (required)")
 	implPath := fs.String("impl", "", "Output path for IMPL doc (optional)")
 	repoFlag := fs.String("repo", "", "Repository root (optional; default: auto-detect from cwd)")
+	backendKind := fs.String("backend", "", "Backend to use: api, cli, or auto (default: auto; env: SAW_BACKEND)")
 
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("scout: %w", err)
@@ -394,8 +423,11 @@ func runScout(args []string) error {
 	prompt := fmt.Sprintf("%s\n\n## Feature\n%s\n\n## IMPL Output Path\n%s\n",
 		string(scoutMdBytes), *feature, implOut)
 
-	client := agent.NewClient("")
-	runner := agent.NewRunner(client, nil)
+	b, err := resolveBackend(*backendKind, backend.Config{})
+	if err != nil {
+		return fmt.Errorf("scout: %w", err)
+	}
+	runner := agent.NewRunner(b, nil)
 	spec := types.AgentSpec{Letter: "scout", Prompt: prompt}
 
 	ctx := context.Background()
@@ -416,6 +448,7 @@ func runScaffold(args []string) error {
 	fs := flag.NewFlagSet("scaffold", flag.ContinueOnError)
 	implPath := fs.String("impl", "", "Path to IMPL doc (required)")
 	repoFlag := fs.String("repo", "", "Repository root (optional; default: auto-detect from cwd)")
+	backendKind := fs.String("backend", "", "Backend to use: api, cli, or auto (default: auto; env: SAW_BACKEND)")
 
 	if err := fs.Parse(args); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
@@ -463,8 +496,11 @@ func runScaffold(args []string) error {
 
 	prompt := fmt.Sprintf("%s\n\n## IMPL Doc Path\n%s\n", string(scaffoldMdBytes), absImpl)
 
-	client := agent.NewClient("")
-	runner := agent.NewRunner(client, nil)
+	b, err := resolveBackend(*backendKind, backend.Config{})
+	if err != nil {
+		return fmt.Errorf("scaffold: %w", err)
+	}
+	runner := agent.NewRunner(b, nil)
 	spec := types.AgentSpec{Letter: "scaffold", Prompt: prompt}
 
 	ctx := context.Background()
