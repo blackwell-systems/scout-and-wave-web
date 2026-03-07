@@ -8,16 +8,16 @@ package types
 type State int
 
 const (
-	ScoutPending State = iota // initial state: Scout agent running (SCOUT_PENDING)
-	NotSuitable
-	Reviewed
-	ScaffoldPending // Scaffold agent creating type scaffold files
-	WavePending
-	WaveExecuting
-	WaveMerging // Orchestrator merging worktrees
-	WaveVerified
-	Blocked // Agent failure or verification failure; requires resolution
-	Complete
+	ScoutPending    State = iota // Scout agent is analyzing the codebase (SCOUT_PENDING)
+	NotSuitable                  // feature was rejected by the suitability gate; terminal
+	Reviewed                     // IMPL doc has been reviewed and approved by a human
+	ScaffoldPending              // Scaffold agent is creating shared type scaffold files
+	WavePending                  // wave is ready to execute; agents not yet launched
+	WaveExecuting                // wave agents are running concurrently
+	WaveMerging                  // orchestrator is merging agent worktrees into HEAD
+	WaveVerified                 // post-merge verification passed
+	Blocked                      // agent failure or verification failure; requires resolution
+	Complete                     // all waves merged and verified; terminal
 )
 
 // String returns the string representation of the State
@@ -52,9 +52,9 @@ func (s State) String() string {
 type CompletionStatus string
 
 const (
-	StatusComplete CompletionStatus = "complete"
-	StatusPartial  CompletionStatus = "partial"
-	StatusBlocked  CompletionStatus = "blocked"
+	StatusComplete CompletionStatus = "complete" // agent finished all assigned work
+	StatusPartial  CompletionStatus = "partial"  // agent completed some work; wave goes to Blocked
+	StatusBlocked  CompletionStatus = "blocked"  // agent could not proceed; wave goes to Blocked
 )
 
 // IMPLDoc is the parsed representation of an IMPL markdown document

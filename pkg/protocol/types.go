@@ -1,5 +1,3 @@
-// Package protocol provides parsing and validation utilities for IMPL markdown documents.
-// It depends only on pkg/types and the standard library.
 package protocol
 
 import (

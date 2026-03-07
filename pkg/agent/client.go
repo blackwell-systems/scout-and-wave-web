@@ -67,10 +67,6 @@ type ToolRunner interface {
 	RunWithTools(ctx context.Context, prompt string, tools []Tool, maxTurns int) (string, error)
 }
 
-// SendMessage sends a conversation turn to the Anthropic API.
-// systemPrompt sets the system role. userMessage is the human turn.
-// Returns the full assistant response text (streaming collected internally).
-// Returns error on API failure, rate limit, or network error.
 func (c *Client) sendOpts() []option.RequestOption {
 	opts := []option.RequestOption{option.WithAPIKey(c.apiKey)}
 	if c.baseURL != "" {
@@ -79,6 +75,9 @@ func (c *Client) sendOpts() []option.RequestOption {
 	return opts
 }
 
+// SendMessage sends a single conversation turn to the Anthropic API.
+// systemPrompt sets the system role; userMessage is the human turn.
+// Returns the full assistant response text (streaming is collected internally).
 func (c *Client) SendMessage(systemPrompt, userMessage string) (string, error) {
 	sdkClient := anthropic.NewClient(c.sendOpts()...)
 
