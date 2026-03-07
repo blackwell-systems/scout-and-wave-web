@@ -2,14 +2,20 @@ package api
 
 // IMPLDocResponse is the JSON body for GET /api/impl/{slug}.
 type IMPLDocResponse struct {
-	Slug                  string               `json:"slug"`
-	DocStatus             string               `json:"doc_status"`              // "ACTIVE" or "COMPLETE"
-	CompletedAt           string               `json:"completed_at,omitempty"`  // ISO date, present only when COMPLETE
-	Suitability           SuitabilityInfo      `json:"suitability"`
-	FileOwnership         []FileOwnershipEntry `json:"file_ownership"`
-	FileOwnershipCol4Name string               `json:"file_ownership_col4_name"` // detected 4th column header (e.g. "Action", "Depends On")
-	Waves                 []WaveInfo           `json:"waves"`
-	Scaffold              ScaffoldInfo         `json:"scaffold"`
+	Slug                   string               `json:"slug"`
+	DocStatus              string               `json:"doc_status"`              // "ACTIVE" or "COMPLETE"
+	CompletedAt            string               `json:"completed_at,omitempty"`  // ISO date, present only when COMPLETE
+	Suitability            SuitabilityInfo      `json:"suitability"`
+	FileOwnership          []FileOwnershipEntry `json:"file_ownership"`
+	FileOwnershipCol4Name  string               `json:"file_ownership_col4_name"` // detected 4th column header (e.g. "Action", "Depends On")
+	Waves                  []WaveInfo           `json:"waves"`
+	Scaffold               ScaffoldInfo         `json:"scaffold"`
+	KnownIssues            []KnownIssueEntry    `json:"known_issues"`
+	ScaffoldsDetail        []ScaffoldFileEntry  `json:"scaffolds_detail"`
+	InterfaceContractsText string               `json:"interface_contracts_text"`
+	DependencyGraphText    string               `json:"dependency_graph_text"`
+	PostMergeChecklistText string               `json:"post_merge_checklist_text"`
+	AgentPrompts           []AgentPromptEntry   `json:"agent_prompts"`
 }
 
 // SuitabilityInfo is the suitability sub-object in IMPLDocResponse.
@@ -46,6 +52,27 @@ type ContractEntry struct {
 	Name      string `json:"name"`
 	Signature string `json:"signature"`
 	File      string `json:"file"`
+}
+
+// KnownIssueEntry is one known issue from the IMPL doc.
+type KnownIssueEntry struct {
+	Description string `json:"description"`
+	Status      string `json:"status"`
+	Workaround  string `json:"workaround"`
+}
+
+// ScaffoldFileEntry is one scaffold file with its contents.
+type ScaffoldFileEntry struct {
+	FilePath   string `json:"file_path"`
+	Contents   string `json:"contents"`
+	ImportPath string `json:"import_path"`
+}
+
+// AgentPromptEntry is one agent prompt extracted from a wave.
+type AgentPromptEntry struct {
+	Wave   int    `json:"wave"`
+	Agent  string `json:"agent"`
+	Prompt string `json:"prompt"`
 }
 
 // SSEEvent is the canonical shape written to the SSE stream.

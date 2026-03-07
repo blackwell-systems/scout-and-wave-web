@@ -94,6 +94,12 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 			Files:     scaffoldFiles,
 			Contracts: []ContractEntry{}, // Contracts not parsed yet - would need scaffolds section parsing
 		},
+		KnownIssues:            mapKnownIssues(doc.KnownIssues),
+		ScaffoldsDetail:        mapScaffoldsDetail(doc.ScaffoldsDetail),
+		InterfaceContractsText: doc.InterfaceContractsText,
+		DependencyGraphText:    doc.DependencyGraphText,
+		PostMergeChecklistText: doc.PostMergeChecklistText,
+		AgentPrompts:           extractAgentPrompts(doc.Waves),
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -182,6 +188,56 @@ func mapWaves(waves []types.Wave) []WaveInfo {
 			Agents:       agents,
 			Dependencies: []int{},
 		})
+	}
+	return result
+}
+
+// mapKnownIssues converts []types.KnownIssue to []KnownIssueEntry.
+func mapKnownIssues(issues []types.KnownIssue) []KnownIssueEntry {
+	if issues == nil {
+		return []KnownIssueEntry{}
+	}
+	result := make([]KnownIssueEntry, 0, len(issues))
+	for _, issue := range issues {
+		result = append(result, KnownIssueEntry{
+			Description: issue.Description,
+			Status:      issue.Status,
+			Workaround:  issue.Workaround,
+		})
+	}
+	return result
+}
+
+// mapScaffoldsDetail converts []types.ScaffoldFile to []ScaffoldFileEntry.
+func mapScaffoldsDetail(scaffolds []types.ScaffoldFile) []ScaffoldFileEntry {
+	if scaffolds == nil {
+		return []ScaffoldFileEntry{}
+	}
+	result := make([]ScaffoldFileEntry, 0, len(scaffolds))
+	for _, scaffold := range scaffolds {
+		result = append(result, ScaffoldFileEntry{
+			FilePath:   scaffold.FilePath,
+			Contents:   scaffold.Contents,
+			ImportPath: scaffold.ImportPath,
+		})
+	}
+	return result
+}
+
+// extractAgentPrompts flattens agent prompts from all waves into a single list.
+func extractAgentPrompts(waves []types.Wave) []AgentPromptEntry {
+	result := []AgentPromptEntry{}
+	for _, wave := range waves {
+		for _, agent := range wave.Agents {
+			result = append(result, AgentPromptEntry{
+				Wave:   wave.Number,
+				Agent:  agent.Letter,
+				Prompt: agent.Prompt,
+			})
+		}
+	}
+	if result == nil {
+		return []AgentPromptEntry{}
 	}
 	return result
 }
