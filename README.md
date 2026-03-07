@@ -1,11 +1,11 @@
 # scout-and-wave-go
 
 [![Blackwell Systems™](https://raw.githubusercontent.com/blackwell-systems/blackwell-docs-theme/main/badge-trademark.svg)](https://github.com/blackwell-systems)
-[![Buy Me A Coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg)](https://buymeacoffee.com/blackwellsystems)
 [![CI](https://github.com/blackwell-systems/scout-and-wave-go/actions/workflows/ci.yml/badge.svg)](https://github.com/blackwell-systems/scout-and-wave-go/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/blackwell-systems/scout-and-wave-go.svg)](https://pkg.go.dev/github.com/blackwell-systems/scout-and-wave-go)
 [![Go Report Card](https://goreportcard.com/badge/github.com/blackwell-systems/scout-and-wave-go)](https://goreportcard.com/report/github.com/blackwell-systems/scout-and-wave-go)
 ![Version](https://img.shields.io/badge/version-0.1.0-blue)
+[![Buy Me A Coffee](https://img.shields.io/badge/buy%20me%20a%20coffee-donate-yellow.svg)](https://buymeacoffee.com/blackwellsystems)
 
 Go implementation of the [Scout-and-Wave protocol](https://github.com/blackwell-systems/scout-and-wave) for parallel agent coordination.
 
