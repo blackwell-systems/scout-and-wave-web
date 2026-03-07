@@ -28,62 +28,66 @@ export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): J
         <CardTitle>Wave Structure</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="space-y-4">
-          {/* Scout phase */}
+        <div className="space-y-3">
+          {/* Scout lane */}
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-20 h-10 bg-green-500/10 border-2 border-green-500/30 rounded text-sm font-semibold text-green-700 dark:text-green-300">
+            <div className="w-20 text-sm font-semibold text-green-700 dark:text-green-300">
               Scout
             </div>
-            <div className="flex-1 h-0.5 bg-gradient-to-r from-green-500/30 to-transparent" />
+            <div className="text-muted-foreground">→</div>
+            <div className="flex-1 text-xs text-muted-foreground">
+              Analyze codebase
+            </div>
           </div>
 
-          {/* Scaffold if needed */}
+          {/* Scaffold lane if needed */}
           {impl.scaffold.required && (
-            <div className="flex items-center gap-3 ml-8">
-              <div className="flex items-center justify-center w-20 h-10 bg-amber-500/10 border-2 border-amber-500/30 rounded text-sm font-semibold text-amber-700 dark:text-amber-300">
+            <div className="flex items-center gap-3">
+              <div className="w-20 text-sm font-semibold text-amber-700 dark:text-amber-300">
                 Scaffold
               </div>
-              <div className="flex-1 h-0.5 bg-gradient-to-r from-amber-500/30 to-transparent" />
+              <div className="text-muted-foreground">→</div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">
+                  {impl.scaffold.files.length} {impl.scaffold.files.length === 1 ? 'file' : 'files'}
+                </span>
+              </div>
             </div>
           )}
 
-          {/* Waves - each progressively indented */}
-          {sortedWaves.map((wave, idx) => {
-            const indent = 8 + (idx * 4) // 8px base + 4px per wave for progressive indent
-
-            return (
-              <div key={wave.number} className="space-y-2">
-                {/* Wave header */}
-                <div className="flex items-center gap-3" style={{ marginLeft: `${indent}px` }}>
-                  <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground min-w-[60px]">
-                    Wave {wave.number}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {wave.agents.map(agentLetter => (
-                      <div
-                        key={agentLetter}
-                        className={`flex items-center justify-center w-10 h-10 rounded-lg font-semibold text-sm ${
-                          AGENT_COLORS[agentLetter] || 'bg-gray-500/10 border-2 border-gray-500/30 text-gray-700 dark:text-gray-300'
-                        }`}
-                      >
-                        {agentLetter}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Merge line */}
-                <div className="flex items-center gap-2" style={{ marginLeft: `${indent}px` }}>
-                  <div className="text-[10px] text-muted-foreground">↓ merge & verify</div>
-                </div>
+          {/* Wave lanes */}
+          {sortedWaves.map(wave => (
+            <div key={wave.number} className="flex items-center gap-3">
+              <div className="w-20 text-sm font-semibold text-foreground">
+                Wave {wave.number}
               </div>
-            )
-          })}
+              <div className="text-muted-foreground">→</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                {wave.agents.map(agentLetter => (
+                  <div
+                    key={agentLetter}
+                    className={`flex items-center justify-center w-9 h-9 rounded font-semibold text-sm ${
+                      AGENT_COLORS[agentLetter] || 'bg-gray-500/10 border-2 border-gray-500/30 text-gray-700 dark:text-gray-300'
+                    }`}
+                  >
+                    {agentLetter}
+                  </div>
+                ))}
+                <span className="text-xs text-muted-foreground ml-2">
+                  ({wave.agents.length} {wave.agents.length === 1 ? 'agent' : 'agents'} parallel)
+                </span>
+              </div>
+            </div>
+          ))}
 
-          {/* Complete */}
+          {/* Complete lane */}
           <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-20 h-10 bg-gray-500/10 border-2 border-gray-500/30 rounded text-sm font-semibold text-gray-700 dark:text-gray-300">
+            <div className="w-20 text-sm font-semibold text-gray-700 dark:text-gray-300">
               Complete
+            </div>
+            <div className="text-green-600 dark:text-green-400">✓</div>
+            <div className="flex-1 text-xs text-muted-foreground">
+              All waves merged and verified
             </div>
           </div>
         </div>
