@@ -9,7 +9,7 @@ export default function ActionButtons({ onApprove, onReject }: ActionButtonsProp
   }
 
   return (
-    <div className="flex items-center gap-3 pt-4 border-t border-gray-200">
+    <div className="flex items-center gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
       <button
         onClick={onApprove}
         className="px-6 py-2 rounded-lg text-sm font-medium bg-green-600 hover:bg-green-700 text-white transition-colors"

@@ -20,9 +20,9 @@ const statusLabels: Record<string, string> = {
 
 export default function AgentCard({ agent }: AgentCardProps) {
   return (
-    <div className="border border-gray-200 rounded-lg p-4 bg-white shadow-sm min-w-[200px] max-w-xs">
+    <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-900 shadow-sm min-w-[200px] max-w-xs">
       <div className="flex items-center justify-between mb-2">
-        <span className="font-bold text-gray-800 text-sm truncate mr-2">{agent.agent}</span>
+        <span className="font-bold text-gray-800 dark:text-gray-100 text-sm truncate mr-2">{agent.agent}</span>
         <span
           className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ${statusStyles[agent.status] ?? statusStyles.pending} ${agent.status === 'running' ? 'animate-pulse' : ''}`}
         >
@@ -33,7 +33,7 @@ export default function AgentCard({ agent }: AgentCardProps) {
       {agent.files.length > 0 && (
         <ul className="space-y-0.5 mb-2">
           {agent.files.map(f => (
-            <li key={f} className="font-mono text-xs text-gray-500 truncate" title={f}>
+            <li key={f} className="font-mono text-xs text-gray-500 dark:text-gray-400 truncate" title={f}>
               {f}
             </li>
           ))}

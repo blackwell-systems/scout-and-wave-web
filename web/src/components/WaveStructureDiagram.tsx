@@ -24,7 +24,7 @@ function ScaffoldBadge(): JSX.Element {
 function DownArrow(): JSX.Element {
   return (
     <div className="flex justify-center my-1">
-      <svg className="w-5 h-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <svg className="w-5 h-5 text-gray-400 dark:text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
       </svg>
     </div>
@@ -36,12 +36,12 @@ export default function WaveStructureDiagram({ waves, scaffold }: WaveStructureD
 
   return (
     <div className="mb-8">
-      <h2 className="text-lg font-semibold text-gray-800 mb-3">Wave Structure</h2>
-      <div className="border border-gray-200 rounded-lg p-4 bg-white">
+      <h2 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-3">Wave Structure</h2>
+      <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 bg-white dark:bg-gray-900">
         {scaffold.required && (
           <>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-medium text-gray-500 w-20 shrink-0">Scaffold</span>
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-20 shrink-0">Scaffold</span>
               <div className="flex flex-wrap gap-2">
                 <ScaffoldBadge />
               </div>
@@ -53,7 +53,7 @@ export default function WaveStructureDiagram({ waves, scaffold }: WaveStructureD
         {sortedWaves.map((wave, idx) => (
           <div key={wave.number}>
             <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs font-medium text-gray-500 w-20 shrink-0">
+              <span className="text-xs font-medium text-gray-500 dark:text-gray-400 w-20 shrink-0">
                 Wave {wave.number}
               </span>
               <div className="flex flex-wrap gap-2">
@@ -67,7 +67,7 @@ export default function WaveStructureDiagram({ waves, scaffold }: WaveStructureD
         ))}
 
         {sortedWaves.length === 0 && !scaffold.required && (
-          <p className="text-sm text-gray-400">No waves defined.</p>
+          <p className="text-sm text-gray-400 dark:text-gray-500">No waves defined.</p>
         )}
       </div>
     </div>

@@ -17,12 +17,12 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
   const isNotSuitable = impl.suitability.verdict === 'NOT SUITABLE'
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
       <div className="max-w-5xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Plan Review</h1>
-          <p className="text-sm text-gray-500 mt-1 font-mono">{slug}</p>
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">Plan Review</h1>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 font-mono">{slug}</p>
         </div>
 
         {/* Suitability Badge - always visible */}

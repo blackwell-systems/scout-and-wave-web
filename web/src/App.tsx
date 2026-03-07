@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react'
-import { listImpls, fetchImpl, approveImpl, rejectImpl } from './api'
+import { listImpls, fetchImpl, approveImpl, rejectImpl, startWave } from './api'
 import { IMPLDocResponse } from './types'
 import ReviewScreen from './components/ReviewScreen'
 import WaveBoard from './components/WaveBoard'
+import DarkModeToggle from './components/DarkModeToggle'
 
 type Screen = 'input' | 'review' | 'wave'
 
@@ -44,6 +45,15 @@ export default function App() {
     setError(null)
     try {
       await approveImpl(slug)
+      try {
+        await startWave(slug)
+      } catch (startErr) {
+        // Swallow 409 (already running) and other start errors — still transition to wave screen
+        const msg = startErr instanceof Error ? startErr.message : String(startErr)
+        if (!msg.includes('409')) {
+          console.warn('startWave error (non-fatal):', msg)
+        }
+      }
       setScreen('wave')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -66,25 +76,40 @@ export default function App() {
   }
 
   if (screen === 'wave') {
-    return <WaveBoard slug={slug} />
+    return (
+      <>
+        <div className="fixed top-4 right-4 z-50">
+          <DarkModeToggle />
+        </div>
+        <WaveBoard slug={slug} />
+      </>
+    )
   }
 
   if (screen === 'review' && impl !== null) {
     return (
-      <ReviewScreen
-        slug={slug}
-        impl={impl}
-        onApprove={handleApprove}
-        onReject={handleReject}
-      />
+      <>
+        <div className="fixed top-4 right-4 z-50">
+          <DarkModeToggle />
+        </div>
+        <ReviewScreen
+          slug={slug}
+          impl={impl}
+          onApprove={handleApprove}
+          onReject={handleReject}
+        />
+      </>
     )
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-      <div className="bg-white rounded-xl shadow-md p-8 w-full max-w-md">
-        <h1 className="text-2xl font-bold text-gray-800 mb-2">Scout and Wave</h1>
-        <p className="text-gray-500 text-sm mb-6">Select a plan to review.</p>
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 flex items-center justify-center">
+      <div className="fixed top-4 right-4 z-50">
+        <DarkModeToggle />
+      </div>
+      <div className="bg-white dark:bg-gray-900 rounded-xl shadow-md p-8 w-full max-w-md">
+        <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-2">Scout and Wave</h1>
+        <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">Select a plan to review.</p>
 
         {slugs.length > 0 && (
           <div className="space-y-2 mb-6">
@@ -93,7 +118,7 @@ export default function App() {
                 key={s}
                 onClick={() => handleSelect(s)}
                 disabled={loading}
-                className="w-full text-left border border-gray-200 hover:border-blue-400 hover:bg-blue-50 rounded-lg px-4 py-3 text-sm font-medium text-gray-700 transition-colors disabled:opacity-50"
+                className="w-full text-left border border-gray-200 dark:border-gray-700 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-gray-800 rounded-lg px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50"
               >
                 {s}
               </button>
@@ -102,18 +127,18 @@ export default function App() {
         )}
 
         {slugs.length === 0 && (
-          <p className="text-gray-400 text-sm mb-6">No IMPL docs found. Run <code className="bg-gray-100 px-1 rounded">saw scout</code> first.</p>
+          <p className="text-gray-400 dark:text-gray-500 text-sm mb-6">No IMPL docs found. Run <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">saw scout</code> first.</p>
         )}
 
-        <div className="border-t border-gray-200 pt-4">
-          <p className="text-gray-400 text-xs mb-2">Or enter a slug manually:</p>
+        <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+          <p className="text-gray-400 dark:text-gray-500 text-xs mb-2">Or enter a slug manually:</p>
           <form onSubmit={handleLoad} className="flex gap-2">
             <input
               type="text"
               value={slug}
               onChange={e => setSlug(e.target.value)}
               placeholder="e.g. caching-layer"
-              className="flex-1 border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="flex-1 border border-gray-300 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-800 dark:text-gray-100 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               required
             />
             <button

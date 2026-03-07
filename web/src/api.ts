@@ -33,3 +33,12 @@ export async function rejectImpl(slug: string): Promise<void> {
     throw new Error(`HTTP ${response.status}: ${await response.text()}`)
   }
 }
+
+export async function startWave(slug: string): Promise<void> {
+  const response = await fetch(`/api/wave/${encodeURIComponent(slug)}/start`, {
+    method: 'POST',
+  })
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+  }
+}

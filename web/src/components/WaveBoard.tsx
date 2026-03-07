@@ -13,12 +13,12 @@ export default function WaveBoard({ slug }: WaveBoardProps): JSX.Element {
   const completeAgents = state.agents.filter(a => a.status === 'complete').length
 
   return (
-    <div className="min-h-screen bg-gray-50 p-6">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-6">
       <div className="max-w-4xl mx-auto space-y-6">
 
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-xl font-bold text-gray-800">Wave Execution — {slug}</h1>
+          <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">Wave Execution — {slug}</h1>
           {!state.connected && (
             <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full animate-pulse">
               Reconnecting...
@@ -40,9 +40,9 @@ export default function WaveBoard({ slug }: WaveBoardProps): JSX.Element {
 
         {/* Scaffold row */}
         {state.scaffoldStatus !== 'idle' && (
-          <div className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm">
             <div className="flex items-center gap-3">
-              <span className="font-semibold text-gray-700 text-sm">Scaffold</span>
+              <span className="font-semibold text-gray-700 dark:text-gray-300 text-sm">Scaffold</span>
               <span
                 className={`text-xs font-medium px-2 py-0.5 rounded-full ${
                   state.scaffoldStatus === 'complete'
@@ -61,11 +61,11 @@ export default function WaveBoard({ slug }: WaveBoardProps): JSX.Element {
           const waveComplete = wave.agents.filter(a => a.status === 'complete').length
           const waveTotal = wave.agents.length
           return (
-            <div key={wave.wave} className="bg-white border border-gray-200 rounded-lg p-4 shadow-sm space-y-3">
+            <div key={wave.wave} className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm space-y-3">
               <div className="flex items-center justify-between">
-                <span className="font-semibold text-gray-700 text-sm">Wave {wave.wave}</span>
+                <span className="font-semibold text-gray-700 dark:text-gray-300 text-sm">Wave {wave.wave}</span>
                 {wave.complete && wave.merge_status && (
-                  <span className="text-xs text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">
+                  <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
                     merge: {wave.merge_status}
                   </span>
                 )}
@@ -86,7 +86,7 @@ export default function WaveBoard({ slug }: WaveBoardProps): JSX.Element {
 
         {/* Empty state */}
         {state.waves.length === 0 && state.scaffoldStatus === 'idle' && (
-          <div className="text-center text-gray-400 text-sm py-12">
+          <div className="text-center text-gray-400 dark:text-gray-500 text-sm py-12">
             Waiting for wave to start...
           </div>
         )}

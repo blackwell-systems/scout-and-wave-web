@@ -13,7 +13,7 @@ function getBadgeClasses(verdict: string): string {
     case 'SUITABLE WITH CAVEATS':
       return 'bg-yellow-100 text-yellow-800'
     default:
-      return 'bg-gray-100 text-gray-800'
+      return 'bg-gray-100 dark:bg-gray-800 text-gray-800 dark:text-gray-100'
   }
 }
 
@@ -30,7 +30,7 @@ export default function SuitabilityBadge({ suitability }: SuitabilityBadgeProps)
         </span>
       </div>
       {suitability.rationale && (
-        <p className="mt-2 text-sm text-gray-600">{suitability.rationale}</p>
+        <p className="mt-2 text-sm text-gray-600 dark:text-gray-300">{suitability.rationale}</p>
       )}
     </div>
   )
