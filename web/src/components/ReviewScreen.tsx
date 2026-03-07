@@ -17,6 +17,7 @@ interface ReviewScreenProps {
   impl: IMPLDocResponse
   onApprove: () => void
   onReject: () => void
+  onRefreshImpl?: (slug: string) => Promise<void>
 }
 
 type PanelKey = 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist'
@@ -33,7 +34,7 @@ const panels: Array<{ key: PanelKey; label: string }> = [
 ]
 
 export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
-  const { slug, impl, onApprove, onReject } = props
+  const { slug, impl, onApprove, onReject, onRefreshImpl } = props
   const isNotSuitable = impl.suitability.verdict === 'NOT SUITABLE'
 
   const [activePanels, setActivePanels] = useState<PanelKey[]>(
@@ -52,6 +53,16 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
     observer.observe(el)
     return () => observer.disconnect()
   }, [])
+
+  useEffect(() => {
+    const es = new EventSource(`/api/wave/${slug}/events`)
+    es.addEventListener('wave_complete', () => {
+      onRefreshImpl?.(slug)
+    })
+    return () => {
+      es.close()
+    }
+  }, [slug, onRefreshImpl])
 
   const togglePanel = (key: PanelKey) => {
     setActivePanels(prev =>

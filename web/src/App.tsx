@@ -99,6 +99,7 @@ export default function App() {
           impl={impl}
           onApprove={handleApprove}
           onReject={handleReject}
+          onRefreshImpl={handleSelect}
         />
       </>
     )
