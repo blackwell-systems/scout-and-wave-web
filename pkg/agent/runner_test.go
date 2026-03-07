@@ -14,61 +14,62 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
 
-// mockSender is a test double for the Sender interface.
-type mockSender struct {
-	mu             sync.Mutex
-	lastSystem     string
-	lastUser       string
-	responseToSend string
-	errToReturn    error
+// mockBackend is a test double for the backend.Backend interface.
+type mockBackend struct {
+	mu              sync.Mutex
+	lastSystem      string
+	lastUser        string
+	lastWorkDir     string
+	responseToSend  string
+	errToReturn     error
 }
 
-func (m *mockSender) SendMessage(systemPrompt, userMessage string) (string, error) {
+func (m *mockBackend) Run(_ context.Context, systemPrompt, userMessage, workDir string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.lastSystem = systemPrompt
 	m.lastUser = userMessage
+	m.lastWorkDir = workDir
 	return m.responseToSend, m.errToReturn
 }
 
 // TestNewRunner verifies that NewRunner returns a non-nil Runner correctly
-// wired with the provided Sender and Manager.
+// wired with the provided Backend and Manager.
 func TestNewRunner(t *testing.T) {
 	t.Parallel()
 
-	sender := &mockSender{responseToSend: "ok"}
+	b := &mockBackend{responseToSend: "ok"}
 	mgr := worktree.New(t.TempDir())
 
-	r := NewRunner(sender, mgr)
+	r := NewRunner(b, mgr)
 	if r == nil {
 		t.Fatal("NewRunner returned nil")
 	}
-	if r.client != sender {
-		t.Error("Runner.client does not reference the provided Sender")
+	if r.client != b {
+		t.Error("Runner.client does not reference the provided Backend")
 	}
 	if r.worktrees != mgr {
 		t.Error("Runner.worktrees does not reference the provided Manager")
 	}
 }
 
-// TestRunner_Execute_BuildsCorrectPrompt verifies that Execute passes the agent
-// prompt as the system prompt and builds the expected user message containing
-// the worktreePath.
-func TestRunner_Execute_BuildsCorrectPrompt(t *testing.T) {
+// TestExecute_CallsBackendRun verifies that Execute passes the agent prompt as
+// the system prompt and builds the expected user message containing worktreePath.
+func TestExecute_CallsBackendRun(t *testing.T) {
 	t.Parallel()
 
 	const worktreePath = "/some/repo/.claude/worktrees/wave1-agent-A"
 	const agentPrompt = "You are a Wave agent. Do the thing."
 
-	sender := &mockSender{responseToSend: "done"}
-	r := NewRunner(sender, worktree.New(t.TempDir()))
+	b := &mockBackend{responseToSend: "done"}
+	r := NewRunner(b, worktree.New(t.TempDir()))
 
 	spec := &types.AgentSpec{
 		Letter: "A",
 		Prompt: agentPrompt,
 	}
 
-	resp, err := r.Execute(spec, worktreePath)
+	resp, err := r.Execute(context.Background(), spec, worktreePath)
 	if err != nil {
 		t.Fatalf("Execute returned unexpected error: %v", err)
 	}
@@ -77,34 +78,39 @@ func TestRunner_Execute_BuildsCorrectPrompt(t *testing.T) {
 	}
 
 	// System prompt must equal the agent spec's prompt verbatim.
-	if sender.lastSystem != agentPrompt {
-		t.Errorf("system prompt = %q; want %q", sender.lastSystem, agentPrompt)
+	if b.lastSystem != agentPrompt {
+		t.Errorf("system prompt = %q; want %q", b.lastSystem, agentPrompt)
 	}
 
 	// User message must contain the worktree path twice (once as path, once in
 	// the cd command).
-	if !strings.Contains(sender.lastUser, worktreePath) {
-		t.Errorf("user message does not contain worktreePath %q:\n%s", worktreePath, sender.lastUser)
+	if !strings.Contains(b.lastUser, worktreePath) {
+		t.Errorf("user message does not contain worktreePath %q:\n%s", worktreePath, b.lastUser)
 	}
-	count := strings.Count(sender.lastUser, worktreePath)
+	count := strings.Count(b.lastUser, worktreePath)
 	if count < 2 {
-		t.Errorf("user message contains worktreePath %d time(s); want at least 2:\n%s", count, sender.lastUser)
+		t.Errorf("user message contains worktreePath %d time(s); want at least 2:\n%s", count, b.lastUser)
+	}
+
+	// workDir passed to backend must equal the worktree path.
+	if b.lastWorkDir != worktreePath {
+		t.Errorf("workDir passed to backend = %q; want %q", b.lastWorkDir, worktreePath)
 	}
 }
 
-// TestRunner_Execute_PropagatesError verifies that API errors are returned
+// TestExecute_BackendError verifies that backend errors are returned
 // immediately without retry.
-func TestRunner_Execute_PropagatesError(t *testing.T) {
+func TestExecute_BackendError(t *testing.T) {
 	t.Parallel()
 
 	apiErr := fmt.Errorf("upstream API failure")
-	sender := &mockSender{errToReturn: apiErr}
-	r := NewRunner(sender, worktree.New(t.TempDir()))
+	b := &mockBackend{errToReturn: apiErr}
+	r := NewRunner(b, worktree.New(t.TempDir()))
 
 	spec := &types.AgentSpec{Letter: "B", Prompt: "do something"}
-	_, err := r.Execute(spec, "/tmp/wt")
+	_, err := r.Execute(context.Background(), spec, "/tmp/wt")
 	if err == nil {
-		t.Fatal("Execute did not propagate API error")
+		t.Fatal("Execute did not propagate backend error")
 	}
 	if !strings.Contains(err.Error(), "upstream API failure") {
 		t.Errorf("error %q does not contain original message", err.Error())
@@ -151,26 +157,13 @@ verification: PASS
 	return path
 }
 
-// TestExecuteWithTools_NilToolRunner verifies that ExecuteWithTools returns an
-// error when the client does not implement ToolRunner.
-func TestExecuteWithTools_NilToolRunner(t *testing.T) {
-	t.Parallel()
-	sender := &mockSender{responseToSend: "ok"}
-	r := NewRunner(sender, worktree.New(t.TempDir()))
-	spec := &types.AgentSpec{Letter: "A", Prompt: "do work"}
-	_, err := r.ExecuteWithTools(context.Background(), spec, t.TempDir(), nil, 1)
-	if err == nil {
-		t.Fatal("expected error when client has no ToolRunner, got nil")
-	}
-}
-
 // TestRunner_ParseCompletionReport_Found verifies that ParseCompletionReport
 // returns a report when the section exists in the IMPL doc.
 func TestRunner_ParseCompletionReport_Found(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	implPath := implDocWithReport(t, dir, "A")
-	r := NewRunner(&mockSender{}, worktree.New(dir))
+	r := NewRunner(&mockBackend{}, worktree.New(dir))
 	report, err := r.ParseCompletionReport(implPath, "A")
 	if err != nil {
 		t.Fatalf("ParseCompletionReport returned error: %v", err)
@@ -186,7 +179,7 @@ func TestRunner_ParseCompletionReport_NotFound(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()
 	implPath := implDocWithReport(t, dir, "A")
-	r := NewRunner(&mockSender{}, worktree.New(dir))
+	r := NewRunner(&mockBackend{}, worktree.New(dir))
 	_, err := r.ParseCompletionReport(implPath, "Z")
 	if err == nil {
 		t.Fatal("expected error for missing agent Z, got nil")
