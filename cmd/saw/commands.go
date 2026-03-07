@@ -431,7 +431,7 @@ func runScout(args []string) error {
 	spec := types.AgentSpec{Letter: "scout", Prompt: prompt}
 
 	ctx := context.Background()
-	result, err := runner.ExecuteWithTools(ctx, &spec, repoRoot, agent.StandardTools(repoRoot), 80)
+	result, err := runner.Execute(ctx, &spec, repoRoot)
 	if err != nil {
 		return fmt.Errorf("scout: %w", err)
 	}
@@ -504,7 +504,7 @@ func runScaffold(args []string) error {
 	spec := types.AgentSpec{Letter: "scaffold", Prompt: prompt}
 
 	ctx := context.Background()
-	result, err := runner.ExecuteWithTools(ctx, &spec, repoRoot, agent.StandardTools(repoRoot), 40)
+	result, err := runner.Execute(ctx, &spec, repoRoot)
 	if err != nil {
 		return fmt.Errorf("scaffold: %w", err)
 	}
