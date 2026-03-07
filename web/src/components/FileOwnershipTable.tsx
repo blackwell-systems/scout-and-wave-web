@@ -33,9 +33,21 @@ export default function FileOwnershipTable({ fileOwnership, col4Name }: FileOwne
   )
 
   const sorted = [...fileOwnership].sort((a, b) => {
+    // Scaffold always first (wave 0 or empty wave)
+    const isAScaffold = a.agent.toLowerCase() === 'scaffold'
+    const isBScaffold = b.agent.toLowerCase() === 'scaffold'
+    if (isAScaffold && !isBScaffold) return -1
+    if (!isAScaffold && isBScaffold) return 1
+
+    // Then by wave number (treat missing wave as 0)
+    const waveA = a.wave || 0
+    const waveB = b.wave || 0
+    if (waveA !== waveB) return waveA - waveB
+
+    // Then by agent letter
     if (a.agent < b.agent) return -1
     if (a.agent > b.agent) return 1
-    return a.wave - b.wave
+    return 0
   })
 
   return (
