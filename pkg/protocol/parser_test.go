@@ -447,3 +447,256 @@ func TestParseCompletionReport_Blocked(t *testing.T) {
 		t.Error("OutOfScopeDeps should not be empty")
 	}
 }
+
+// ── TestParseIMPLDoc_KnownIssues_None ────────────────────────────────────────
+
+func TestParseIMPLDoc_KnownIssues_None(t *testing.T) {
+	content := `# IMPL: Test Feature
+
+### Known Issues
+
+None identified.
+
+---
+
+### File Ownership
+
+| file | agent-letter | wave | depends-on |
+|------|-------------|------|------------|
+| pkg/foo/foo.go | A | 1 | — |
+
+## Wave 1
+
+### Agent A: Implement foo
+
+Goal: implement foo.
+`
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(doc.KnownIssues) != 0 {
+		t.Errorf("KnownIssues = %d items; want 0 (none identified)", len(doc.KnownIssues))
+	}
+}
+
+// ── TestParseIMPLDoc_KnownIssues_WithText ────────────────────────────────────
+
+func TestParseIMPLDoc_KnownIssues_WithText(t *testing.T) {
+	content := `# IMPL: Test Feature
+
+### Known Issues
+
+The existing parser does not handle nested code blocks correctly.
+
+---
+
+### File Ownership
+
+| file | agent-letter | wave | depends-on |
+|------|-------------|------|------------|
+| pkg/foo/foo.go | A | 1 | — |
+
+## Wave 1
+
+### Agent A: Implement foo
+
+Goal: implement foo.
+`
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(doc.KnownIssues) != 1 {
+		t.Fatalf("KnownIssues count = %d; want 1", len(doc.KnownIssues))
+	}
+	if !strings.Contains(doc.KnownIssues[0].Description, "nested code blocks") {
+		t.Errorf("KnownIssues[0].Description = %q; want text about nested code blocks", doc.KnownIssues[0].Description)
+	}
+}
+
+// ── TestParseIMPLDoc_ScaffoldsDetail ─────────────────────────────────────────
+
+func TestParseIMPLDoc_ScaffoldsDetail(t *testing.T) {
+	content := `# IMPL: Test Feature
+
+### Scaffolds
+
+| File | Contents | Import path | Status |
+|------|----------|-------------|--------|
+` + "| `pkg/types/types.go` | Interface definitions | `github.com/example/pkg/types` | committed |" + `
+` + "| `pkg/api/api.go` | API contract | `github.com/example/pkg/api` | pending |" + `
+
+---
+
+### File Ownership
+
+| file | agent-letter | wave | depends-on |
+|------|-------------|------|------------|
+| pkg/foo/foo.go | A | 1 | — |
+
+## Wave 1
+
+### Agent A: Implement foo
+
+Goal: implement foo.
+`
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(doc.ScaffoldsDetail) != 2 {
+		t.Fatalf("ScaffoldsDetail count = %d; want 2", len(doc.ScaffoldsDetail))
+	}
+	if doc.ScaffoldsDetail[0].FilePath != "pkg/types/types.go" {
+		t.Errorf("ScaffoldsDetail[0].FilePath = %q; want %q", doc.ScaffoldsDetail[0].FilePath, "pkg/types/types.go")
+	}
+	if doc.ScaffoldsDetail[0].ImportPath != "github.com/example/pkg/types" {
+		t.Errorf("ScaffoldsDetail[0].ImportPath = %q; want %q", doc.ScaffoldsDetail[0].ImportPath, "github.com/example/pkg/types")
+	}
+	if doc.ScaffoldsDetail[1].FilePath != "pkg/api/api.go" {
+		t.Errorf("ScaffoldsDetail[1].FilePath = %q; want %q", doc.ScaffoldsDetail[1].FilePath, "pkg/api/api.go")
+	}
+}
+
+// ── TestParseIMPLDoc_InterfaceContracts ──────────────────────────────────────
+
+func TestParseIMPLDoc_InterfaceContracts(t *testing.T) {
+	content := `# IMPL: Test Feature
+
+### Interface Contracts
+
+#### Backend interface
+
+` + "```go" + `
+type Backend interface {
+    Run(ctx context.Context) error
+}
+` + "```" + `
+
+All agents must implement this interface.
+
+---
+
+### File Ownership
+
+| file | agent-letter | wave | depends-on |
+|------|-------------|------|------------|
+| pkg/foo/foo.go | A | 1 | — |
+
+## Wave 1
+
+### Agent A: Implement foo
+
+Goal: implement foo.
+`
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if doc.InterfaceContractsText == "" {
+		t.Fatal("InterfaceContractsText is empty")
+	}
+	if !strings.Contains(doc.InterfaceContractsText, "Backend interface") {
+		t.Errorf("InterfaceContractsText does not contain 'Backend interface': %q", doc.InterfaceContractsText)
+	}
+	if !strings.Contains(doc.InterfaceContractsText, "```go") {
+		t.Errorf("InterfaceContractsText does not preserve code fences: %q", doc.InterfaceContractsText)
+	}
+	if !strings.Contains(doc.InterfaceContractsText, "Run(ctx context.Context)") {
+		t.Errorf("InterfaceContractsText does not contain interface method: %q", doc.InterfaceContractsText)
+	}
+}
+
+// ── TestParseIMPLDoc_DependencyGraph ─────────────────────────────────────────
+
+func TestParseIMPLDoc_DependencyGraph(t *testing.T) {
+	content := `# IMPL: Test Feature
+
+### Dependency Graph
+
+` + "```" + `
+scaffold --> Wave 1 [A, B]
+Wave 1   --> Wave 2 [C]
+` + "```" + `
+
+Roots: scaffold
+Leaves: C
+
+---
+
+### File Ownership
+
+| file | agent-letter | wave | depends-on |
+|------|-------------|------|------------|
+| pkg/foo/foo.go | A | 1 | — |
+
+## Wave 1
+
+### Agent A: Implement foo
+
+Goal: implement foo.
+`
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if doc.DependencyGraphText == "" {
+		t.Fatal("DependencyGraphText is empty")
+	}
+	if !strings.Contains(doc.DependencyGraphText, "scaffold --> Wave 1") {
+		t.Errorf("DependencyGraphText does not contain expected content: %q", doc.DependencyGraphText)
+	}
+	if !strings.Contains(doc.DependencyGraphText, "Roots: scaffold") {
+		t.Errorf("DependencyGraphText should preserve prose after code fence: %q", doc.DependencyGraphText)
+	}
+}
+
+// ── TestParseIMPLDoc_PostMergeChecklist ──────────────────────────────────────
+
+func TestParseIMPLDoc_PostMergeChecklist(t *testing.T) {
+	content := `# IMPL: Test Feature
+
+### Orchestrator Post-Merge Checklist
+
+**After Wave 1 completes:**
+
+- [ ] Read Agent A completion report
+- [ ] Merge Agent A
+- [ ] Run verification: ` + "`go test ./...`" + `
+
+---
+
+### File Ownership
+
+| file | agent-letter | wave | depends-on |
+|------|-------------|------|------------|
+| pkg/foo/foo.go | A | 1 | — |
+
+## Wave 1
+
+### Agent A: Implement foo
+
+Goal: implement foo.
+`
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if doc.PostMergeChecklistText == "" {
+		t.Fatal("PostMergeChecklistText is empty")
+	}
+	if !strings.Contains(doc.PostMergeChecklistText, "After Wave 1 completes") {
+		t.Errorf("PostMergeChecklistText does not contain expected header: %q", doc.PostMergeChecklistText)
+	}
+	if !strings.Contains(doc.PostMergeChecklistText, "Read Agent A completion report") {
+		t.Errorf("PostMergeChecklistText does not contain checklist items: %q", doc.PostMergeChecklistText)
+	}
+}
+

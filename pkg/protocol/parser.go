@@ -164,6 +164,37 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 			flushAgent()
 			state = stateFileOwner
 
+		// ── Known Issues section: ### Known Issues
+		case trimmed == "### Known Issues":
+			flushAgent()
+			doc.KnownIssues = parseKnownIssuesSection(scanner)
+			state = stateTop
+
+		// ── Scaffolds section: ### Scaffolds
+		case trimmed == "### Scaffolds":
+			flushAgent()
+			doc.ScaffoldsDetail = parseScaffoldsDetailSection(scanner)
+			// DEBUG: fmt.Printf("DEBUG: Parsed %d scaffolds\n", len(doc.ScaffoldsDetail))
+			state = stateTop
+
+		// ── Interface Contracts section: ### Interface Contracts
+		case trimmed == "### Interface Contracts":
+			flushAgent()
+			doc.InterfaceContractsText = parseInterfaceContractsSection(scanner)
+			state = stateTop
+
+		// ── Dependency Graph section: ### Dependency Graph
+		case trimmed == "### Dependency Graph":
+			flushAgent()
+			doc.DependencyGraphText = parseDependencyGraphSection(scanner)
+			state = stateTop
+
+		// ── Post-Merge Checklist section: ### Orchestrator Post-Merge Checklist
+		case strings.HasPrefix(trimmed, "### Orchestrator Post-Merge Checklist"):
+			flushAgent()
+			doc.PostMergeChecklistText = parsePostMergeChecklistSection(scanner)
+			state = stateTop
+
 		// ── Agent subsection: ### Agent X: Description  or  #### Agent X — Description
 		//    Accepted in any state (wave, agent, or top-level). If no ## Wave N
 		//    section is active, auto-create wave 1.
@@ -394,6 +425,228 @@ done:
 	}
 
 	return report, nil
+}
+
+// parseKnownIssuesSection extracts "### Known Issues" content as []types.KnownIssue.
+// Format: Free-form text (bullets, paragraphs, or "None identified"). Parse heuristically.
+func parseKnownIssuesSection(scanner *bufio.Scanner) []types.KnownIssue {
+	var issues []types.KnownIssue
+	var currentIssue strings.Builder
+	inYAMLBlock := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Stop at next header
+		if strings.HasPrefix(trimmed, "### ") || strings.HasPrefix(trimmed, "## ") {
+			break
+		}
+		if strings.HasPrefix(trimmed, "---") && currentIssue.Len() == 0 {
+			// Horizontal rule signals end of section
+			break
+		}
+
+		// Track code fences
+		if strings.HasPrefix(trimmed, "```") {
+			inYAMLBlock = !inYAMLBlock
+		}
+
+		if inYAMLBlock || trimmed == "" || trimmed == "---" {
+			continue
+		}
+
+		// Accumulate text
+		currentIssue.WriteString(line)
+		currentIssue.WriteString("\n")
+	}
+
+	// Simple heuristic: if text contains "None identified" or "None", return empty list
+	text := currentIssue.String()
+	if strings.Contains(strings.ToLower(text), "none identified") ||
+		(strings.Contains(strings.ToLower(text), "none") && len(text) < 100) {
+		return issues
+	}
+
+	// Otherwise, treat entire section as a single issue description
+	if trimmed := strings.TrimSpace(text); trimmed != "" {
+		issues = append(issues, types.KnownIssue{
+			Description: trimmed,
+			Status:      "",
+			Workaround:  "",
+		})
+	}
+
+	return issues
+}
+
+// parseScaffoldsDetailSection extracts "### Scaffolds" table as []types.ScaffoldFile.
+// Format: markdown table with columns: File | Contents | Import path | Status
+func parseScaffoldsDetailSection(scanner *bufio.Scanner) []types.ScaffoldFile {
+	var scaffolds []types.ScaffoldFile
+	inTable := false
+	tableLinesSeen := 0
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Stop at next header
+		if strings.HasPrefix(trimmed, "### ") || strings.HasPrefix(trimmed, "## ") {
+			break
+		}
+
+		// Stop at horizontal rule only if we've seen at least 2 table lines (header + separator)
+		// and we're not currently in a table row
+		if strings.HasPrefix(trimmed, "---") && !strings.Contains(line, "|") && tableLinesSeen >= 2 {
+			break
+		}
+
+		if !strings.HasPrefix(line, "|") {
+			// If we were in a table and hit non-table content after seeing data rows, we're done
+			if inTable && tableLinesSeen > 2 {
+				break
+			}
+			continue
+		}
+
+		tableLinesSeen++
+
+		// Parse table rows
+		parts := strings.Split(line, "|")
+		// A 4-column table like | A | B | C | D | has 6 parts when split by |
+		// (empty string before first | and after last |)
+		if len(parts) < 4 {
+			continue
+		}
+
+		file := strings.TrimSpace(parts[1])
+		contents := ""
+		importPath := ""
+		if len(parts) > 2 {
+			contents = strings.TrimSpace(parts[2])
+		}
+		if len(parts) > 3 {
+			importPath = strings.TrimSpace(parts[3])
+		}
+
+		// Skip header and separator rows
+		if strings.Contains(file, "---") || strings.ToLower(file) == "file" {
+			inTable = true
+			continue
+		}
+
+		if file != "" {
+			// Clean backticks from file path, contents, and import path
+			file = strings.Trim(file, "`")
+			importPath = strings.Trim(importPath, "`")
+			scaffolds = append(scaffolds, types.ScaffoldFile{
+				FilePath:   file,
+				Contents:   contents,
+				ImportPath: importPath,
+			})
+		}
+	}
+
+	return scaffolds
+}
+
+// parseInterfaceContractsSection extracts "### Interface Contracts" as raw markdown.
+// Captures everything until next ### or ## header.
+func parseInterfaceContractsSection(scanner *bufio.Scanner) string {
+	var buf strings.Builder
+	inYAMLBlock := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Track code fences to avoid stopping inside them
+		if strings.HasPrefix(trimmed, "```") {
+			inYAMLBlock = !inYAMLBlock
+			buf.WriteString(line)
+			buf.WriteString("\n")
+			continue
+		}
+
+		// Stop at next section header (but not if inside code block)
+		if !inYAMLBlock && (strings.HasPrefix(trimmed, "### ") || strings.HasPrefix(trimmed, "## ")) {
+			break
+		}
+
+		// Stop at horizontal rule between sections
+		if !inYAMLBlock && trimmed == "---" {
+			break
+		}
+
+		buf.WriteString(line)
+		buf.WriteString("\n")
+	}
+
+	return strings.TrimSpace(buf.String())
+}
+
+// parseDependencyGraphSection extracts "### Dependency Graph" as raw markdown.
+func parseDependencyGraphSection(scanner *bufio.Scanner) string {
+	var buf strings.Builder
+	inYAMLBlock := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Track code fences
+		if strings.HasPrefix(trimmed, "```") {
+			inYAMLBlock = !inYAMLBlock
+			buf.WriteString(line)
+			buf.WriteString("\n")
+			continue
+		}
+
+		// Stop at next section header
+		if !inYAMLBlock && (strings.HasPrefix(trimmed, "### ") || strings.HasPrefix(trimmed, "## ")) {
+			break
+		}
+
+		// Stop at horizontal rule
+		if !inYAMLBlock && trimmed == "---" {
+			break
+		}
+
+		buf.WriteString(line)
+		buf.WriteString("\n")
+	}
+
+	return strings.TrimSpace(buf.String())
+}
+
+// parsePostMergeChecklistSection extracts "### Orchestrator Post-Merge Checklist" as raw markdown.
+func parsePostMergeChecklistSection(scanner *bufio.Scanner) string {
+	var buf strings.Builder
+	inYAMLBlock := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Track code fences
+		if strings.HasPrefix(trimmed, "```") {
+			inYAMLBlock = !inYAMLBlock
+			buf.WriteString(line)
+			buf.WriteString("\n")
+			continue
+		}
+
+		// Stop at next section header
+		if !inYAMLBlock && (strings.HasPrefix(trimmed, "### ") || strings.HasPrefix(trimmed, "## ")) {
+			break
+		}
+
+		buf.WriteString(line)
+		buf.WriteString("\n")
+	}
+
+	return strings.TrimSpace(buf.String())
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

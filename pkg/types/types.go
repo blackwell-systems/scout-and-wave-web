@@ -68,6 +68,11 @@ type IMPLDoc struct {
 	Waves             []Wave
 	FileOwnership     map[string]FileOwnershipInfo // file path -> ownership info
 	FileOwnershipCol4 string                       // detected header name for 4th column (e.g. "Action", "Depends On")
+	KnownIssues            []KnownIssue
+	ScaffoldsDetail        []ScaffoldFile
+	InterfaceContractsText string
+	DependencyGraphText    string
+	PostMergeChecklistText string
 }
 
 // FileOwnershipInfo holds parsed data for one row of the file ownership table.
@@ -110,4 +115,18 @@ type InterfaceDeviation struct {
 	Description              string
 	DownstreamActionRequired bool
 	Affects                  []string
+}
+
+// KnownIssue represents an identified issue in the Known Issues section
+type KnownIssue struct {
+	Description string
+	Status      string
+	Workaround  string
+}
+
+// ScaffoldFile represents a scaffold file entry from the detailed Scaffolds table
+type ScaffoldFile struct {
+	FilePath   string
+	Contents   string
+	ImportPath string
 }
