@@ -37,7 +37,9 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
   const { slug, impl, onApprove, onReject } = props
   const isNotSuitable = impl.suitability.verdict === 'NOT SUITABLE'
 
-  const [activePanels, setActivePanels] = useState<Set<PanelKey>>(new Set(['overview']))
+  const [activePanels, setActivePanels] = useState<Set<PanelKey>>(
+    new Set(['overview', 'wave-structure', 'dependency-graph'])
+  )
 
   const togglePanel = (key: PanelKey) => {
     setActivePanels(prev => {
@@ -67,9 +69,13 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
               <Button
                 key={panel.key}
                 onClick={() => togglePanel(panel.key)}
-                variant={activePanels.has(panel.key) ? 'default' : 'outline'}
+                variant="outline"
                 size="sm"
-                className="text-xs"
+                className={`text-xs ${
+                  activePanels.has(panel.key)
+                    ? 'bg-primary/10 border-primary/30 hover:bg-primary/15'
+                    : 'hover:bg-accent'
+                }`}
               >
                 {panel.label}
               </Button>
