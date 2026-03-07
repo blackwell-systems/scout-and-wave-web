@@ -5,13 +5,16 @@ import (
 )
 
 // validTransitions maps each state to the set of states reachable from it.
-// The SAW protocol defines 7 states with the following directed edges.
+// The SAW protocol defines 10 states with the following directed edges.
 var validTransitions = map[types.State][]types.State{
 	types.SuitabilityPending: {types.Reviewed, types.NotSuitable},
-	types.Reviewed:           {types.WavePending},
+	types.Reviewed:           {types.ScaffoldPending, types.WavePending},
+	types.ScaffoldPending:    {types.WavePending, types.Blocked},
 	types.WavePending:        {types.WaveExecuting},
-	types.WaveExecuting:      {types.WaveVerified},
+	types.WaveExecuting:      {types.WaveMerging, types.WaveVerified, types.Blocked},
+	types.WaveMerging:        {types.WaveVerified, types.Blocked},
 	types.WaveVerified:       {types.Complete, types.WavePending},
+	types.Blocked:            {types.WavePending, types.WaveVerified},
 	types.NotSuitable:        {},
 	types.Complete:           {},
 }

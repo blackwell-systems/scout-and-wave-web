@@ -4,12 +4,15 @@ package types
 type State int
 
 const (
-	SuitabilityPending State = iota
+	SuitabilityPending State = iota // keep first for backward compat
 	NotSuitable
 	Reviewed
+	ScaffoldPending // NEW — scaffold agent running
 	WavePending
 	WaveExecuting
+	WaveMerging // NEW — merge in progress
 	WaveVerified
+	Blocked // NEW — agent failure / recovery
 	Complete
 )
 
@@ -22,12 +25,18 @@ func (s State) String() string {
 		return "NotSuitable"
 	case Reviewed:
 		return "Reviewed"
+	case ScaffoldPending:
+		return "ScaffoldPending"
 	case WavePending:
 		return "WavePending"
 	case WaveExecuting:
 		return "WaveExecuting"
+	case WaveMerging:
+		return "WaveMerging"
 	case WaveVerified:
 		return "WaveVerified"
+	case Blocked:
+		return "Blocked"
 	case Complete:
 		return "Complete"
 	default:
@@ -49,6 +58,7 @@ type IMPLDoc struct {
 	FeatureName   string
 	Status        string
 	TestCommand   string            // post-merge verification command (e.g. "go test ./...")
+	LintCommand   string            // check-mode lint command (e.g. "go vet ./...")
 	Waves         []Wave
 	FileOwnership map[string]string // file path -> agent letter
 }
