@@ -6,12 +6,17 @@ interface WaveStructurePanelProps {
 }
 
 const AGENT_COLORS: Record<string, string> = {
-  A: 'bg-blue-500 text-white',
-  B: 'bg-purple-500 text-white',
-  C: 'bg-orange-500 text-white',
-  D: 'bg-teal-500 text-white',
-  E: 'bg-pink-500 text-white',
-  F: 'bg-green-500 text-white',
+  A: 'bg-blue-500/10 border-2 border-blue-500/30 text-blue-700 dark:text-blue-300',
+  B: 'bg-purple-500/10 border-2 border-purple-500/30 text-purple-700 dark:text-purple-300',
+  C: 'bg-orange-500/10 border-2 border-orange-500/30 text-orange-700 dark:text-orange-300',
+  D: 'bg-teal-500/10 border-2 border-teal-500/30 text-teal-700 dark:text-teal-300',
+  E: 'bg-pink-500/10 border-2 border-pink-500/30 text-pink-700 dark:text-pink-300',
+  F: 'bg-green-500/10 border-2 border-green-500/30 text-green-700 dark:text-green-300',
+  G: 'bg-indigo-500/10 border-2 border-indigo-500/30 text-indigo-700 dark:text-indigo-300',
+  H: 'bg-rose-500/10 border-2 border-rose-500/30 text-rose-700 dark:text-rose-300',
+  I: 'bg-cyan-500/10 border-2 border-cyan-500/30 text-cyan-700 dark:text-cyan-300',
+  J: 'bg-amber-500/10 border-2 border-amber-500/30 text-amber-700 dark:text-amber-300',
+  K: 'bg-lime-500/10 border-2 border-lime-500/30 text-lime-700 dark:text-lime-300',
 }
 
 export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): JSX.Element {
@@ -58,8 +63,8 @@ export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): J
                 {wave.agents.map(agentLetter => (
                   <div
                     key={agentLetter}
-                    className={`flex items-center justify-center w-12 h-12 rounded-lg font-bold text-lg shadow-sm ${
-                      AGENT_COLORS[agentLetter] || 'bg-gray-500 text-white'
+                    className={`flex items-center justify-center w-12 h-12 rounded-lg font-semibold text-base ${
+                      AGENT_COLORS[agentLetter] || 'bg-gray-500/10 border-2 border-gray-500/30 text-gray-700 dark:text-gray-300'
                     }`}
                   >
                     {agentLetter}
