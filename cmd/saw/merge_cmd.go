@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"path/filepath"
@@ -19,11 +20,14 @@ func runMerge(args []string) error {
 	waveNum := fs.Int("wave", 1, "Wave number to merge (default: 1)")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return fmt.Errorf("merge: %w", err)
 	}
 
 	if *implPath == "" {
-		return fmt.Errorf("merge: --impl flag is required")
+		return fmt.Errorf("merge: --impl flag is required\nRun 'saw merge --help' for usage.")
 	}
 
 	repoPath, err := findRepoRoot(filepath.Dir(*implPath))

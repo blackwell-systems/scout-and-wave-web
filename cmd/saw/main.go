@@ -68,10 +68,10 @@ Commands:
   merge     Merge agent worktrees for a completed wave
   serve     Start a local HTTP server for reviewing IMPL docs
 
-Flags:
-  --impl <path>   Path to IMPL doc (required)
-  --wave <n>      Wave number to execute (default: 1)
-  --version       Print version and exit
-  --help          Print this help and exit
+Global flags:
+  --version   Print version and exit
+  --help      Print this help and exit
+
+Run 'saw <command> --help' for per-command flags.
 `)
 }

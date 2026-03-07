@@ -78,11 +78,14 @@ func runWave(args []string) error {
 	auto := fs.Bool("auto", false, "Skip inter-wave approval prompts (default: false)")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return fmt.Errorf("wave: %w", err)
 	}
 
 	if *implPath == "" {
-		return errors.New("wave: --impl is required")
+		return errors.New("wave: --impl is required\nRun 'saw wave --help' for usage.")
 	}
 
 	repoPath, err := findRepoRoot(filepath.Dir(*implPath))
@@ -200,11 +203,14 @@ func runStatus(args []string) error {
 	showMissing := fs.Bool("missing", false, "List agents missing completion reports (default: false)")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return fmt.Errorf("status: %w", err)
 	}
 
 	if *implPath == "" {
-		return errors.New("status: --impl is required")
+		return errors.New("status: --impl is required\nRun 'saw status --help' for usage.")
 	}
 
 	doc, err := protocol.ParseIMPLDoc(*implPath)
@@ -381,11 +387,14 @@ func runScout(args []string) error {
 	backendKind := fs.String("backend", "", "Backend to use: api, cli, or auto (default: auto; env: SAW_BACKEND)")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return fmt.Errorf("scout: %w", err)
 	}
 
 	if *feature == "" {
-		return errors.New("scout: --feature is required")
+		return errors.New("scout: --feature is required\nRun 'saw scout --help' for usage.")
 	}
 
 	// Resolve repoRoot.
@@ -451,11 +460,14 @@ func runScaffold(args []string) error {
 	backendKind := fs.String("backend", "", "Backend to use: api, cli, or auto (default: auto; env: SAW_BACKEND)")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return fmt.Errorf("scaffold: %w", err)
 	}
 
 	if *implPath == "" {
-		return errors.New("scaffold: --impl is required")
+		return errors.New("scaffold: --impl is required\nRun 'saw scaffold --help' for usage.")
 	}
 
 	// Resolve absolute IMPL path.

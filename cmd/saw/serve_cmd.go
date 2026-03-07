@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -28,6 +29,9 @@ func runServe(args []string) error {
 	noBrowser := fs.Bool("no-browser", false, "Skip opening the browser")
 
 	if err := fs.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
 		return fmt.Errorf("serve: %w", err)
 	}
 
