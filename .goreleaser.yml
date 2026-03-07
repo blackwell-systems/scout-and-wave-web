@@ -1,0 +1,55 @@
+version: 2
+
+project_name: saw
+
+before:
+  hooks:
+    - go mod verify
+
+builds:
+  - id: saw
+    main: ./cmd/saw
+    binary: saw
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - darwin
+      - linux
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w
+
+archives:
+  - id: saw
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: checksums.txt
+
+release:
+  github:
+    owner: blackwell-systems
+    name: scout-and-wave-go
+
+brews:
+  - name: saw
+    repository:
+      owner: blackwell-systems
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    commit_author:
+      name: blackwell-systems
+      email: noreply@blackwell.systems
+    homepage: https://github.com/blackwell-systems/scout-and-wave-go
+    description: CLI for the Scout-and-Wave parallel agent coordination protocol
+    license: MIT
+    install: |
+      bin.install "saw"
+    test: |
+      system "#{bin}/saw", "--version"
