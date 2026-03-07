@@ -14,6 +14,9 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 
 - **Wave structure diagram showing only 1 wave** — parser now regroups agents using file ownership table wave numbers when IMPL doc lacks `## Wave N` headers
+- **Scaffold node missing from wave diagram** — API now detects scaffold files from file ownership table and sets `scaffold.required: true`
+- **Scaffold rows sorted last in file ownership table** — Scaffold Agent now sorted first (before Wave 1), then by wave number, then by agent letter
+- **Light mode file ownership table contrast** — row background colors darkened from `-50` to `-100` for better visibility
 - **Cold-start audit findings (P0-P3)** — port mismatch in README (`:8080` → `localhost:7432`), prerequisites section, IMPL doc/jargon definitions, quickstart workflow, `--help` exit code, missing-flag usage hints, build-from-source docs, sample IMPL doc, protocol repo relationship, changelog version gap note
 
 ---
