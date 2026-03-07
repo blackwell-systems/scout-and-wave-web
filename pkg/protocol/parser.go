@@ -102,6 +102,19 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 			val = strings.Trim(val, "`")
 			doc.TestCommand = val
 
+		// ── Metadata: **Lint Command:** go vet ./...  (or without bold, or lint_command:)
+		case state == stateTop && (strings.HasPrefix(trimmed, "**Lint Command:**") ||
+			strings.HasPrefix(trimmed, "Lint Command:") ||
+			strings.HasPrefix(trimmed, "lint_command:")):
+			val := trimmed
+			if idx := strings.Index(val, ":"); idx >= 0 {
+				val = strings.TrimSpace(val[idx+1:])
+			}
+			val = strings.TrimLeft(val, "* ")
+			val = strings.TrimSpace(val)
+			val = strings.Trim(val, "`")
+			doc.LintCommand = val
+
 		// ── Wave section: ## Wave N
 		case strings.HasPrefix(line, "## Wave "):
 			flushWave()
