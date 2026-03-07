@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.1.1] - 2026-03-06
+
+### Added
+- Binary releases for Linux, macOS, and Windows (amd64 + arm64) via GoReleaser
+- GitHub Actions release workflow triggered on `v*` tags
+- GitHub repository topics for discoverability
+- Test coverage improved from 66.8% to 73.6%
+- `go tool cover` coverage reporting in CI
+- Godoc comments on all exported symbols for pkg.go.dev
+
+### Changed
+- GoReleaser config: version injected via ldflags (`-X main.version={{.Version}}`); archive includes version in filename; Windows uses `.zip`
+- `saw --version` now reports the build-time version (not hardcoded `v0.1.0`)
+
 ## [0.1.0] - 2026-03-06
 
 Initial release of the Go implementation of the Scout-and-Wave protocol.
