@@ -5,7 +5,7 @@ export function useDarkMode(): [boolean, () => void] {
     const stored = localStorage.getItem('theme')
     if (stored === 'dark') return true
     if (stored === 'light') return false
-    return window.matchMedia('(prefers-color-scheme: dark)').matches
+    return true // default to dark mode
   }
 
   const [isDark, setIsDark] = useState<boolean>(getInitialDark)
