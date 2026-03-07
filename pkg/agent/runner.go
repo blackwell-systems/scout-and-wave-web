@@ -3,6 +3,7 @@
 package agent
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -20,16 +21,22 @@ type Sender interface {
 
 // Runner orchestrates agent execution in worktree contexts.
 type Runner struct {
-	client    Sender
-	worktrees *worktree.Manager
+	client     Sender
+	toolRunner ToolRunner
+	worktrees  *worktree.Manager
 }
 
 // NewRunner creates a Runner backed by the given Sender and worktree Manager.
+// If client also implements ToolRunner, tool use is enabled automatically.
 func NewRunner(client Sender, worktrees *worktree.Manager) *Runner {
-	return &Runner{
+	r := &Runner{
 		client:    client,
 		worktrees: worktrees,
 	}
+	if tr, ok := client.(ToolRunner); ok {
+		r.toolRunner = tr
+	}
+	return r
 }
 
 // Execute sends agentSpec.Prompt to the LLM API as the system prompt, paired
@@ -52,6 +59,19 @@ func (r *Runner) Execute(agentSpec *types.AgentSpec, worktreePath string) (strin
 	}
 
 	return response, nil
+}
+
+// ExecuteWithTools runs agentSpec.Prompt through a tool use loop, giving the
+// agent access to the provided tools. workDir scopes all file operations.
+// maxTurns=0 uses the client default (50).
+func (r *Runner) ExecuteWithTools(ctx context.Context, agentSpec *types.AgentSpec, workDir string, tools []Tool, maxTurns int) (string, error) {
+	if r.toolRunner == nil {
+		return "", fmt.Errorf("runner: client does not support tool use")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return r.toolRunner.RunWithTools(ctx, agentSpec.Prompt, tools, maxTurns)
 }
 
 // ParseCompletionReport reads the IMPL doc at implDocPath and extracts the
