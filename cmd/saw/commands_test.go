@@ -162,10 +162,9 @@ func TestPrintUsage(t *testing.T) {
 		"status",
 		"scout",
 		"scaffold",
-		"--impl",
-		"--wave",
 		"--version",
 		"--help",
+		"Run 'saw <command> --help' for per-command flags",
 	}
 	for _, s := range expectedStrings {
 		if !strings.Contains(output, s) {
