@@ -6,11 +6,11 @@ interface FileOwnershipTableProps {
 }
 
 const ROW_COLORS = [
-  { bg: 'bg-blue-50 dark:bg-blue-950', text: 'text-gray-800 dark:text-blue-200' },
-  { bg: 'bg-purple-50 dark:bg-purple-950', text: 'text-gray-800 dark:text-purple-200' },
-  { bg: 'bg-orange-50 dark:bg-orange-950', text: 'text-gray-800 dark:text-orange-200' },
-  { bg: 'bg-teal-50 dark:bg-teal-950', text: 'text-gray-800 dark:text-teal-200' },
-  { bg: 'bg-pink-50 dark:bg-pink-950', text: 'text-gray-800 dark:text-pink-200' },
+  { bg: 'bg-blue-100 dark:bg-blue-950', text: 'text-gray-800 dark:text-blue-200' },
+  { bg: 'bg-purple-100 dark:bg-purple-950', text: 'text-gray-800 dark:text-purple-200' },
+  { bg: 'bg-orange-100 dark:bg-orange-950', text: 'text-gray-800 dark:text-orange-200' },
+  { bg: 'bg-teal-100 dark:bg-teal-950', text: 'text-gray-800 dark:text-teal-200' },
+  { bg: 'bg-pink-100 dark:bg-pink-950', text: 'text-gray-800 dark:text-pink-200' },
 ]
 
 function getAgentColor(agentIndex: number): { bg: string; text: string } {
