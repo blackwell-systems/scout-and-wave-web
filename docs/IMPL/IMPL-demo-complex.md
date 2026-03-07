@@ -372,51 +372,231 @@ Wave 3:  [I] [J] [K]         <- 3 parallel agents (all leaves)
 
 ### Agent Prompts
 
-(Placeholder prompts - in a real IMPL doc these would be full multi-page instructions)
+#### Agent A — Database Schema & Migrations
 
-#### Agent A - Database Schema
+**Role & mission:** You are Wave 1 Agent A. Design and implement the database schema for the platform's four core tables: `users`, `payments`, `notifications`, and `events`.
 
-**Role & mission:** You are Wave 1 Agent A. Create database schema and migrations for users, payments, notifications, and events tables...
+**Files you own:**
+- `pkg/db/schema.go` — table structs and GORM model tags
+- `migrations/001_initial_schema.sql` — idempotent migration with `IF NOT EXISTS`
+- `migrations/002_indexes.sql` — composite indexes for common query patterns
 
-#### Agent B - API Server Foundation
+**Key requirements:**
+1. All tables must include `id` (UUID), `created_at`, `updated_at`, and `deleted_at` (soft delete) columns
+2. Use `LOCK=NONE` for MySQL or `CREATE INDEX CONCURRENTLY` for Postgres to avoid table locks (see Known Issues)
+3. Foreign keys: `payments.user_id → users.id`, `notifications.user_id → users.id`, `events.user_id → users.id`
+4. The `events` table needs a JSONB `metadata` column for flexible event payloads
 
-**Role & mission:** You are Wave 1 Agent B. Build the HTTP server foundation with routing, middleware chain, and error handling...
+**Interface contracts:** Export the types defined in `pkg/db/entities.go` (scaffold). Wave 2 agents (E, F, G, H) will import these directly. Do not modify the scaffold file — implement against the interface it defines.
 
-#### Agent C - Auth Middleware
+**Verification:** `go test ./pkg/db/... && go vet ./pkg/db/...`
 
-**Role & mission:** You are Wave 1 Agent C. Implement JWT validation, session management, and RBAC helpers...
+#### Agent B — API Server Foundation
 
-#### Agent D - Redis Cache Client
+**Role & mission:** You are Wave 1 Agent B. Build the core HTTP server with routing, middleware chain, structured error responses, and health/readiness endpoints.
 
-**Role & mission:** You are Wave 1 Agent D. Create Redis client wrapper with connection pooling and circuit breaker...
+**Files you own:**
+- `pkg/api/server.go` — server struct, `NewServer()`, `ListenAndServe()`
+- `pkg/api/routes.go` — route registration, group prefixes (`/api/v1/`)
+- `pkg/api/middleware.go` — logging, recovery, request ID, CORS
+- `pkg/api/errors.go` — standard error response format `{error, code, request_id}`
 
-#### Agent E - User Profiles
+**Key requirements:**
+1. Use `chi` router for HTTP mux — lightweight, stdlib-compatible
+2. Middleware chain order: RequestID → Logger → Recovery → CORS → (auth injected per-route by Wave 2)
+3. Health endpoint `GET /healthz` returns `200` with `{"status":"ok","version":"..."}`
+4. All error responses must include the `X-Request-ID` header for traceability
+5. Graceful shutdown on SIGINT/SIGTERM with 30s timeout for in-flight requests
 
-**Role & mission:** You are Wave 2 Agent E. Build user profile CRUD API and frontend ProfilePage component. Depends on Agent A's schema...
+**Interface contracts:** Implement the `RouteRegistrar` interface from `pkg/api/contracts.go` (scaffold). Wave 2 agents will register their routes via this interface.
 
-#### Agent F - Payment Processing
+**Verification:** `go test ./pkg/api/... && go vet ./pkg/api/...`
 
-**Role & mission:** You are Wave 2 Agent F. Integrate Stripe checkout, subscriptions, and webhook handlers. Depends on Agents A (payments table) and B (API routes)...
+#### Agent C — Auth Middleware
 
-#### Agent G - Notifications
+**Role & mission:** You are Wave 1 Agent C. Implement JWT token validation, session management, and role-based access control helpers.
 
-**Role & mission:** You are Wave 2 Agent G. Implement email (SendGrid) and push (FCM) notification delivery. Depends on Agent B's API endpoints...
+**Files you own:**
+- `pkg/auth/middleware.go` — `AuthRequired()` and `RoleRequired(roles ...string)` middleware
+- `pkg/auth/jwt.go` — token parsing, claims extraction, key rotation support
+- `pkg/auth/session.go` — session store interface with Redis-backed implementation
+- `pkg/auth/rbac.go` — role definitions and permission checking
 
-#### Agent H - Analytics
+**Key requirements:**
+1. JWT validation must support both HS256 (dev) and RS256 (production) algorithms
+2. Claims must include: `sub` (user ID), `roles` (string array), `exp`, `iat`
+3. Middleware injects `auth.UserContext` into request context via `context.WithValue`
+4. Session store uses Redis with 24h TTL; supports explicit revocation
+5. RBAC roles: `admin`, `user`, `viewer` — hierarchical (admin > user > viewer)
 
-**Role & mission:** You are Wave 2 Agent H. Build event tracking system with Mixpanel integration. Depends on Agent C's auth middleware for user context...
+**Interface contracts:** Export `UserContext` and `AuthMiddleware` types defined in `pkg/auth/contracts.go` (scaffold). Agent H depends on `UserContext` for analytics event attribution.
 
-#### Agent I - Admin Dashboard
+**Verification:** `go test ./pkg/auth/... -count=1`
 
-**Role & mission:** You are Wave 3 Agent I. Create admin dashboard UI with user list, payment reports, and notification logs. Depends on Agents E, F, G APIs...
+#### Agent D — Redis Cache Client
 
-#### Agent J - Mobile API
+**Role & mission:** You are Wave 1 Agent D. Create the shared Redis client wrapper with connection pooling, circuit breaker, and typed get/set operations.
 
-**Role & mission:** You are Wave 3 Agent J. Build mobile-optimized endpoints with compressed responses and offline sync. Depends on Agents E (profiles) and H (analytics)...
+**Files you own:**
+- `pkg/cache/redis.go` — client struct, connection pool, `Get`, `Set`, `Delete`, `SetWithTTL`
+- `pkg/cache/circuit.go` — circuit breaker (closed → open → half-open state machine)
+- `pkg/cache/options.go` — functional options pattern for client configuration
 
-#### Agent K - Webhooks
+**Key requirements:**
+1. Connection pool: min 5, max 50 connections, with health checks every 30s
+2. Circuit breaker: opens after 5 consecutive failures, half-open after 10s, closes after 3 successes
+3. All operations accept `context.Context` for cancellation/timeout propagation
+4. Implement exponential backoff for reconnection (see Known Issues on pool exhaustion)
+5. Support key namespacing via configurable prefix
 
-**Role & mission:** You are Wave 3 Agent K. Implement webhook system for receiving Stripe events and sending to customer URLs. Depends on Agents F, G, H for event callbacks...
+**Interface contracts:** Implement the `CacheClient` interface from `pkg/cache/contracts.go` (scaffold). Wave 2 agents may use this for session caching and query result caching.
+
+**Verification:** `go test ./pkg/cache/... -race`
+
+#### Agent E — User Profiles
+
+**Role & mission:** You are Wave 2 Agent E. Build user profile CRUD operations on the backend and the `ProfilePage` React component on the frontend.
+
+**Files you own:**
+- `pkg/users/profiles.go` — `ProfileService` with Create, Read, Update, Delete
+- `pkg/users/handlers.go` — HTTP handlers wired to `ProfileService`
+- `web/src/pages/ProfilePage.tsx` — profile view/edit form with avatar upload
+- `web/src/hooks/useProfile.ts` — React Query hook for profile data
+
+**Dependencies:** Agent A (users table schema), scaffold types from `pkg/db/entities.go`
+
+**Key requirements:**
+1. Profile fields: display name, bio (max 500 chars), avatar URL, preferences (JSON)
+2. Avatar upload: accept PNG/JPEG up to 2MB, store via presigned S3 URL
+3. Frontend form validates locally before submit; optimistic updates via React Query
+4. Rate limit profile updates to 10/minute per user
+
+**Verification:** `go test ./pkg/users/... && cd web && npx tsc --noEmit`
+
+#### Agent F — Payment Processing
+
+**Role & mission:** You are Wave 2 Agent F. Integrate Stripe for checkout sessions, subscription management, and webhook processing.
+
+**Files you own:**
+- `pkg/payments/stripe.go` — Stripe client wrapper, checkout session creation
+- `pkg/payments/subscriptions.go` — plan management, upgrade/downgrade logic
+- `pkg/payments/webhooks.go` — Stripe webhook signature verification and event routing
+- `pkg/payments/handlers.go` — HTTP handlers for payment endpoints
+
+**Dependencies:** Agent A (payments table), Agent B (API route registration)
+
+**Key requirements:**
+1. Webhook endpoint must verify Stripe signature before processing any event
+2. Handle events: `checkout.session.completed`, `invoice.paid`, `invoice.payment_failed`, `customer.subscription.updated`
+3. All payment mutations must be idempotent (use Stripe's `idempotency_key`)
+4. Store payment records in the `payments` table with Stripe event ID for audit trail
+5. Subscription tiers: `free`, `pro`, `team` — map to Stripe price IDs from config
+
+**Verification:** `go test ./pkg/payments/... -run TestWebhook`
+
+#### Agent G — Notifications
+
+**Role & mission:** You are Wave 2 Agent G. Implement multi-channel notification delivery via email (SendGrid) and push (Firebase Cloud Messaging).
+
+**Files you own:**
+- `pkg/notify/email.go` — SendGrid client, template rendering, send queue
+- `pkg/notify/push.go` — FCM client, device token management, payload builder
+- `pkg/notify/dispatcher.go` — unified dispatch interface, channel routing logic
+- `pkg/notify/handlers.go` — HTTP handlers for notification preferences and history
+
+**Dependencies:** Agent B (API endpoints for send/status)
+
+**Key requirements:**
+1. `Dispatcher.Send(ctx, notification)` routes to email, push, or both based on user preferences
+2. Email templates use Go `html/template` with precompiled template cache
+3. Push notifications include deep link URLs for mobile navigation
+4. All sends are async via goroutine pool (max 50 concurrent sends)
+5. Record delivery status in `notifications` table: `queued → sent → delivered | failed`
+
+**Verification:** `go test ./pkg/notify/... -count=1`
+
+#### Agent H — Analytics Events
+
+**Role & mission:** You are Wave 2 Agent H. Build the event tracking pipeline: capture user actions, batch them, and forward to Mixpanel.
+
+**Files you own:**
+- `pkg/analytics/events.go` — event types, `Track()` function, batching buffer
+- `pkg/analytics/mixpanel.go` — Mixpanel API client, batch upload
+- `pkg/analytics/middleware.go` — auto-track middleware for API requests
+- `pkg/analytics/handlers.go` — admin endpoints for event replay and debugging
+
+**Dependencies:** Agent C (auth middleware for user context extraction)
+
+**Key requirements:**
+1. Events include: `user_id` (from auth context), `event_name`, `properties` (map), `timestamp`
+2. Batch buffer: flush every 30s or when buffer reaches 100 events, whichever comes first
+3. Auto-track middleware logs: endpoint, method, status code, latency, user ID
+4. Mixpanel client retries failed uploads 3x with exponential backoff
+5. Event replay endpoint `POST /api/v1/analytics/replay` re-sends events for a time range
+
+**Verification:** `go test ./pkg/analytics/... -race`
+
+#### Agent I — Admin Dashboard
+
+**Role & mission:** You are Wave 3 Agent I. Build the admin dashboard frontend with user management, payment reports, and notification audit logs.
+
+**Files you own:**
+- `web/src/pages/AdminDashboard.tsx` — main layout with sidebar navigation
+- `web/src/components/admin/UserList.tsx` — searchable, paginated user table
+- `web/src/components/admin/PaymentReports.tsx` — revenue charts, subscription breakdown
+- `web/src/components/admin/NotificationLogs.tsx` — delivery status timeline
+
+**Dependencies:** Agent E (profile API), Agent F (payment API), Agent G (notification API)
+
+**Key requirements:**
+1. Dashboard accessible only to `admin` role — redirect non-admins to 403 page
+2. User list: search by name/email, sort by created date, bulk actions (suspend, delete)
+3. Payment reports: MRR chart (last 12 months), churn rate, plan distribution pie chart
+4. Notification logs: filter by channel (email/push), status (sent/failed), date range
+5. All data fetched via React Query with 30s stale time; loading skeletons during fetch
+
+**Verification:** `cd web && npx tsc --noEmit && npx vitest run`
+
+#### Agent J — Mobile API
+
+**Role & mission:** You are Wave 3 Agent J. Build mobile-optimized API endpoints with compressed responses, field selection, and offline sync support.
+
+**Files you own:**
+- `pkg/api/mobile/v1/profiles.go` — mobile profile endpoint with field selection
+- `pkg/api/mobile/v1/sync.go` — delta sync endpoint using `updated_at` watermarks
+- `pkg/api/mobile/v1/middleware.go` — gzip compression, ETag caching, API versioning
+
+**Dependencies:** Agent E (profiles), Agent H (analytics events)
+
+**Key requirements:**
+1. All responses support `?fields=` parameter for sparse fieldsets (reduce payload size)
+2. Delta sync: `GET /api/mobile/v1/sync?since=<timestamp>` returns only changed records
+3. ETag-based conditional requests — return 304 if content unchanged
+4. Response compression: gzip for payloads > 1KB
+5. Track API usage via Agent H's analytics events (endpoint, device type, latency)
+
+**Verification:** `go test ./pkg/api/mobile/... -run TestSync`
+
+#### Agent K — Webhook System
+
+**Role & mission:** You are Wave 3 Agent K. Implement bidirectional webhook system: receive events from Stripe and send events to customer-configured URLs.
+
+**Files you own:**
+- `pkg/webhooks/incoming.go` — receive and validate incoming webhooks (Stripe, GitHub)
+- `pkg/webhooks/outgoing.go` — customer webhook delivery with retry queue
+- `pkg/webhooks/registry.go` — webhook URL registration, secret management
+- `pkg/webhooks/handlers.go` — CRUD endpoints for webhook configuration
+
+**Dependencies:** Agent F (payment events), Agent G (notification callbacks), Agent H (analytics hooks)
+
+**Key requirements:**
+1. Incoming: verify signatures per provider (Stripe HMAC, GitHub SHA-256)
+2. Outgoing: deliver to customer URLs with HMAC-SHA256 signature in `X-Webhook-Signature` header
+3. Retry policy: 3 attempts with exponential backoff (1s, 10s, 60s), then mark failed
+4. Webhook logs: store request/response for last 30 days, searchable by event type
+5. Secret rotation: support two active secrets during rotation window
+
+**Verification:** `go test ./pkg/webhooks/... -count=1`
 
 ---
 

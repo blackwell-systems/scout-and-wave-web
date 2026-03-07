@@ -19,8 +19,70 @@ const AGENT_COLORS: Record<string, string> = {
   K: 'bg-lime-500/10 border-2 border-lime-500/30 text-lime-700 dark:text-lime-300',
 }
 
+type NodeType = 'orchestrator' | 'wave' | 'merge' | 'complete'
+
+interface TimelineNode {
+  type: NodeType
+  label: string
+  description?: string
+  agents?: string[]
+  agentCount?: number
+}
+
+function TimelineDot({ type }: { type: NodeType }) {
+  switch (type) {
+    case 'wave':
+      return (
+        <div className="w-4 h-4 rounded-full bg-primary border-2 border-primary shadow-sm shadow-primary/30" />
+      )
+    case 'merge':
+      return (
+        <div className="w-3 h-3 rounded-full border-2 border-muted-foreground/40" />
+      )
+    case 'complete':
+      return (
+        <div className="w-4 h-4 rounded-full bg-primary border-2 border-primary ring-2 ring-primary/20" />
+      )
+    default:
+      return (
+        <div className="w-3 h-3 rounded-full border-2 border-muted-foreground/40" />
+      )
+  }
+}
+
 export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): JSX.Element {
   const sortedWaves = [...impl.waves].sort((a, b) => a.number - b.number)
+
+  // Build timeline nodes
+  const nodes: TimelineNode[] = []
+
+  nodes.push({ type: 'orchestrator', label: 'Scout', description: 'Analyze codebase and produce IMPL doc' })
+
+  if (impl.scaffold.required) {
+    nodes.push({
+      type: 'orchestrator',
+      label: 'Scaffold',
+      description: `Create ${impl.scaffold.files.length} interface ${impl.scaffold.files.length === 1 ? 'file' : 'files'}`,
+    })
+  }
+
+  sortedWaves.forEach((wave, i) => {
+    nodes.push({
+      type: 'wave',
+      label: `Wave ${wave.number}`,
+      agents: wave.agents,
+      agentCount: wave.agents.length,
+    })
+    nodes.push({
+      type: 'merge',
+      label: 'Merge',
+      description: i < sortedWaves.length - 1
+        ? `Merge ${wave.agents.length} branches, verify, gate Wave ${wave.number + 1}`
+        : `Merge ${wave.agents.length} branches, final verification`,
+    })
+  })
+
+  nodes.push({ type: 'complete', label: 'Complete', description: 'All waves merged and verified' })
 
   return (
     <Card>
@@ -28,68 +90,48 @@ export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): J
         <CardTitle>Wave Structure</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="space-y-3">
-          {/* Scout lane */}
-          <div className="flex items-center gap-3">
-            <div className="w-20 text-sm font-semibold text-muted-foreground">
-              Scout
-            </div>
-            <div className="text-muted-foreground">→</div>
-            <div className="flex-1 text-xs text-muted-foreground">
-              Analyze codebase
-            </div>
-          </div>
+        <div className="relative pl-8">
+          {/* Vertical rail */}
+          <div className="absolute left-[7px] top-2 bottom-2 w-px bg-border" />
 
-          {/* Scaffold lane if needed */}
-          {impl.scaffold.required && (
-            <div className="flex items-center gap-3">
-              <div className="w-20 text-sm font-semibold text-muted-foreground">
-                Scaffold
+          {nodes.map((node, i) => (
+            <div key={i} className={`relative ${i > 0 ? (node.type === 'wave' ? 'mt-6' : 'mt-4') : ''}`}>
+              {/* Dot on rail */}
+              <div className="absolute -left-8 flex items-center justify-center" style={{ top: node.type === 'wave' ? 14 : 2, width: 16 }}>
+                <TimelineDot type={node.type} />
               </div>
-              <div className="text-muted-foreground">→</div>
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-muted-foreground">
-                  {impl.scaffold.files.length} {impl.scaffold.files.length === 1 ? 'file' : 'files'}
-                </span>
-              </div>
-            </div>
-          )}
 
-          {/* Wave lanes */}
-          {sortedWaves.map(wave => (
-            <div key={wave.number} className="flex items-center gap-3">
-              <div className="w-20 text-sm font-semibold text-foreground">
-                Wave {wave.number}
-              </div>
-              <div className="text-muted-foreground">→</div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {wave.agents.map(agentLetter => (
-                  <div
-                    key={agentLetter}
-                    className={`flex items-center justify-center w-9 h-9 rounded font-semibold text-sm ${
-                      AGENT_COLORS[agentLetter] || 'bg-gray-500/10 border-2 border-gray-500/30 text-gray-700 dark:text-gray-300'
-                    }`}
-                  >
-                    {agentLetter}
+              {node.type === 'wave' ? (
+                <div>
+                  <div className="text-sm font-semibold text-foreground mb-2">{node.label}</div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    {node.agents?.map(agentLetter => (
+                      <div
+                        key={agentLetter}
+                        className={`flex items-center justify-center w-12 h-12 rounded-lg font-semibold text-base ${
+                          AGENT_COLORS[agentLetter] || 'bg-gray-500/10 border-2 border-gray-500/30 text-gray-700 dark:text-gray-300'
+                        }`}
+                      >
+                        {agentLetter}
+                      </div>
+                    ))}
+                    <span className="text-xs text-muted-foreground ml-1">
+                      {node.agentCount} parallel
+                    </span>
                   </div>
-                ))}
-                <span className="text-xs text-muted-foreground ml-2">
-                  ({wave.agents.length} {wave.agents.length === 1 ? 'agent' : 'agents'} parallel)
-                </span>
-              </div>
+                </div>
+              ) : (
+                <div className="flex items-baseline gap-2">
+                  <span className={`text-sm font-semibold ${node.type === 'complete' ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    {node.label}
+                  </span>
+                  {node.description && (
+                    <span className="text-xs text-muted-foreground">{node.description}</span>
+                  )}
+                </div>
+              )}
             </div>
           ))}
-
-          {/* Complete lane */}
-          <div className="flex items-center gap-3">
-            <div className="w-20 text-sm font-semibold text-muted-foreground">
-              Complete
-            </div>
-            <div className="text-green-600 dark:text-green-400">✓</div>
-            <div className="flex-1 text-xs text-muted-foreground">
-              All waves merged and verified
-            </div>
-          </div>
         </div>
       </CardContent>
     </Card>

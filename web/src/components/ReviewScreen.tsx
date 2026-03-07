@@ -36,20 +36,16 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
   const { slug, impl, onApprove, onReject } = props
   const isNotSuitable = impl.suitability.verdict === 'NOT SUITABLE'
 
-  const [activePanels, setActivePanels] = useState<Set<PanelKey>>(
-    new Set(['wave-structure', 'dependency-graph'])
+  const [activePanels, setActivePanels] = useState<PanelKey[]>(
+    ['wave-structure', 'dependency-graph']
   )
 
   const togglePanel = (key: PanelKey) => {
-    setActivePanels(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) {
-        next.delete(key)
-      } else {
-        next.add(key)
-      }
-      return next
-    })
+    setActivePanels(prev =>
+      prev.includes(key)
+        ? prev.filter(k => k !== key)
+        : [...prev, key]
+    )
   }
 
   return (
@@ -68,57 +64,48 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
 
         {/* Toggle buttons - grayed out if NOT SUITABLE */}
         <div className={isNotSuitable ? 'opacity-40 pointer-events-none' : ''}>
-          <div className="flex flex-wrap gap-2 mb-6">
-            {panels.map(panel => (
-              <Button
-                key={panel.key}
-                onClick={() => togglePanel(panel.key)}
-                variant="outline"
-                size="sm"
-                className={`text-xs ${
-                  activePanels.has(panel.key)
-                    ? 'bg-primary/10 border-primary/30 hover:bg-primary/15'
-                    : 'hover:bg-accent'
-                }`}
-              >
-                {panel.label}
-              </Button>
-            ))}
+          <div className="sticky top-0 z-40 -mx-4 px-4 py-3 mb-6 bg-background/80 backdrop-blur-sm border-b border-border/50">
+            <div className="flex flex-wrap gap-2">
+              {panels.map(panel => (
+                <Button
+                  key={panel.key}
+                  onClick={() => togglePanel(panel.key)}
+                  variant="outline"
+                  size="sm"
+                  className={`text-xs ${
+                    activePanels.includes(panel.key)
+                      ? 'bg-primary/10 border-primary/30 hover:bg-primary/15'
+                      : 'hover:bg-accent'
+                  }`}
+                >
+                  {panel.label}
+                </Button>
+              ))}
+            </div>
           </div>
 
-          {/* Active panels stacked vertically */}
+          {/* Active panels in click order */}
           <div className="space-y-6">
-            {activePanels.has('file-ownership') && (
-              <FileOwnershipPanel impl={impl} />
-            )}
-
-            {activePanels.has('wave-structure') && (
-              <WaveStructurePanel impl={impl} />
-            )}
-
-            {activePanels.has('agent-prompts') && (
-              <AgentPromptsPanel agentPrompts={(impl as any).agent_prompts} />
-            )}
-
-            {activePanels.has('interface-contracts') && (
-              <InterfaceContractsPanel contractsText={(impl as any).interface_contracts_text} />
-            )}
-
-            {activePanels.has('scaffolds') && (
-              <ScaffoldsPanel scaffoldsDetail={(impl as any).scaffolds_detail} />
-            )}
-
-            {activePanels.has('dependency-graph') && (
-              <DependencyGraphPanel dependencyGraphText={(impl as any).dependency_graph_text} />
-            )}
-
-            {activePanels.has('known-issues') && (
-              <KnownIssuesPanel knownIssues={(impl as any).known_issues} />
-            )}
-
-            {activePanels.has('post-merge-checklist') && (
-              <PostMergeChecklistPanel checklistText={(impl as any).post_merge_checklist_text} />
-            )}
+            {activePanels.map(key => {
+              switch (key) {
+                case 'file-ownership':
+                  return <FileOwnershipPanel key={key} impl={impl} />
+                case 'wave-structure':
+                  return <WaveStructurePanel key={key} impl={impl} />
+                case 'agent-prompts':
+                  return <AgentPromptsPanel key={key} agentPrompts={(impl as any).agent_prompts} />
+                case 'interface-contracts':
+                  return <InterfaceContractsPanel key={key} contractsText={(impl as any).interface_contracts_text} />
+                case 'scaffolds':
+                  return <ScaffoldsPanel key={key} scaffoldsDetail={(impl as any).scaffolds_detail} />
+                case 'dependency-graph':
+                  return <DependencyGraphPanel key={key} dependencyGraphText={(impl as any).dependency_graph_text} />
+                case 'known-issues':
+                  return <KnownIssuesPanel key={key} knownIssues={(impl as any).known_issues} />
+                case 'post-merge-checklist':
+                  return <PostMergeChecklistPanel key={key} checklistText={(impl as any).post_merge_checklist_text} />
+              }
+            })}
           </div>
         </div>
 

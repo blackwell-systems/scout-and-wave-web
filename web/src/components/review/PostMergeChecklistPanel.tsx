@@ -1,4 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
+import MarkdownContent from './MarkdownContent'
 
 interface PostMergeChecklistPanelProps {
   checklistText?: string
@@ -24,11 +25,7 @@ export default function PostMergeChecklistPanel({ checklistText }: PostMergeChec
         <CardTitle>Post-Merge Checklist</CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="prose prose-sm dark:prose-invert max-w-none">
-          <pre className="text-xs whitespace-pre-wrap font-mono bg-muted p-4 rounded border overflow-auto">
-            {checklistText}
-          </pre>
-        </div>
+        <MarkdownContent>{checklistText}</MarkdownContent>
       </CardContent>
     </Card>
   )

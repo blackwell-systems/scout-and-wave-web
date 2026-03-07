@@ -71,7 +71,31 @@ Competitive positioning:
 
 ---
 
-### v0.14.0 - UI Polish Pass
+### v0.14.0 - Live Agent Observability
+**Why:** Operators can't see what agents are doing during execution. The review UI is plan-only — no live feedback loop.
+
+**Scope:**
+- **Completion reports panel** — render `### Agent X - Completion Report` sections as they appear in the IMPL doc (parser already extracts these)
+- **Live agent output stream** — SSE endpoint (`/api/sse/wave/{slug}`) streams agent stdout/stderr in real time during wave execution
+- **Git activity feed** — poll worktree branches for new commits, show per-agent commit timeline with diffs
+- **Wave progress indicators** — update wave structure timeline nodes (pending → running → complete/failed) in real time via SSE
+
+**Technical notes:**
+- SSE already used for wave board updates — extend to per-agent granularity
+- Agent output requires capturing subprocess stdout/stderr and forwarding to SSE channel
+- Git polling: check `git log --oneline` on each worktree branch every 5s, deduplicate
+- Consider WebSocket upgrade path if SSE uni-directional limitation becomes a bottleneck (e.g., user wants to cancel/restart agents from UI)
+
+**Success criteria:**
+- Operator can watch agents work in real time from the review UI
+- Completion reports render as agents finish (no page refresh)
+- Git commits visible within 5s of agent committing
+
+**Estimated effort:** 4-5 days
+
+---
+
+### v0.15.0 - UI Polish Pass
 **Why:** First impressions matter. The UI should feel like a product, not a prototype.
 
 **Scope:**

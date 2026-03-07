@@ -12,14 +12,18 @@ All notable changes to this project will be documented in this file.
 - **Default panels** — Wave Structure and Dependency Graph pre-selected for immediate visibility
 
 **Enhanced visualizations**
-- **Pipeline wave structure** — horizontal lanes for each phase (Scout, Scaffold, Waves, Complete) with agents displayed inline
-- **Subtle agent badges** — 10% opacity backgrounds with colored borders instead of solid fills (supports A-K agents)
-- **Parsed dependency graph** — visual agent cards with color-coded dependencies, root/leaf indicators
+- **Timeline wave structure** — vertical timeline rail with typed nodes (filled dots for waves, hollow for orchestrator steps, ring for complete); merge lanes between waves showing branch count and gating
+- **Subtle agent badges** — 10% opacity backgrounds with colored borders instead of solid fills (supports A-K agents), 48px to match DAG node size
+- **SVG dependency DAG** — interactive directed acyclic graph with bezier curve edges, arrow markers, colored wave column backgrounds, and high-contrast inverted tooltips on hover
 - **Custom scrollbar** — subtle green scrollbar (green-300 light, green-400 dark) for better immersion
+- **Click-ordered panels** — toggled panels render in click order, not fixed order
+- **Sticky toggle bar** — panel buttons pin to top on scroll with backdrop blur
 
-**Syntax highlighting**
-- **Code block highlighting** — Interface Contracts and Agent Prompts parse markdown fences with language-specific syntax highlighting (Go, TypeScript, Rust, etc.)
+**Markdown rendering**
+- **Full markdown in all panels** — shared `MarkdownContent` component renders proper markdown (headings, lists, bold, inline code) across Agent Prompts, Interface Contracts, Post-Merge Checklist, and Known Issues
+- **Syntax-highlighted code blocks** — fenced code blocks render with language-specific highlighting (Go, TypeScript, Rust, etc.) via react-syntax-highlighter
 - **Dark/light theme support** — VS Code Dark+/Light themes switch automatically
+- **Realistic demo prompts** — Agent Prompts in demo IMPL fleshed out with full multi-paragraph instructions (role, files, requirements, verification)
 
 **Parser extensions**
 - **5 new IMPL sections** — ParseIMPLDoc extracts: Known Issues, Scaffolds detail, Interface Contracts, Dependency Graph, Post-Merge Checklist
@@ -37,10 +41,13 @@ All notable changes to this project will be documented in this file.
 - **demo-complex IMPL** — complex 3-wave structure with 11 agents (A-K), scaffold step, rich dependencies for UI showcase
 
 **Strategic planning**
-- **ROADMAP.md** — documents SAW as provider-agnostic infrastructure; Phase 1 includes multi-provider backend (v0.14.0), UI polish (v0.15.0), demo/docs (v0.16.0)
+- **ROADMAP.md** — documents SAW as provider-agnostic infrastructure; Phase 1 includes multi-provider backend, live agent observability, UI polish, demo/docs
+- **Live Agent Observability (v0.14.0)** — roadmap entry for SSE-based real-time agent output, completion report streaming, git activity feed, and wave progress indicators
 
 ### Fixed
 
+- **Dependency graph not parsing** — `parseKnownIssuesSection` skipped `---` separators instead of breaking, consuming the next section header from the scanner; downstream sections (Dependency Graph, Interface Contracts) were never reached
+- **Dependency graph duplicate waves** — frontend parser matched summary lines like "Wave 2 dependencies:" as wave headers; now extracts only code-fenced content and uses stricter regex
 - **Duplicate File Ownership header** — removed CardHeader from FileOwnershipPanel to avoid duplicate title
 
 ---
