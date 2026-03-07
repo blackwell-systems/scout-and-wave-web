@@ -8,11 +8,15 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"gopkg.in/yaml.v3"
 )
+
+// sawCompleteRe matches <!-- SAW:COMPLETE YYYY-MM-DD --> and captures the date.
+var sawCompleteRe = regexp.MustCompile(`<!--\s*SAW:COMPLETE\s+(\d{4}-\d{2}-\d{2})\s*-->`)
 
 // ParseIMPLDoc parses a markdown IMPL doc at path and returns a structured
 // IMPLDoc. It uses a line-by-line state machine — no full CommonMark parser.
@@ -91,6 +95,13 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 		}
 
 		switch {
+		// ── SAW:COMPLETE tag: <!-- SAW:COMPLETE 2026-03-07 -->
+		case sawCompleteRe.MatchString(trimmed):
+			if m := sawCompleteRe.FindStringSubmatch(trimmed); len(m) == 2 {
+				doc.DocStatus = "COMPLETE"
+				doc.CompletedAt = m[1]
+			}
+
 		// ── Top-level title: # IMPL: {name}
 		case strings.HasPrefix(line, "# IMPL:"):
 			doc.FeatureName = strings.TrimSpace(strings.TrimPrefix(line, "# IMPL:"))

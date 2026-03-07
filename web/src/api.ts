@@ -1,11 +1,11 @@
-import { IMPLDocResponse } from './types'
+import { IMPLDocResponse, IMPLListEntry } from './types'
 
-export async function listImpls(): Promise<string[]> {
+export async function listImpls(): Promise<IMPLListEntry[]> {
   const response = await fetch('/api/impl')
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${await response.text()}`)
   }
-  return response.json() as Promise<string[]>
+  return response.json() as Promise<IMPLListEntry[]>
 }
 
 export async function fetchImpl(slug: string): Promise<IMPLDocResponse> {

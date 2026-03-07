@@ -11,27 +11,40 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
-// handleListImpls serves GET /api/impl and returns a JSON array of available slugs.
+// implListEntry is one item in the GET /api/impl response.
+type implListEntry struct {
+	Slug      string `json:"slug"`
+	DocStatus string `json:"doc_status"` // "ACTIVE" or "COMPLETE"
+}
+
+// handleListImpls serves GET /api/impl and returns a JSON array of impl entries.
 func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 	entries, err := os.ReadDir(s.cfg.IMPLDir)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]string{})
+		json.NewEncoder(w).Encode([]implListEntry{})
 		return
 	}
-	var slugs []string
+	var result []implListEntry
 	for _, e := range entries {
 		name := e.Name()
 		if strings.HasPrefix(name, "IMPL-") && strings.HasSuffix(name, ".md") {
 			slug := strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".md")
-			slugs = append(slugs, slug)
+			status := "ACTIVE"
+			// Quick scan for SAW:COMPLETE tag without full parse.
+			if data, err := os.ReadFile(filepath.Join(s.cfg.IMPLDir, name)); err == nil {
+				if strings.Contains(string(data), "SAW:COMPLETE") {
+					status = "COMPLETE"
+				}
+			}
+			result = append(result, implListEntry{Slug: slug, DocStatus: status})
 		}
 	}
-	if slugs == nil {
-		slugs = []string{}
+	if result == nil {
+		result = []implListEntry{}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(slugs)
+	json.NewEncoder(w).Encode(result)
 }
 
 // handleGetImpl serves GET /api/impl/{slug}.
@@ -53,8 +66,14 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Map types.IMPLDoc -> IMPLDocResponse
+	docStatus := "ACTIVE"
+	if doc.DocStatus == "COMPLETE" {
+		docStatus = "COMPLETE"
+	}
 	resp := IMPLDocResponse{
-		Slug: slug,
+		Slug:        slug,
+		DocStatus:   docStatus,
+		CompletedAt: doc.CompletedAt,
 		Suitability: SuitabilityInfo{
 			Verdict:   suitabilityVerdict(doc.Status),
 			Rationale: "",

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { listImpls, fetchImpl, approveImpl, rejectImpl, startWave } from './api'
-import { IMPLDocResponse } from './types'
+import { IMPLDocResponse, IMPLListEntry } from './types'
 import ReviewScreen from './components/ReviewScreen'
 import WaveBoard from './components/WaveBoard'
 import DarkModeToggle from './components/DarkModeToggle'
@@ -9,7 +9,7 @@ type Screen = 'input' | 'review' | 'wave'
 
 export default function App() {
   const [slug, setSlug] = useState('')
-  const [slugs, setSlugs] = useState<string[]>([])
+  const [entries, setEntries] = useState<IMPLListEntry[]>([])
   const [screen, setScreen] = useState<Screen>('input')
   const [impl, setImpl] = useState<IMPLDocResponse | null>(null)
   const [loading, setLoading] = useState(false)
@@ -17,7 +17,7 @@ export default function App() {
   const [rejected, setRejected] = useState(false)
 
   useEffect(() => {
-    listImpls().then(setSlugs).catch(() => {})
+    listImpls().then(setEntries).catch(() => {})
   }, [])
 
   async function handleSelect(selected: string) {
@@ -111,22 +111,41 @@ export default function App() {
         <h1 className="text-2xl font-bold text-gray-800 dark:text-gray-100 mb-2">Scout and Wave</h1>
         <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">Select a plan to review.</p>
 
-        {slugs.length > 0 && (
-          <div className="space-y-2 mb-6">
-            {slugs.map(s => (
-              <button
-                key={s}
-                onClick={() => handleSelect(s)}
-                disabled={loading}
-                className="w-full text-left border border-gray-200 dark:border-gray-700 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-gray-800 rounded-lg px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-        )}
+        {entries.length > 0 && (() => {
+          const active = entries.filter(e => e.doc_status !== 'COMPLETE')
+          const completed = entries.filter(e => e.doc_status === 'COMPLETE')
+          return (
+            <div className="space-y-2 mb-6">
+              {active.map(e => (
+                <button
+                  key={e.slug}
+                  onClick={() => handleSelect(e.slug)}
+                  disabled={loading}
+                  className="w-full text-left border border-gray-200 dark:border-gray-700 hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-gray-800 rounded-lg px-4 py-3 text-sm font-medium text-gray-700 dark:text-gray-300 transition-colors disabled:opacity-50"
+                >
+                  {e.slug}
+                </button>
+              ))}
+              {completed.length > 0 && (
+                <>
+                  <p className="text-xs font-medium uppercase tracking-wider text-gray-400 dark:text-gray-500 pt-2">Completed</p>
+                  {completed.map(e => (
+                    <button
+                      key={e.slug}
+                      onClick={() => handleSelect(e.slug)}
+                      disabled={loading}
+                      className="w-full text-left border border-gray-100 dark:border-gray-800 rounded-lg px-4 py-3 text-sm text-gray-400 dark:text-gray-500 transition-colors disabled:opacity-50 hover:border-gray-300 dark:hover:border-gray-600"
+                    >
+                      {e.slug}
+                    </button>
+                  ))}
+                </>
+              )}
+            </div>
+          )
+        })()}
 
-        {slugs.length === 0 && (
+        {entries.length === 0 && (
           <p className="text-gray-400 dark:text-gray-500 text-sm mb-6">No IMPL docs found. Run <code className="bg-gray-100 dark:bg-gray-800 px-1 rounded">saw scout</code> first.</p>
         )}
 

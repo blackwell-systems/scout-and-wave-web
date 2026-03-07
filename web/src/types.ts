@@ -33,11 +33,18 @@ export interface ScaffoldInfo {
 
 export interface IMPLDocResponse {
   slug: string
+  doc_status: string // "ACTIVE" or "COMPLETE"
+  completed_at?: string // ISO date, present only when COMPLETE
   suitability: SuitabilityInfo
   file_ownership: FileOwnershipEntry[]
   file_ownership_col4_name: string // detected 4th column header (e.g. "Action", "Depends On")
   waves: WaveInfo[]
   scaffold: ScaffoldInfo
+}
+
+export interface IMPLListEntry {
+  slug: string
+  doc_status: string // "ACTIVE" or "COMPLETE"
 }
 
 // SSE event data shapes

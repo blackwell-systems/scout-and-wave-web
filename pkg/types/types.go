@@ -60,7 +60,9 @@ const (
 // IMPLDoc is the parsed representation of an IMPL markdown document
 type IMPLDoc struct {
 	FeatureName   string
-	Status        string
+	Status        string // suitability verdict (e.g. "SUITABLE", "NOT SUITABLE")
+	DocStatus     string // lifecycle status: "" (active) or "COMPLETE"
+	CompletedAt   string // ISO date from <!-- SAW:COMPLETE YYYY-MM-DD --> tag, empty if active
 	TestCommand   string            // post-merge verification command (e.g. "go test ./...")
 	LintCommand   string            // check-mode lint command (e.g. "go vet ./...")
 	Waves             []Wave
