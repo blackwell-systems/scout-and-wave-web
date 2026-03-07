@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -11,6 +12,293 @@ import (
 	"testing"
 	"time"
 )
+
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
+
+// newCancelledCtx returns a context that is already cancelled and its cancel
+// function. Useful for driving handlers that block on r.Context().Done().
+func newCancelledCtx() (context.Context, context.CancelFunc) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel() // cancel immediately
+	return ctx, cancel
+}
+
+// ---------------------------------------------------------------------------
+// sseBroker unit tests
+// ---------------------------------------------------------------------------
+
+// TestSSEBroker_PublishDelivered verifies that a published event is received
+// by a subscriber on the returned channel.
+func TestSSEBroker_PublishDelivered(t *testing.T) {
+	b := &sseBroker{clients: make(map[string][]chan SSEEvent)}
+	ch := b.subscribe("slug-a")
+
+	ev := SSEEvent{Event: "agent_complete", Data: map[string]string{"agent": "A"}}
+	b.Publish("slug-a", ev)
+
+	select {
+	case got := <-ch:
+		if got.Event != ev.Event {
+			t.Errorf("expected event %q, got %q", ev.Event, got.Event)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out: event not delivered to subscriber")
+	}
+}
+
+// TestSSEBroker_SlowClientDropped verifies that Publish does not block when
+// the subscriber channel buffer (capacity 16) is already full.
+func TestSSEBroker_SlowClientDropped(t *testing.T) {
+	b := &sseBroker{clients: make(map[string][]chan SSEEvent)}
+	ch := b.subscribe("slug-slow")
+
+	ev := SSEEvent{Event: "tick", Data: nil}
+
+	// Fill the channel to capacity (16) without reading.
+	for i := 0; i < cap(ch); i++ {
+		b.Publish("slug-slow", ev)
+	}
+
+	// This 17th Publish must not block; the event is silently dropped.
+	done := make(chan struct{})
+	go func() {
+		b.Publish("slug-slow", ev)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		// success: Publish returned without blocking
+	case <-time.After(time.Second):
+		t.Fatal("Publish blocked on a full subscriber channel")
+	}
+
+	// Drain the channel to leave the test clean.
+	for len(ch) > 0 {
+		<-ch
+	}
+}
+
+// TestSSEBroker_Unsubscribe verifies that after unsubscribing no further events
+// are delivered to the removed channel.
+func TestSSEBroker_Unsubscribe(t *testing.T) {
+	b := &sseBroker{clients: make(map[string][]chan SSEEvent)}
+	ch := b.subscribe("slug-b")
+
+	// Confirm the subscription is registered.
+	b.mu.Lock()
+	n := len(b.clients["slug-b"])
+	b.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("expected 1 subscriber before unsubscribe, got %d", n)
+	}
+
+	b.unsubscribe("slug-b", ch)
+
+	// Confirm the subscription has been removed.
+	b.mu.Lock()
+	n = len(b.clients["slug-b"])
+	b.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("expected 0 subscribers after unsubscribe, got %d", n)
+	}
+
+	// Publishing after unsubscribe must not deliver anything to the channel.
+	b.Publish("slug-b", SSEEvent{Event: "after_unsub", Data: nil})
+
+	select {
+	case got := <-ch:
+		t.Errorf("received unexpected event after unsubscribe: %v", got)
+	case <-time.After(50 * time.Millisecond):
+		// correct: nothing delivered
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleWaveEvents integration tests
+// ---------------------------------------------------------------------------
+
+// TestHandleWaveEvents_StreamsEvents starts a real HTTP test server, connects
+// a streaming SSE client, publishes two events via the broker, reads both from
+// the stream, and verifies the event/data lines are correct.
+func TestHandleWaveEvents_StreamsEvents(t *testing.T) {
+	s, _ := makeTestServer(t)
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.SetPathValue("slug", "stream-slug")
+		s.handleWaveEvents(w, r)
+	}))
+	defer ts.Close()
+
+	lineCh := make(chan string, 64)
+
+	go func() {
+		resp, err := http.Get(ts.URL + "/api/wave/stream-slug/events") //nolint:noctx
+		if err != nil {
+			return
+		}
+		defer resp.Body.Close()
+		sc := bufio.NewScanner(resp.Body)
+		for sc.Scan() {
+			lineCh <- sc.Text()
+		}
+	}()
+
+	// Wait until the subscriber is registered.
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		s.broker.mu.Lock()
+		n := len(s.broker.clients["stream-slug"])
+		s.broker.mu.Unlock()
+		if n > 0 {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+
+	// Publish two events.
+	s.broker.Publish("stream-slug", SSEEvent{Event: "wave_started", Data: map[string]string{"wave": "1"}})
+	s.broker.Publish("stream-slug", SSEEvent{Event: "wave_complete", Data: map[string]string{"wave": "1"}})
+
+	// Collect until we see two blank-line message terminators.
+	var lines []string
+	blankCount := 0
+	timer := time.NewTimer(5 * time.Second)
+	defer timer.Stop()
+collect:
+	for {
+		select {
+		case line := <-lineCh:
+			lines = append(lines, line)
+			if line == "" {
+				blankCount++
+				if blankCount >= 2 {
+					break collect
+				}
+			}
+		case <-timer.C:
+			t.Fatalf("timed out waiting for two SSE messages; got lines: %v", lines)
+		}
+	}
+
+	ts.CloseClientConnections()
+
+	wantEvents := []string{"wave_started", "wave_complete"}
+	for _, want := range wantEvents {
+		found := false
+		for _, l := range lines {
+			if strings.Contains(l, want) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("expected event %q in SSE output; got: %v", want, lines)
+		}
+	}
+}
+
+// TestHandleWaveEvents_ContentTypeHeader verifies that handleWaveEvents sets
+// Content-Type: text/event-stream on the response.
+//
+// Uses httptest.ResponseRecorder directly against the handler; the handler
+// blocks on r.Context().Done(), so we supply a request with a pre-cancelled
+// context so the handler returns immediately.
+func TestHandleWaveEvents_ContentTypeHeader(t *testing.T) {
+	s, _ := makeTestServer(t)
+
+	// Use a response recorder backed by a real http.ResponseWriter that
+	// implements http.Flusher. httptest.ResponseRecorder implements Flusher
+	// (it no-ops Flush). The handler checks for Flusher and returns 500 if
+	// absent — but ResponseRecorder does implement it, so this is safe.
+	//
+	// Provide a pre-cancelled context so the handler's select on
+	// r.Context().Done() exits immediately after the subscription.
+	ctx, cancel := newCancelledCtx()
+	defer cancel()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/wave/ct-slug/events", nil)
+	req = req.WithContext(ctx)
+	req.SetPathValue("slug", "ct-slug")
+	rr := httptest.NewRecorder()
+
+	s.handleWaveEvents(rr, req)
+
+	ct := rr.Header().Get("Content-Type")
+	if !strings.HasPrefix(ct, "text/event-stream") {
+		t.Errorf("expected Content-Type text/event-stream, got %q", ct)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// handleWaveStart additional tests
+// ---------------------------------------------------------------------------
+
+// TestHandleWaveStart_Returns409_OnDuplicate verifies that a POST to start a
+// wave that is already marked active returns 409 Conflict. The active entry is
+// pre-loaded into activeRuns to simulate a concurrent run without timing
+// dependence on the stub's goroutine scheduling.
+func TestHandleWaveStart_Returns409_OnDuplicate(t *testing.T) {
+	s, dir := makeTestServer(t)
+	writeIMPLDoc(t, dir, "dup-feature", minimalIMPL)
+
+	// Simulate a run already in progress.
+	s.activeRuns.Store("dup-feature", struct{}{})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/wave/dup-feature/start", nil)
+	req.SetPathValue("slug", "dup-feature")
+	rr := httptest.NewRecorder()
+
+	s.handleWaveStart(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Errorf("expected 409 on duplicate start, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// ---------------------------------------------------------------------------
+// makePublisher tests
+// ---------------------------------------------------------------------------
+
+// TestMakePublisher_PublishesToBroker verifies that the closure returned by
+// makePublisher correctly constructs an SSEEvent and publishes it to the
+// broker under the given slug.
+func TestMakePublisher_PublishesToBroker(t *testing.T) {
+	s, _ := makeTestServer(t)
+
+	// Subscribe to "pub-slug" so we can observe what the publisher delivers.
+	ch := s.broker.subscribe("pub-slug")
+	defer s.broker.unsubscribe("pub-slug", ch)
+
+	publish := s.makePublisher("pub-slug")
+
+	wantEvent := "agent_started"
+	wantData := map[string]string{"agent": "B"}
+	publish(wantEvent, wantData)
+
+	select {
+	case got := <-ch:
+		if got.Event != wantEvent {
+			t.Errorf("expected event %q, got %q", wantEvent, got.Event)
+		}
+		// Verify Data round-trips correctly via JSON (as the handler will marshal it).
+		gotJSON, err := json.Marshal(got.Data)
+		if err != nil {
+			t.Fatalf("failed to marshal received data: %v", err)
+		}
+		var gotMap map[string]string
+		if err := json.Unmarshal(gotJSON, &gotMap); err != nil {
+			t.Fatalf("failed to unmarshal received data: %v", err)
+		}
+		if gotMap["agent"] != wantData["agent"] {
+			t.Errorf("expected data agent=%q, got %q", wantData["agent"], gotMap["agent"])
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out: makePublisher did not deliver event to broker subscriber")
+	}
+}
 
 // makeTestServer creates a Server with a temporary IMPLDir for testing.
 func makeTestServer(t *testing.T) (*Server, string) {
