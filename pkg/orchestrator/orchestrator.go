@@ -73,11 +73,20 @@ var newRunnerFunc = func(wm *worktree.Manager) *agent.Runner {
 // Orchestrator drives SAW protocol wave coordination.
 // State mutations must go through TransitionTo — never set o.state directly.
 type Orchestrator struct {
-	state       types.State
-	implDoc     *types.IMPLDoc
-	repoPath    string
-	currentWave int
-	implDocPath string
+	state          types.State
+	implDoc        *types.IMPLDoc
+	repoPath       string
+	currentWave    int
+	implDocPath    string
+	eventPublisher EventPublisher
+}
+
+// publish sends ev to the registered EventPublisher, if any.
+// It is a no-op when no publisher has been set.
+func (o *Orchestrator) publish(ev OrchestratorEvent) {
+	if o.eventPublisher != nil {
+		o.eventPublisher(ev)
+	}
 }
 
 // New creates an Orchestrator by loading the IMPL doc at implDocPath.
@@ -177,7 +186,20 @@ func (o *Orchestrator) RunWave(waveNum int) error {
 		})
 	}
 
-	return eg.Wait()
+	if err := eg.Wait(); err != nil {
+		return err
+	}
+
+	// All agents in the wave completed successfully.
+	o.publish(OrchestratorEvent{
+		Event: "wave_complete",
+		Data: WaveCompletePayload{
+			Wave:        waveNum,
+			MergeStatus: "pending",
+		},
+	})
+
+	return nil
 }
 
 // launchAgent creates a worktree for one agent, calls ExecuteWithTools, then
@@ -192,21 +214,77 @@ func (o *Orchestrator) launchAgent(
 	// a. Create the worktree.
 	wtPath, err := worktreeCreatorFunc(wm, waveNum, agentSpec.Letter)
 	if err != nil {
+		o.publish(OrchestratorEvent{
+			Event: "agent_failed",
+			Data: AgentFailedPayload{
+				Agent:       agentSpec.Letter,
+				Wave:        waveNum,
+				Status:      "failed",
+				FailureType: "worktree_creation",
+				Message:     err.Error(),
+			},
+		})
 		return fmt.Errorf("orchestrator: agent %s: create worktree: %w", agentSpec.Letter, err)
 	}
+
+	// Publish agent_started after the worktree is ready.
+	o.publish(OrchestratorEvent{
+		Event: "agent_started",
+		Data: AgentStartedPayload{
+			Agent: agentSpec.Letter,
+			Wave:  waveNum,
+			Files: agentSpec.FilesOwned,
+		},
+	})
 
 	// b. Build the standard tool set scoped to the worktree.
 	tools := agent.StandardTools(wtPath)
 
 	// c. Execute the agent with tools.
 	if _, err := runner.ExecuteWithTools(ctx, &agentSpec, wtPath, tools, 50); err != nil {
+		o.publish(OrchestratorEvent{
+			Event: "agent_failed",
+			Data: AgentFailedPayload{
+				Agent:       agentSpec.Letter,
+				Wave:        waveNum,
+				Status:      "failed",
+				FailureType: "execute",
+				Message:     err.Error(),
+			},
+		})
 		return fmt.Errorf("orchestrator: agent %s: ExecuteWithTools: %w", agentSpec.Letter, err)
 	}
 
 	// d. Poll for the completion report.
-	if _, err := waitForCompletionFunc(o.implDocPath, agentSpec.Letter, defaultAgentTimeout, defaultAgentPollInterval); err != nil {
+	report, err := waitForCompletionFunc(o.implDocPath, agentSpec.Letter, defaultAgentTimeout, defaultAgentPollInterval)
+	if err != nil {
+		o.publish(OrchestratorEvent{
+			Event: "agent_failed",
+			Data: AgentFailedPayload{
+				Agent:       agentSpec.Letter,
+				Wave:        waveNum,
+				Status:      "failed",
+				FailureType: "completion_timeout",
+				Message:     err.Error(),
+			},
+		})
 		return fmt.Errorf("orchestrator: agent %s: %w", agentSpec.Letter, err)
 	}
+
+	// Publish agent_complete after a successful completion report.
+	status := ""
+	if report != nil {
+		status = string(report.Status)
+	}
+	o.publish(OrchestratorEvent{
+		Event: "agent_complete",
+		Data: AgentCompletePayload{
+			Agent:  agentSpec.Letter,
+			Wave:   waveNum,
+			Status: status,
+			Branch: fmt.Sprintf("saw/wave%d-agent-%s", waveNum, agentSpec.Letter),
+		},
+	})
 
 	return nil
 }

@@ -418,6 +418,105 @@ func TestNewFromDoc(t *testing.T) {
 	}
 }
 
+// TestSetEventPublisher_NilPublisher_NoOp verifies that RunWave works correctly
+// when no EventPublisher has been set (no panic on publish calls).
+func TestSetEventPublisher_NilPublisher_NoOp(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewRunner := newRunnerFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newRunnerFunc = origNewRunner
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
+		return "/tmp/fake-wt-" + letter, nil
+	}
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
+		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	}
+
+	fake := &fakeToolSender{}
+	newRunnerFunc = func(wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(fake, wm)
+	}
+
+	o := makeOrchWithWave(1, "A")
+	// Do not call SetEventPublisher — eventPublisher is nil.
+
+	if err := o.RunWave(1); err != nil {
+		t.Fatalf("RunWave with nil publisher returned unexpected error: %v", err)
+	}
+}
+
+// TestPublish_EmitsAgentStarted verifies that an injected EventPublisher
+// receives an "agent_started" event when RunWave launches an agent.
+func TestPublish_EmitsAgentStarted(t *testing.T) {
+	origCreator := worktreeCreatorFunc
+	origWait := waitForCompletionFunc
+	origNewRunner := newRunnerFunc
+	t.Cleanup(func() {
+		worktreeCreatorFunc = origCreator
+		waitForCompletionFunc = origWait
+		newRunnerFunc = origNewRunner
+	})
+
+	worktreeCreatorFunc = func(_ *worktree.Manager, _ int, letter string) (string, error) {
+		return "/tmp/fake-wt-" + letter, nil
+	}
+	waitForCompletionFunc = func(_, _ string, _, _ time.Duration) (*types.CompletionReport, error) {
+		return &types.CompletionReport{Status: types.StatusComplete}, nil
+	}
+
+	fake := &fakeToolSender{}
+	newRunnerFunc = func(wm *worktree.Manager) *agent.Runner {
+		return agent.NewRunner(fake, wm)
+	}
+
+	// Capture all published events.
+	var mu sync.Mutex
+	var received []OrchestratorEvent
+	publisher := func(ev OrchestratorEvent) {
+		mu.Lock()
+		received = append(received, ev)
+		mu.Unlock()
+	}
+
+	o := makeOrchWithWave(1, "A")
+	o.SetEventPublisher(publisher)
+
+	if err := o.RunWave(1); err != nil {
+		t.Fatalf("RunWave returned unexpected error: %v", err)
+	}
+
+	// Verify we received at least one agent_started event.
+	mu.Lock()
+	defer mu.Unlock()
+
+	var found bool
+	for _, ev := range received {
+		if ev.Event == "agent_started" {
+			found = true
+			payload, ok := ev.Data.(AgentStartedPayload)
+			if !ok {
+				t.Errorf("agent_started Data is %T, want AgentStartedPayload", ev.Data)
+				break
+			}
+			if payload.Agent != "A" {
+				t.Errorf("agent_started payload.Agent = %q, want %q", payload.Agent, "A")
+			}
+			if payload.Wave != 1 {
+				t.Errorf("agent_started payload.Wave = %d, want 1", payload.Wave)
+			}
+			break
+		}
+	}
+	if !found {
+		t.Errorf("no agent_started event received; got events: %v", received)
+	}
+}
+
 // TestState_String verifies that each state produces a human-readable name.
 // The String() method lives on types.State (defined in pkg/types). This test
 // ensures the values round-trip correctly through the orchestrator layer.
