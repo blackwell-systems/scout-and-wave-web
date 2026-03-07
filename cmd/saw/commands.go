@@ -23,6 +23,7 @@ import (
 
 func init() {
 	orchestrator.SetValidateInvariantsFunc(protocol.ValidateInvariants)
+	orchestrator.SetParseIMPLDocFunc(protocol.ParseIMPLDoc)
 }
 
 // waveOrchestrator is the minimal interface runWave needs from an Orchestrator.
