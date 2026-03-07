@@ -112,6 +112,43 @@ func TestHandleApprove_PublishesEvent(t *testing.T) {
 	}
 }
 
+// TestHandleWaveStart_Returns202 verifies that the start endpoint returns 202 Accepted
+// for a slug that is not currently active.
+func TestHandleWaveStart_Returns202(t *testing.T) {
+	s, dir := makeTestServer(t)
+	writeIMPLDoc(t, dir, "my-feature", minimalIMPL)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/wave/my-feature/start", nil)
+	req.SetPathValue("slug", "my-feature")
+	rr := httptest.NewRecorder()
+
+	s.handleWaveStart(rr, req)
+
+	if rr.Code != http.StatusAccepted {
+		t.Errorf("expected 202, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestHandleWaveStart_Returns409WhenActive verifies that a second concurrent start
+// for the same slug returns 409 Conflict.
+func TestHandleWaveStart_Returns409WhenActive(t *testing.T) {
+	s, dir := makeTestServer(t)
+	writeIMPLDoc(t, dir, "my-feature", minimalIMPL)
+
+	// Pre-load the slug to simulate an in-progress run.
+	s.activeRuns.Store("my-feature", struct{}{})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/wave/my-feature/start", nil)
+	req.SetPathValue("slug", "my-feature")
+	rr := httptest.NewRecorder()
+
+	s.handleWaveStart(rr, req)
+
+	if rr.Code != http.StatusConflict {
+		t.Errorf("expected 409, got %d: %s", rr.Code, rr.Body.String())
+	}
+}
+
 // TestHandleWaveEvents_StreamsEvent verifies that published events appear in the SSE stream.
 //
 // Uses httptest.Server for a real HTTP connection (needed for http.Flusher).

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -17,9 +18,10 @@ type Config struct {
 
 // Server is the HTTP server for the saw web UI.
 type Server struct {
-	cfg    Config
-	mux    *http.ServeMux
-	broker *sseBroker // unexported; used by wave.go handlers
+	cfg        Config
+	mux        *http.ServeMux
+	broker     *sseBroker // unexported; used by wave.go handlers
+	activeRuns sync.Map   // slug -> struct{}; tracks in-progress wave runs
 }
 
 // New creates a Server with the given Config and registers all routes.
@@ -37,6 +39,7 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("POST /api/impl/{slug}/approve", s.handleApprove)
 	s.mux.HandleFunc("POST /api/impl/{slug}/reject", s.handleReject)
 	s.mux.HandleFunc("GET /api/wave/{slug}/events", s.handleWaveEvents)
+	s.mux.HandleFunc("POST /api/wave/{slug}/start", s.handleWaveStart)
 	sub, err := fs.Sub(staticFiles, "dist")
 	if err != nil {
 		panic("saw: failed to sub embed.FS: " + err.Error())
