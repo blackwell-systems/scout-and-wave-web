@@ -48,6 +48,14 @@ type RunCompletePayload struct {
 	Agents int    `json:"agents"`
 }
 
+// AgentOutputPayload is the Data payload for the "agent_output" SSE event.
+// It is emitted once per text chunk while the agent is running.
+type AgentOutputPayload struct {
+	Agent string `json:"agent"`
+	Wave  int    `json:"wave"`
+	Chunk string `json:"chunk"`
+}
+
 // SetEventPublisher injects a publisher function that will receive all
 // OrchestratorEvents emitted during wave execution.
 func (o *Orchestrator) SetEventPublisher(pub EventPublisher) {

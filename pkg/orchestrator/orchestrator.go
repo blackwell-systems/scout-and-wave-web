@@ -283,8 +283,17 @@ func (o *Orchestrator) launchAgent(
 		},
 	})
 
-	// b. Execute the agent via the backend.
-	if _, err := runner.Execute(ctx, &agentSpec, wtPath); err != nil {
+	// b. Execute the agent via the backend, streaming output chunks as SSE events.
+	if _, err := runner.ExecuteStreaming(ctx, &agentSpec, wtPath, func(chunk string) {
+		o.publish(OrchestratorEvent{
+			Event: "agent_output",
+			Data: AgentOutputPayload{
+				Agent: agentSpec.Letter,
+				Wave:  waveNum,
+				Chunk: chunk,
+			},
+		})
+	}); err != nil {
 		o.publish(OrchestratorEvent{
 			Event: "agent_failed",
 			Data: AgentFailedPayload{
