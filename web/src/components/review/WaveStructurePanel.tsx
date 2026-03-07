@@ -31,7 +31,7 @@ export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): J
         <div className="space-y-3">
           {/* Scout lane */}
           <div className="flex items-center gap-3">
-            <div className="w-20 text-sm font-semibold text-green-700 dark:text-green-300">
+            <div className="w-20 text-sm font-semibold text-muted-foreground">
               Scout
             </div>
             <div className="text-muted-foreground">→</div>
@@ -43,7 +43,7 @@ export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): J
           {/* Scaffold lane if needed */}
           {impl.scaffold.required && (
             <div className="flex items-center gap-3">
-              <div className="w-20 text-sm font-semibold text-amber-700 dark:text-amber-300">
+              <div className="w-20 text-sm font-semibold text-muted-foreground">
                 Scaffold
               </div>
               <div className="text-muted-foreground">→</div>
@@ -82,7 +82,7 @@ export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): J
 
           {/* Complete lane */}
           <div className="flex items-center gap-3">
-            <div className="w-20 text-sm font-semibold text-gray-700 dark:text-gray-300">
+            <div className="w-20 text-sm font-semibold text-muted-foreground">
               Complete
             </div>
             <div className="text-green-600 dark:text-green-400">✓</div>
