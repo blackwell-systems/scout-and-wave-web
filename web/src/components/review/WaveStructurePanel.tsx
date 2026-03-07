@@ -91,11 +91,6 @@ export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): J
             </div>
           </div>
         </div>
-
-        {/* Stats footer */}
-        <div className="mt-6 pt-4 border-t text-xs text-muted-foreground">
-          {sortedWaves.reduce((sum, w) => sum + w.agents.length, 0)} agents across {sortedWaves.length} {sortedWaves.length === 1 ? 'wave' : 'waves'}
-        </div>
       </CardContent>
     </Card>
   )
