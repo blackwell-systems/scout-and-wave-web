@@ -92,6 +92,16 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 			doc.FeatureName = strings.TrimSpace(strings.TrimPrefix(line, "# IMPL:"))
 			state = stateTop
 
+		// ── Metadata: **Test Command:** go test ./...  (or without bold)
+		case state == stateTop && (strings.HasPrefix(trimmed, "**Test Command:**") ||
+			strings.HasPrefix(trimmed, "Test Command:")):
+			val := trimmed
+			if idx := strings.Index(val, ":"); idx >= 0 {
+				val = strings.TrimSpace(val[idx+1:])
+			}
+			val = strings.Trim(val, "`")
+			doc.TestCommand = val
+
 		// ── Wave section: ## Wave N
 		case strings.HasPrefix(line, "## Wave "):
 			flushWave()
@@ -142,16 +152,6 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 		// ── Accumulate agent prompt text
 		case state == stateAgent:
 			agentPromptLines = append(agentPromptLines, line)
-			// Parse "## 1. File Ownership" list items within the agent prompt
-			// (these look like `- path/to/file` bullet lines inside the prompt)
-			if strings.HasPrefix(trimmed, "- ") && currentAgent != nil {
-				candidate := strings.TrimPrefix(trimmed, "- ")
-				candidate = strings.TrimSpace(candidate)
-				// Heuristic: a file path contains "/" or "." and no spaces
-				if looksLikeFilePath(candidate) {
-					currentAgent.FilesOwned = append(currentAgent.FilesOwned, candidate)
-				}
-			}
 		}
 	}
 
@@ -163,6 +163,19 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 
 	if doc.FeatureName == "" {
 		return doc, fmt.Errorf("ParseIMPLDoc: %q: missing '# IMPL:' title", path)
+	}
+
+	// Populate FilesOwned for each agent from the authoritative FileOwnership table.
+	for i := range doc.Waves {
+		for j := range doc.Waves[i].Agents {
+			agent := &doc.Waves[i].Agents[j]
+			agent.FilesOwned = nil
+			for file, letter := range doc.FileOwnership {
+				if letter == agent.Letter {
+					agent.FilesOwned = append(agent.FilesOwned, file)
+				}
+			}
+		}
 	}
 
 	return doc, nil
@@ -376,11 +389,3 @@ func parseFileOwnershipRow(line string, ownership map[string]string) {
 	ownership[file] = agent
 }
 
-// looksLikeFilePath returns true when s looks like a relative file path
-// (contains "/" or "." and has no spaces).
-func looksLikeFilePath(s string) bool {
-	if strings.ContainsAny(s, " \t") {
-		return false
-	}
-	return strings.ContainsAny(s, "/.")
-}

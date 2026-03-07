@@ -23,9 +23,9 @@ func TestTransitionTo_ValidTransitions(t *testing.T) {
 		{types.SuitabilityPending, types.NotSuitable},
 		{types.Reviewed, types.WavePending},
 		{types.WavePending, types.WaveExecuting},
-		{types.WaveExecuting, types.WaveMerged},
-		{types.WaveMerged, types.Complete},
-		{types.WaveMerged, types.WavePending},
+		{types.WaveExecuting, types.WaveVerified},
+		{types.WaveVerified, types.Complete},
+		{types.WaveVerified, types.WavePending},
 	}
 
 	for _, tc := range cases {
@@ -75,7 +75,7 @@ func TestTransitionTo_TerminalState(t *testing.T) {
 		types.Reviewed,
 		types.WavePending,
 		types.WaveExecuting,
-		types.WaveMerged,
+		types.WaveVerified,
 		types.NotSuitable,
 		types.Complete,
 	}
@@ -100,9 +100,9 @@ func TestIsValidTransition(t *testing.T) {
 		{types.SuitabilityPending, types.NotSuitable},
 		{types.Reviewed, types.WavePending},
 		{types.WavePending, types.WaveExecuting},
-		{types.WaveExecuting, types.WaveMerged},
-		{types.WaveMerged, types.Complete},
-		{types.WaveMerged, types.WavePending},
+		{types.WaveExecuting, types.WaveVerified},
+		{types.WaveVerified, types.Complete},
+		{types.WaveVerified, types.WavePending},
 	}
 	for _, tc := range valid {
 		if !isValidTransition(tc.from, tc.to) {
@@ -160,7 +160,7 @@ func TestState_String(t *testing.T) {
 		{types.Reviewed, "Reviewed"},
 		{types.WavePending, "WavePending"},
 		{types.WaveExecuting, "WaveExecuting"},
-		{types.WaveMerged, "WaveMerged"},
+		{types.WaveVerified, "WaveVerified"},
 		{types.Complete, "Complete"},
 	}
 

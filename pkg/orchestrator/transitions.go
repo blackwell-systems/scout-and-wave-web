@@ -10,8 +10,8 @@ var validTransitions = map[types.State][]types.State{
 	types.SuitabilityPending: {types.Reviewed, types.NotSuitable},
 	types.Reviewed:           {types.WavePending},
 	types.WavePending:        {types.WaveExecuting},
-	types.WaveExecuting:      {types.WaveMerged},
-	types.WaveMerged:         {types.Complete, types.WavePending},
+	types.WaveExecuting:      {types.WaveVerified},
+	types.WaveVerified:       {types.Complete, types.WavePending},
 	types.NotSuitable:        {},
 	types.Complete:           {},
 }

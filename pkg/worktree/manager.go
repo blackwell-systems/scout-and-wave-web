@@ -43,8 +43,40 @@ func (m *Manager) Create(wave int, agent string) (string, error) {
 		return "", fmt.Errorf("manager: create worktree for wave %d agent %s: %w", wave, agent, err)
 	}
 
+	if err := installPreCommitHook(wtPath); err != nil {
+		// Non-fatal: log but do not abort worktree creation.
+		fmt.Fprintf(os.Stderr, "manager: warning: could not install pre-commit hook in %q: %v\n", wtPath, err)
+	}
+
 	m.active[wtPath] = branch
 	return wtPath, nil
+}
+
+// preCommitHookScript is the shell script installed into each agent worktree.
+// It prevents accidental commits to main/master without SAW_ALLOW_MAIN_COMMIT=1.
+const preCommitHookScript = `#!/bin/sh
+branch=$(git symbolic-ref --short HEAD 2>/dev/null)
+if [ "$branch" = "main" ] || [ "$branch" = "master" ]; then
+  if [ -z "$SAW_ALLOW_MAIN_COMMIT" ]; then
+    echo "SAW pre-commit guard: commits to '$branch' are blocked in agent worktrees." >&2
+    echo "Set SAW_ALLOW_MAIN_COMMIT=1 to override." >&2
+    exit 1
+  fi
+fi
+`
+
+// installPreCommitHook writes the SAW pre-commit guard into the worktree's
+// .git/hooks/pre-commit file and makes it executable.
+func installPreCommitHook(wtPath string) error {
+	hooksDir := filepath.Join(wtPath, ".git", "hooks")
+	if err := os.MkdirAll(hooksDir, 0o755); err != nil {
+		return fmt.Errorf("installPreCommitHook: mkdir %q: %w", hooksDir, err)
+	}
+	hookPath := filepath.Join(hooksDir, "pre-commit")
+	if err := os.WriteFile(hookPath, []byte(preCommitHookScript), 0o755); err != nil {
+		return fmt.Errorf("installPreCommitHook: write %q: %w", hookPath, err)
+	}
+	return nil
 }
 
 // Remove removes the worktree at the given absolute path and deletes its branch.

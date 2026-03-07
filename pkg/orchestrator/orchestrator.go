@@ -14,6 +14,16 @@ var parseIMPLDocFunc = func(path string) (*types.IMPLDoc, error) {
 	return &types.IMPLDoc{}, nil
 }
 
+// validateInvariantsFunc is replaced by pkg/protocol via SetValidateInvariantsFunc.
+// Default no-op for Wave 1 compilation.
+var validateInvariantsFunc = func(doc *types.IMPLDoc) error { return nil }
+
+// SetValidateInvariantsFunc allows pkg/protocol to inject the real implementation
+// without a direct import cycle.
+func SetValidateInvariantsFunc(f func(doc *types.IMPLDoc) error) {
+	validateInvariantsFunc = f
+}
+
 // mergeWaveFunc is replaced by Agent F (Wave 3) in merge.go via init().
 // Default no-op for Wave 1 compilation.
 var mergeWaveFunc = func(o *Orchestrator, waveNum int) error { return nil }
@@ -92,6 +102,10 @@ func (o *Orchestrator) TransitionTo(newState types.State) error {
 func (o *Orchestrator) RunWave(waveNum int) error {
 	if o.implDoc == nil {
 		return fmt.Errorf("orchestrator.RunWave: no IMPL doc loaded")
+	}
+	// I1: Validate disjoint file ownership before any worktrees are created.
+	if err := validateInvariantsFunc(o.implDoc); err != nil {
+		return fmt.Errorf("orchestrator.RunWave: invariant violation: %w", err)
 	}
 	// Validate the wave number exists in the document.
 	found := false

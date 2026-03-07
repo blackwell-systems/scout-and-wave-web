@@ -12,6 +12,10 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
+func init() {
+	orchestrator.SetValidateInvariantsFunc(protocol.ValidateInvariants)
+}
+
 // runWave executes a wave from an IMPL doc.
 // Args: ["--impl", "<path>", "--wave", "<n>"] (or subsets).
 func runWave(args []string) error {
@@ -60,12 +64,16 @@ func runWave(args []string) error {
 		return fmt.Errorf("wave: merge failed: %w", err)
 	}
 
-	// Run post-merge verification.
-	if err := o.RunVerification("go test ./..."); err != nil {
+	// Run post-merge verification using command from IMPL doc (fallback to go test).
+	testCmd := o.IMPLDoc().TestCommand
+	if testCmd == "" {
+		testCmd = "go test ./..."
+	}
+	if err := o.RunVerification(testCmd); err != nil {
 		return fmt.Errorf("wave: verification failed: %w", err)
 	}
 
-	if err := o.TransitionTo(types.WaveMerged); err != nil {
+	if err := o.TransitionTo(types.WaveVerified); err != nil {
 		return fmt.Errorf("wave: %w", err)
 	}
 

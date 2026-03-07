@@ -9,7 +9,7 @@ const (
 	Reviewed
 	WavePending
 	WaveExecuting
-	WaveMerged
+	WaveVerified
 	Complete
 )
 
@@ -26,8 +26,8 @@ func (s State) String() string {
 		return "WavePending"
 	case WaveExecuting:
 		return "WaveExecuting"
-	case WaveMerged:
-		return "WaveMerged"
+	case WaveVerified:
+		return "WaveVerified"
 	case Complete:
 		return "Complete"
 	default:
@@ -48,6 +48,7 @@ const (
 type IMPLDoc struct {
 	FeatureName   string
 	Status        string
+	TestCommand   string            // post-merge verification command (e.g. "go test ./...")
 	Waves         []Wave
 	FileOwnership map[string]string // file path -> agent letter
 }

@@ -54,7 +54,7 @@ Implements [SAW Protocol v0.8.0](https://github.com/blackwell-systems/scout-and-
 | I5 | Agents commit before reporting | ✅ (enforced by merge trip wire) |
 | I6 | Role separation: orchestrator does not do agent work | ✅ |
 
-**7-state machine:** `SuitabilityPending → Reviewed → WavePending → WaveExecuting → WaveMerged → Complete` (+ `NotSuitable`)
+**7-state machine:** `SuitabilityPending → Reviewed → WavePending → WaveExecuting → WaveVerified → Complete` (+ `NotSuitable`)
 
 ## MVP Scope
 
