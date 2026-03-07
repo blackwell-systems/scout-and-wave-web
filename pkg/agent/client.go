@@ -1,3 +1,7 @@
+// Package agent provides the Anthropic API client, agent runner, tool
+// definitions, and completion-report polling used by the orchestrator to
+// execute SAW wave agents. Each agent runs in its own git worktree with
+// file-system and shell tools scoped to that directory.
 package agent
 
 import (

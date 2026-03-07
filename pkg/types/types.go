@@ -1,3 +1,7 @@
+// Package types defines the shared data types for the Scout-and-Wave protocol:
+// protocol states, IMPL doc structure, agent specifications, wave definitions,
+// and completion report formats. All other packages in this module import types
+// rather than defining their own protocol structs.
 package types
 
 // State represents the state of the protocol state machine

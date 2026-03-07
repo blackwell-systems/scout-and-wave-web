@@ -2,9 +2,9 @@
 
 Go implementation of the [Scout-and-Wave protocol](https://github.com/blackwell-systems/scout-and-wave) for parallel agent coordination.
 
-## Status
+## Overview
 
-**v0.1.0** — Wave agent execution is fully implemented and tested.
+SAW coordinates multiple AI agents working in parallel on non-overlapping parts of a codebase. Each agent gets an isolated git worktree; the orchestrator merges, verifies, and sequences waves automatically.
 
 ## Installation
 
@@ -15,14 +15,25 @@ go install github.com/blackwell-systems/scout-and-wave-go/cmd/saw@latest
 ## Usage
 
 ```bash
-# Execute a wave from an existing IMPL doc
-saw wave --impl docs/IMPL/IMPL-my-feature.md
+# Analyze a codebase and produce an IMPL doc
+saw scout --feature "add OAuth support"
 
-# Execute a specific wave number
-saw wave --impl docs/IMPL/IMPL-my-feature.md --wave 2
+# Create shared type scaffold files from an IMPL doc
+saw scaffold --impl docs/IMPL/IMPL-oauth.md
+
+# Execute all waves automatically (no prompts)
+saw wave --impl docs/IMPL/IMPL-oauth.md --auto
+
+# Execute from a specific wave number
+saw wave --impl docs/IMPL/IMPL-oauth.md --wave 2 --auto
+
+# Merge a single wave manually (recovery)
+saw merge --impl docs/IMPL/IMPL-oauth.md --wave 1
 
 # Check wave/agent status
-saw status --impl docs/IMPL/IMPL-my-feature.md
+saw status --impl docs/IMPL/IMPL-oauth.md
+saw status --impl docs/IMPL/IMPL-oauth.md --json
+saw status --impl docs/IMPL/IMPL-oauth.md --missing
 
 # Print version
 saw --version
@@ -31,9 +42,9 @@ saw --version
 ## Architecture
 
 ```
-cmd/saw/           # CLI entry point (wave, status subcommands)
+cmd/saw/           # CLI entry point (wave, status, scout, scaffold, merge)
 pkg/
-├── orchestrator/  # 7-state machine + wave coordination + merge procedure
+├── orchestrator/  # 10-state machine + wave coordination + merge procedure
 ├── protocol/      # IMPL doc parser + completion report extraction
 ├── worktree/      # Git worktree create/remove/cleanup
 └── agent/         # Anthropic API client + agent runner + completion polling
@@ -54,27 +65,22 @@ Implements [SAW Protocol v0.8.0](https://github.com/blackwell-systems/scout-and-
 | I5 | Agents commit before reporting | ✅ (enforced by merge trip wire) |
 | I6 | Role separation: orchestrator does not do agent work | ✅ |
 
-**7-state machine:** `SuitabilityPending → Reviewed → WavePending → WaveExecuting → WaveVerified → Complete` (+ `NotSuitable`)
+**10-state machine:**
 
-## MVP Scope
+```
+ScoutPending → Reviewed → ScaffoldPending → WavePending → WaveExecuting
+                                                 ↑              ↓
+                                            WaveVerified ← WaveMerging
+                                                 ↓
+                                             Complete
+```
 
-Phase 1 (this release):
-- Parse existing IMPL docs and extract wave/agent structure
-- Create git worktrees for isolated parallel execution
-- Execute agents via Anthropic API (streaming)
-- Merge wave branches with conflict detection and trip wire verification
-- Post-merge verification gates (`go test ./...`)
-- `saw wave` and `saw status` CLI commands
-
-Deferred to Phase 2:
-- Scout agent (codebase analysis + IMPL doc generation)
-- Scaffold agent (shared type file creation)
-- Interactive/manual approval prompts (auto mode only for now)
+Terminal states: `NotSuitable`, `Complete`. Recovery state: `Blocked`.
 
 ## Protocol Reference
 
 - [invariants.md](https://github.com/blackwell-systems/scout-and-wave/blob/main/protocol/invariants.md) — Six correctness guarantees (I1–I6)
-- [state-machine.md](https://github.com/blackwell-systems/scout-and-wave/blob/main/protocol/state-machine.md) — Seven states and transitions
+- [state-machine.md](https://github.com/blackwell-systems/scout-and-wave/blob/main/protocol/state-machine.md) — Ten states and transitions
 - [participants.md](https://github.com/blackwell-systems/scout-and-wave/blob/main/protocol/participants.md) — Four participant roles
 - [message-formats.md](https://github.com/blackwell-systems/scout-and-wave/blob/main/protocol/message-formats.md) — YAML schemas
 

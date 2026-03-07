@@ -1,3 +1,7 @@
+// Package worktree manages git worktrees for SAW wave agents. Each agent
+// in a wave receives an isolated worktree branched from HEAD so that
+// parallel file edits cannot conflict during execution. The Manager
+// handles creation, path resolution, and cleanup of worktrees.
 package worktree
 
 import (

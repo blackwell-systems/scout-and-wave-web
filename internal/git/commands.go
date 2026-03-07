@@ -1,3 +1,7 @@
+// Package git wraps the git CLI for operations required by SAW: worktree
+// creation and removal, branch merging with conflict detection, diff
+// inspection, and repository root resolution. All commands are thin
+// wrappers that return structured errors on non-zero exit codes.
 package git
 
 import (
