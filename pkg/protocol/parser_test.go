@@ -265,6 +265,122 @@ const implNoReport = `# IMPL: Demo
 Prompt only, no completion report yet.
 `
 
+// ── TestParseIMPLDoc_LintCommandBold ──────────────────────────────────────────
+
+func TestParseIMPLDoc_LintCommandBold(t *testing.T) {
+	content := `# IMPL: Test Feature
+
+**Lint Command:** ` + "`go vet ./...`" + `
+
+### File Ownership
+
+| file | agent-letter | wave | depends-on |
+|------|-------------|------|------------|
+| pkg/foo/foo.go | A | 1 | — |
+
+## Wave 1
+
+### Agent A: Implement foo
+
+Goal: implement foo.
+`
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if doc.LintCommand != "go vet ./..." {
+		t.Errorf("LintCommand = %q; want %q", doc.LintCommand, "go vet ./...")
+	}
+}
+
+// ── TestParseIMPLDoc_LintCommandPlain ─────────────────────────────────────────
+
+func TestParseIMPLDoc_LintCommandPlain(t *testing.T) {
+	content := `# IMPL: Test Feature
+
+lint_command: go vet ./...
+
+### File Ownership
+
+| file | agent-letter | wave | depends-on |
+|------|-------------|------|------------|
+| pkg/foo/foo.go | A | 1 | — |
+
+## Wave 1
+
+### Agent A: Implement foo
+
+Goal: implement foo.
+`
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if doc.LintCommand != "go vet ./..." {
+		t.Errorf("LintCommand = %q; want %q", doc.LintCommand, "go vet ./...")
+	}
+}
+
+// ── TestParseIMPLDoc_LintCommandEmpty ─────────────────────────────────────────
+
+func TestParseIMPLDoc_LintCommandEmpty(t *testing.T) {
+	content := `# IMPL: Test Feature
+
+**Test Command:** ` + "`go test ./...`" + `
+
+### File Ownership
+
+| file | agent-letter | wave | depends-on |
+|------|-------------|------|------------|
+| pkg/foo/foo.go | A | 1 | — |
+
+## Wave 1
+
+### Agent A: Implement foo
+
+Goal: implement foo.
+`
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if doc.LintCommand != "" {
+		t.Errorf("LintCommand = %q; want empty string", doc.LintCommand)
+	}
+}
+
+// ── TestParseIMPLDoc_LintCommandStripped ──────────────────────────────────────
+
+func TestParseIMPLDoc_LintCommandStripped(t *testing.T) {
+	content := `# IMPL: Test Feature
+
+Lint Command: ` + "`golangci-lint run ./...`" + `
+
+### File Ownership
+
+| file | agent-letter | wave | depends-on |
+|------|-------------|------|------------|
+| pkg/foo/foo.go | A | 1 | — |
+
+## Wave 1
+
+### Agent A: Implement foo
+
+Goal: implement foo.
+`
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if doc.LintCommand != "golangci-lint run ./..." {
+		t.Errorf("LintCommand = %q; want %q", doc.LintCommand, "golangci-lint run ./...")
+	}
+}
+
 // ── TestParseCompletionReport_Complete ───────────────────────────────────────
 
 func TestParseCompletionReport_Complete(t *testing.T) {

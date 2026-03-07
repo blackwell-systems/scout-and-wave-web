@@ -49,6 +49,7 @@ type IMPLDoc struct {
 	FeatureName   string
 	Status        string
 	TestCommand   string            // post-merge verification command (e.g. "go test ./...")
+	LintCommand   string            // post-merge lint command (e.g. "go vet ./..."); temp scaffold, canonical change owned by Agent A
 	Waves         []Wave
 	FileOwnership map[string]string // file path -> agent letter
 }
