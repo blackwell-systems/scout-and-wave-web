@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AgentStatus, WaveState } from '../types'
+import { AgentOutputData, AgentStatus, WaveState } from '../types'
 
 // AppWaveState is the composite state managed by the hook.
 // WaveState in types.ts is per-wave; we expose a top-level shape here
@@ -128,6 +128,15 @@ export function useWaveEvents(slug: string): AppWaveState {
           message: data.message,
         })
       )
+    })
+
+    es.addEventListener('agent_output', (event: MessageEvent) => {
+      const data = JSON.parse(event.data) as AgentOutputData
+      setState(prev => {
+        const existing = prev.agents.find(a => a.agent === data.agent && a.wave === data.wave)
+        const prevOutput = existing?.output ?? ''
+        return upsertAgent(prev, data.agent, data.wave, { output: prevOutput + data.chunk })
+      })
     })
 
     es.addEventListener('wave_complete', (event: MessageEvent) => {

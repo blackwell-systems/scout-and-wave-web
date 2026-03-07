@@ -123,6 +123,12 @@ export interface RunCompleteData {
 
 export type AgentStatusValue = 'pending' | 'running' | 'complete' | 'failed'
 
+export interface AgentOutputData {
+  agent: string
+  wave: number
+  chunk: string
+}
+
 export interface AgentStatus {
   agent: string
   wave: number
@@ -131,6 +137,7 @@ export interface AgentStatus {
   branch?: string
   failure_type?: string
   message?: string
+  output?: string   // NEW: accumulated streaming output chunks
 }
 
 export interface WaveState {
