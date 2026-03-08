@@ -58,6 +58,32 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("POST /api/impl/{slug}/revise/{runID}/cancel", s.handleImplReviseCancel)
 	s.mux.HandleFunc("POST /api/scout/{runID}/cancel", s.handleScoutCancel)
 	s.mux.HandleFunc("DELETE /api/impl/{slug}", s.handleDeleteImpl)
+
+	// v0.17.0-C — File diff viewer
+	s.mux.HandleFunc("GET /api/impl/{slug}/diff/{agent}", s.handleImplDiff)
+
+	// v0.17.0-D — Worktree manager
+	s.mux.HandleFunc("GET /api/impl/{slug}/worktrees", s.handleListWorktrees)
+	s.mux.HandleFunc("DELETE /api/impl/{slug}/worktrees/{branch}", s.handleDeleteWorktree)
+
+	// v0.18.0-B — Chat with Claude
+	s.mux.HandleFunc("POST /api/impl/{slug}/chat", s.handleImplChat)
+	s.mux.HandleFunc("GET /api/impl/{slug}/chat/{runID}/events", s.handleImplChatEvents)
+
+	// v0.18.0-C — Settings
+	s.mux.HandleFunc("GET /api/config", s.handleGetConfig)
+	s.mux.HandleFunc("POST /api/config", s.handleSaveConfig)
+
+	// v0.18.0-G — CONTEXT.md viewer
+	s.mux.HandleFunc("GET /api/context", s.handleGetContext)
+	s.mux.HandleFunc("PUT /api/context", s.handlePutContext)
+
+	// v0.18.0-I — Scaffold rerun
+	s.mux.HandleFunc("POST /api/impl/{slug}/scaffold/rerun", s.handleScaffoldRerun)
+
+	// v0.18.0-K — Per-agent context payload
+	s.mux.HandleFunc("GET /api/impl/{slug}/agent/{letter}/context", s.handleGetAgentContext)
+
 	sub, err := fs.Sub(staticFiles, "dist")
 	if err != nil {
 		panic("saw: failed to sub embed.FS: " + err.Error())
