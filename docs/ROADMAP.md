@@ -214,6 +214,74 @@ scout-and-wave-app/      Wails desktop app (future)
 
 ---
 
+### v0.18.0-D — Failure Type Action Buttons
+
+**Why:** A blocked wave is currently a dead end in the UI — you see `status: blocked` with no path forward. Protocol v0.12.0 added `failure_type: transient | fixable | needs_replan | escalate` to completion reports. The UI can now offer the right action per failure type instead of leaving the user to figure it out.
+
+**Scope:**
+- WaveBoard failed agent cards: parse `failure_type` from completion report, show action button per type
+  - `transient` → "Retry" button (POST `/api/wave/{slug}/agent/{letter}/rerun`)
+  - `fixable` → "Fix + Retry" button — surfaces agent's free-form notes describing the fix, then re-runs
+  - `needs_replan` → "Re-Scout" button — launches a new scout run with the agent's completion report as additional context
+  - `escalate` → "Escalate" badge — no button, highlights for human attention
+- If `failure_type` is absent from a `partial`/`blocked` report, treat as `escalate` (backward compat)
+- Parse `failure_type` from the `impl-completion-report` typed block in IMPL doc
+
+**Success criteria:**
+- No blocked wave requires a terminal to resolve
+- The correct recovery action is one click
+
+---
+
+### v0.18.0-E — Stub Report Panel
+
+**Why:** Protocol E20 (v0.12.0) defines `## Stub Report — Wave {N}` sections written to the IMPL doc after each wave. Currently these appear as raw markdown in the review screen. Surfacing them prominently before the approve buttons gives reviewers a clear signal before they approve.
+
+**Scope:**
+- ReviewScreen: parse `## Stub Report — Wave {N}` sections from IMPL doc (prose, not a typed block)
+- Show a "Stub Report" panel per wave in the review screen, collapsed by default, with a warning badge if stubs were found
+- Table display: File | Line | Pattern | Context (from scan-stubs.sh output)
+- "No stubs detected" green indicator when clean
+- Panel appears between wave completion reports and the approve/reject buttons
+- API: `GET /api/impl/{slug}/raw` already returns the full doc — parse client-side
+
+**Success criteria:**
+- Reviewer sees stub count before approving, without reading raw markdown
+
+---
+
+### v0.18.0-F — Quality Gates Panel
+
+**Why:** Protocol E21 (v0.12.0) defines a `## Quality Gates` section written by the Scout. The UI can show configured gates and their results after waves run.
+
+**Scope:**
+- ReviewScreen: parse `## Quality Gates` section (level + gates array) and display as a configuration panel
+- After wave completes: show gate results alongside the wave card (pass/fail badge per gate, command + exit code)
+- Gates configured `required: true` show as blocking (red); `required: false` as advisory (yellow)
+- API: `GET|PUT /api/impl/{slug}/raw` + client-side parse, or new `GET /api/impl/{slug}/gates` endpoint
+- Settings screen (v0.18.0-C) exposes default gate config; per-IMPL gates override
+
+**Success criteria:**
+- Quality gate results visible in UI without reading IMPL doc raw markdown
+
+---
+
+### v0.18.0-G — CONTEXT.md Viewer
+
+**Why:** Protocol E17/E18 (v0.12.0) define `docs/CONTEXT.md` — persistent project memory that Scouts read before every run and Orchestrators update after each feature. Making it visible and editable in the UI closes the loop for users who want to understand or correct what the Scout knows about their project.
+
+**Scope:**
+- Sidebar item: "Project Memory" — reads `docs/CONTEXT.md` from the project root
+- Read view: display structured YAML fields (architecture, decisions, conventions, established_interfaces, features_completed) in a human-readable format
+- Edit view: inline YAML editor with save (PUT to file via API)
+- API: `GET|PUT /api/context` — reads/writes `docs/CONTEXT.md` in configured project root
+- If `docs/CONTEXT.md` doesn't exist, show "No project memory yet — completes automatically after your first feature"
+
+**Success criteria:**
+- Users can read and correct project memory without opening a text editor
+
+---
+
 ## Phase 3: Native App (v0.19.5+)
 
 ### v0.19.5 — Wails Desktop App
