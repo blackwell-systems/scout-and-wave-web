@@ -46,6 +46,10 @@ type fakeBackend struct {
 	runFn func(systemPrompt string) (string, error)
 }
 
+func (f *fakeBackend) RunStreaming(_ context.Context, systemPrompt, _, _ string, _ func(string)) (string, error) {
+	return f.Run(context.Background(), systemPrompt, "", "")
+}
+
 func (f *fakeBackend) Run(_ context.Context, systemPrompt, _, _ string) (string, error) {
 	f.mu.Lock()
 	f.called = append(f.called, systemPrompt)
