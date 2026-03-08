@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
@@ -58,7 +59,6 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 	// Build the argument list.
 	args := []string{
 		"--print",
-		"--cwd", workDir,
 		"--allowedTools", "Bash,Read,Write,Edit,Glob,Grep",
 		"--dangerously-skip-permissions",
 	}
@@ -68,6 +68,18 @@ func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, wo
 	args = append(args, "-p", prompt)
 
 	cmd := exec.CommandContext(ctx, claudePath, args...)
+	cmd.Dir = workDir // set working directory instead of --cwd flag (removed in v2.x)
+
+	// Strip CLAUDECODE from the child environment so a nested `claude` process
+	// is not rejected with "Claude Code cannot be launched inside another Claude
+	// Code session". The parent session's context is irrelevant to the agent subprocess.
+	filtered := make([]string, 0, len(os.Environ()))
+	for _, env := range os.Environ() {
+		if !strings.HasPrefix(env, "CLAUDECODE=") {
+			filtered = append(filtered, env)
+		}
+	}
+	cmd.Env = filtered
 
 	// Capture stderr separately for error messages.
 	var stderrBuf bytes.Buffer

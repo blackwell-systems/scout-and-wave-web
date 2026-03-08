@@ -38,7 +38,27 @@ Competitive positioning:
 
 **Goal:** Create the demo that gets attention. Show SAW's sophistication is real, not just marketing.
 
-### v0.13.0 - Multi-Provider Backend Support
+### v0.13.0 - Live Agent Output Streaming ⚡ NON-OPTIONAL
+**Why:** Without this, the WaveBoard shows "Running" and nothing else. Zero visibility into what agents are doing. This is not a polish item — it is a core usability requirement. Users cannot trust or debug a system they cannot observe.
+
+**Scope:**
+- Capture subprocess stdout/stderr from each agent process in `pkg/agent/backend/cli/client.go`
+- Stream output lines to a per-agent SSE channel: `GET /api/wave/{slug}/agent/{letter}/output`
+- Frontend: expandable output section in each AgentCard showing live scrolling text
+- Auto-scroll to bottom; preserve last N lines (cap at 500 to avoid memory issues)
+- Distinguish tool calls from text output (lines starting with known tool patterns get different styling)
+- Output persists after agent completes so you can read what happened
+
+**Success criteria:**
+- You can watch an agent work in real time from the WaveBoard
+- When an agent fails, you can scroll its output to see the error
+- Feels like watching a terminal, not staring at a spinner
+
+**Estimated effort:** 2-3 days
+
+---
+
+### v0.15.0 - Multi-Provider Backend Support
 **Why:** Removes vendor lock-in, demonstrates infrastructure thinking, differentiates from Claude-only frameworks.
 
 **Scope:**
@@ -70,7 +90,7 @@ Competitive positioning:
 
 ---
 
-### v0.14.0 - Live Agent Observability
+### v0.14.0 - Live Agent Observability (merged into v0.13.0 — see above)
 **Why:** Operators can't see what agents are doing during execution. The review UI is plan-only — no live feedback loop.
 
 **Scope:**
@@ -100,6 +120,7 @@ Competitive positioning:
 **Scope:**
 - Review screen performance optimization (lazy-load panels, virtualized lists for large IMPL docs)
 - Wave board live updates polish (smooth transitions, better error states)
+- Stale worktree cleanup button — detect leftover `wave{N}-agent-{X}` branches before run, offer one-click cleanup in UI
 - Empty states for all panels ("No agents yet", "No known issues")
 - Loading skeletons for API calls
 - Keyboard shortcuts (tab navigation, approve with Cmd+Enter)

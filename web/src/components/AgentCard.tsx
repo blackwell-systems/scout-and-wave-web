@@ -1,18 +1,9 @@
 import { useRef, useEffect } from 'react'
 import { AgentStatus } from '../types'
-import { Card, CardContent, CardHeader } from './ui/card'
-import { Badge } from './ui/badge'
-import { getAgentColor, getAgentColorWithOpacity } from '../lib/agentColors'
+import { getAgentColor } from '../lib/agentColors'
 
 interface AgentCardProps {
   agent: AgentStatus
-}
-
-const statusStyles: Record<string, string> = {
-  pending: 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400',
-  running: 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-400',
-  complete: 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-400',
-  failed: 'bg-red-100 text-red-700 dark:bg-red-950 dark:text-red-400',
 }
 
 const statusLabels: Record<string, string> = {
@@ -20,6 +11,33 @@ const statusLabels: Record<string, string> = {
   running: 'Running',
   complete: 'Complete',
   failed: 'Failed',
+}
+
+// Status-based styling with glowing borders (maestro-inspired)
+const getStatusStyle = (status: string) => {
+  switch (status) {
+    case 'running':
+      return {
+        borderColor: 'rgb(88, 166, 255)',
+        boxShadow: '0 0 12px rgba(88, 166, 255, 0.4), 0 0 24px rgba(88, 166, 255, 0.2)',
+      }
+    case 'complete':
+      return {
+        borderColor: 'rgb(63, 185, 80)',
+        boxShadow: '0 0 10px rgba(63, 185, 80, 0.3), 0 0 20px rgba(63, 185, 80, 0.15)',
+      }
+    case 'failed':
+      return {
+        borderColor: 'rgb(248, 81, 73)',
+        boxShadow: '0 0 12px rgba(248, 81, 73, 0.5), 0 0 24px rgba(248, 81, 73, 0.25)',
+      }
+    case 'pending':
+    default:
+      return {
+        borderColor: 'rgba(140, 140, 150, 0.4)',
+        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2)',
+      }
+  }
 }
 
 export default function AgentCard({ agent }: AgentCardProps) {
@@ -33,71 +51,78 @@ export default function AgentCard({ agent }: AgentCardProps) {
   const showOutput = (agent.status === 'running' || agent.status === 'complete') && agentOutput && agentOutput.length > 0
 
   const agentColor = getAgentColor(agent.agent)
-  const agentBgColor = getAgentColorWithOpacity(agent.agent, 0.1)
   const branchName = agent.branch || `wave${agent.wave}-agent-${agent.agent.toLowerCase()}`
+  const statusStyle = getStatusStyle(agent.status)
 
   return (
-    <Card
-      className="min-w-[200px] max-w-xs"
-      style={{ borderLeftWidth: '4px', borderLeftColor: agentColor }}
+    <div
+      className="flex flex-col min-w-[240px] max-w-sm overflow-hidden transition-all duration-200"
+      style={{
+        borderRadius: '12px',
+        border: '3px solid',
+        ...statusStyle,
+      }}
     >
-      <CardHeader
-        className="pb-3"
-        style={{ backgroundColor: agentBgColor }}
-      >
-        <div className="flex flex-col gap-1">
-          <div className="flex items-center justify-between">
-            <span className="font-bold text-sm truncate mr-2">{agent.agent}</span>
-            <Badge
-              variant="secondary"
-              className={`text-xs whitespace-nowrap ${statusStyles[agent.status] ?? statusStyles.pending} ${agent.status === 'running' ? 'animate-pulse' : ''}`}
+      {/* Header with agent letter, status badge, and branch */}
+      <div className="flex flex-col gap-2 p-3 bg-black/20 dark:bg-white/5 border-b border-white/10">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <div
+              className="flex items-center justify-center w-8 h-8 rounded-lg font-bold text-sm"
+              style={{
+                backgroundColor: `${agentColor}20`,
+                color: agentColor,
+                border: `2px solid ${agentColor}50`,
+              }}
             >
-              {statusLabels[agent.status] ?? agent.status}
-            </Badge>
+              {agent.agent}
+            </div>
+            <div className="text-xs font-medium text-white/90">{statusLabels[agent.status] ?? agent.status}</div>
           </div>
-          <div className="text-[10px] text-muted-foreground font-mono">
-            {branchName}
-          </div>
+          {agent.status === 'running' && (
+            <div className="flex items-center gap-1">
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" style={{ animationDelay: '0.2s' }} />
+              <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" style={{ animationDelay: '0.4s' }} />
+            </div>
+          )}
         </div>
-      </CardHeader>
+        <div className="text-[10px] font-mono text-white/50">{branchName}</div>
+      </div>
 
+      {/* Output section */}
       {showOutput && (
-        <CardContent className="pt-0">
+        <div className="p-3">
           <pre
             ref={preRef}
-            className="text-xs font-mono text-muted-foreground bg-muted/50 rounded p-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-all"
+            className="text-xs font-mono text-white/70 bg-black/30 rounded p-2 max-h-32 overflow-y-auto whitespace-pre-wrap break-all"
           >
             {agentOutput}
           </pre>
-        </CardContent>
+        </div>
       )}
 
+      {/* Files and errors */}
       {(agent.files.length > 0 || agent.status === 'failed') && (
-        <CardContent className="pt-0">
+        <div className="p-3 pt-0">
           {agent.files.length > 0 && (
             <ul className="space-y-0.5 mb-2">
               {agent.files.map(f => (
-                <li key={f} className="font-mono text-xs text-muted-foreground truncate" title={f}>
+                <li key={f} className="font-mono text-xs text-white/60 truncate" title={f}>
                   {f}
                 </li>
               ))}
             </ul>
           )}
 
-          {agent.status === 'failed' && (
-            <div className="mt-2 space-y-1">
-              {agent.failure_type && (
-                <Badge variant="outline" className="bg-red-50 border-red-200 text-red-600 dark:bg-red-950 dark:border-red-800 dark:text-red-400">
-                  {agent.failure_type}
-                </Badge>
-              )}
-              {agent.message && (
-                <p className="text-xs text-red-600 dark:text-red-400 break-words">{agent.message}</p>
-              )}
+          {agent.status === 'failed' && agent.message && (
+            <div className="mt-2 text-xs text-red-400 bg-red-500/10 rounded p-2 break-words">
+              {agent.failure_type && <div className="font-semibold mb-1">{agent.failure_type}</div>}
+              {agent.message}
             </div>
           )}
-        </CardContent>
+        </div>
       )}
-    </Card>
+    </div>
   )
 }

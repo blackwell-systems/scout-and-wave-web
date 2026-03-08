@@ -43,7 +43,7 @@ function parseDependencyGraph(text: string): ParsedWave[] {
       continue
     }
 
-    const agentMatch = line.match(/^\s*\[([A-Z])\]\s*(.+)/)
+    const agentMatch = line.match(/^\s*\[([A-Za-z]+)\]\s*(.+)/)
     if (agentMatch && currentWave) {
       if (currentAgent) {
         currentWave.agents.push(currentAgent)
@@ -58,7 +58,7 @@ function parseDependencyGraph(text: string): ParsedWave[] {
     }
 
     if (currentAgent && line.includes('depends on:')) {
-      const deps = [...line.matchAll(/\[([A-Z])\]/g)]
+      const deps = [...line.matchAll(/\[([A-Za-z]+)\]/g)]
       for (const dep of deps) {
         currentAgent.dependencies.push(dep[1])
       }
@@ -82,13 +82,21 @@ const AGENT_GAP = 72
 const PAD_X = 60
 const PAD_Y = 40
 
-function getAgentFill(letter: string): { bg: string; border: string; text: string } {
+function getAgentFill(letter: string): { bg: string; border: string; text: string; dashed?: boolean } {
+  if (letter === 'Scaffold') {
+    return { bg: '#6b728015', border: '#6b728060', text: '#9ca3af', dashed: true }
+  }
   const color = getAgentColor(letter)
   return {
     bg: `${color}20`,
     border: `${color}50`,
     text: color,
   }
+}
+
+function getNodeLabel(letter: string): string {
+  if (letter === 'Scaffold') return 'Sc'
+  return letter
 }
 
 // Wave column colors — blends the hues of agents typically in that wave
@@ -277,6 +285,7 @@ export default function DependencyGraphPanel({ dependencyGraphText }: Dependency
             {/* Nodes */}
             {nodes.map(node => {
               const fill = getAgentFill(node.agent.letter)
+              const label = getNodeLabel(node.agent.letter)
               return (
                 <g
                   key={node.agent.letter}
@@ -299,6 +308,7 @@ export default function DependencyGraphPanel({ dependencyGraphText }: Dependency
                     fill={fill.bg}
                     stroke={fill.border}
                     strokeWidth={2}
+                    strokeDasharray={fill.dashed ? '4 3' : undefined}
                   />
                   <text
                     x={node.x + NODE_W / 2}
@@ -306,11 +316,11 @@ export default function DependencyGraphPanel({ dependencyGraphText }: Dependency
                     textAnchor="middle"
                     dominantBaseline="central"
                     fill={fill.text}
-                    fontSize={16}
+                    fontSize={label.length > 1 ? 12 : 16}
                     fontWeight={700}
                     fontFamily="ui-monospace, monospace"
                   >
-                    {node.agent.letter}
+                    {label}
                   </text>
                 </g>
               )
@@ -328,7 +338,7 @@ export default function DependencyGraphPanel({ dependencyGraphText }: Dependency
               }}
             >
               <div className="bg-foreground text-background border border-foreground/20 rounded-lg shadow-xl p-3 max-w-[240px]">
-                <div className="font-semibold text-sm mb-1">Agent {tooltip.agent.letter}</div>
+                <div className="font-semibold text-sm mb-1">{tooltip.agent.letter === 'Scaffold' ? 'Scaffold Agent' : `Agent ${tooltip.agent.letter}`}</div>
                 <div className="text-xs opacity-80">{tooltip.agent.description}</div>
                 {tooltip.agent.dependencies.length > 0 && (
                   <div className="text-xs opacity-70 mt-1">
