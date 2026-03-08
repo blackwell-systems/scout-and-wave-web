@@ -1,4 +1,5 @@
 # IMPL: Protocol Loop — Completion Report Polling Fix
+<!-- SAW:COMPLETE 2026-03-07 -->
 
 ## Summary
 
