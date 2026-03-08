@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { getConfig, saveConfig } from '../api'
-import { SAWConfig } from '../types'
+import { SAWConfig, RepoEntry } from '../types'
 import DirPicker from './DirPicker'
 
 const MODEL_OPTIONS = [
@@ -11,10 +11,10 @@ const MODEL_OPTIONS = [
 
 interface SettingsScreenProps {
   onClose: () => void
-  onReposChange?: (repos: import('../types').RepoEntry[]) => void
+  onReposChange?: (repos: RepoEntry[]) => void
 }
 
-export default function SettingsScreen({ onClose }: SettingsScreenProps): JSX.Element {
+export default function SettingsScreen({ onClose, onReposChange }: SettingsScreenProps): JSX.Element {
   const [config, setConfig] = useState<SAWConfig>({
     repos: [],
     repo: { path: '' },
@@ -26,6 +26,7 @@ export default function SettingsScreen({ onClose }: SettingsScreenProps): JSX.El
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [savedMsg, setSavedMsg] = useState(false)
+  const [repoErrors, setRepoErrors] = useState<string | null>(null)
 
   useEffect(() => {
     getConfig()
@@ -39,11 +40,48 @@ export default function SettingsScreen({ onClose }: SettingsScreenProps): JSX.El
       })
   }, [])
 
+  function updateRepo(index: number, field: keyof RepoEntry, value: string) {
+    setConfig(c => {
+      const repos = c.repos.map((r, i) =>
+        i === index ? { ...r, [field]: value } : r
+      )
+      return { ...c, repos }
+    })
+    setRepoErrors(null)
+  }
+
+  function addRepo() {
+    setConfig(c => ({ ...c, repos: [...c.repos, { name: '', path: '' }] }))
+  }
+
+  function removeRepo(index: number) {
+    setConfig(c => ({ ...c, repos: c.repos.filter((_, i) => i !== index) }))
+    setRepoErrors(null)
+  }
+
   async function handleSave() {
+    // Validate: every repo must have a non-empty path
+    const hasEmptyPath = config.repos.some(r => r.path.trim() === '')
+    if (hasEmptyPath) {
+      setRepoErrors('All repositories must have a path set.')
+      return
+    }
+
+    // Default name to last path segment if blank
+    const normalizedRepos: RepoEntry[] = config.repos.map(r => ({
+      name: r.name.trim() !== '' ? r.name.trim() : r.path.split('/').filter(Boolean).pop() ?? r.path,
+      path: r.path,
+    }))
+
+    const configToSave: SAWConfig = { ...config, repos: normalizedRepos }
+
     setSaving(true)
     setError(null)
+    setRepoErrors(null)
     try {
-      await saveConfig(config)
+      await saveConfig(configToSave)
+      setConfig(configToSave)
+      onReposChange?.(normalizedRepos)
       setSavedMsg(true)
       setTimeout(() => {
         setSavedMsg(false)
@@ -76,16 +114,49 @@ export default function SettingsScreen({ onClose }: SettingsScreenProps): JSX.El
 
       {/* Repo section */}
       <div className="rounded-lg border border-border bg-card p-4 flex flex-col gap-3">
-        <h3 className="text-sm font-medium">Repository</h3>
-        <div className="flex flex-col gap-1.5">
-          <label className="text-xs text-muted-foreground" htmlFor="settings-repo-path">
-            Repo path
-          </label>
-          <DirPicker
-            value={config.repo.path}
-            onChange={path => setConfig(c => ({ ...c, repo: { path } }))}
-          />
-        </div>
+        <h3 className="text-sm font-medium">Repositories</h3>
+
+        {config.repos.length === 0 && (
+          <p className="text-xs text-muted-foreground">No repositories configured. Add one below.</p>
+        )}
+
+        {config.repos.map((repo, index) => (
+          <div key={index} className="flex items-start gap-2">
+            <input
+              type="text"
+              value={repo.name}
+              onChange={e => updateRepo(index, 'name', e.target.value)}
+              placeholder="name"
+              className="w-24 text-xs font-mono px-2 py-1.5 rounded-md border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            />
+            <div className="flex-1">
+              <DirPicker
+                value={repo.path}
+                onChange={path => updateRepo(index, 'path', path)}
+              />
+            </div>
+            <button
+              type="button"
+              onClick={() => removeRepo(index)}
+              className="text-xs text-muted-foreground hover:text-destructive mt-1.5 px-1"
+              title="Remove repository"
+            >
+              &times;
+            </button>
+          </div>
+        ))}
+
+        {repoErrors && (
+          <p className="text-xs text-destructive">{repoErrors}</p>
+        )}
+
+        <button
+          type="button"
+          onClick={addRepo}
+          className="self-start text-xs px-3 py-1.5 rounded-md border border-border bg-background text-foreground hover:bg-muted transition-colors"
+        >
+          + Add repo
+        </button>
       </div>
 
       {/* Agent section */}
