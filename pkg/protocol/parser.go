@@ -55,6 +55,11 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 	// Not used in ParseIMPLDoc itself but we skip those sections cleanly.
 	inYAMLBlock := false
 
+	// Typed-block override flags: when a typed block provides a section,
+	// the heading-based fallback must not overwrite it.
+	hasTypedFileOwnership := false
+	hasTypedDepGraph := false
+
 	scanner := bufio.NewScanner(f)
 	lineNum := 0
 
@@ -82,6 +87,41 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 		// Track YAML fences so we don't misinterpret their content as headers.
 		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "```") {
+			// Check for typed block: ```yaml type=impl-* or ```type=impl-*
+			if strings.Contains(trimmed, "type=impl-") {
+				// Extract the blockType: substring after "type=" to end-of-line or first space.
+				typeIdx := strings.Index(trimmed, "type=")
+				blockType := trimmed[typeIdx+len("type="):]
+				if spIdx := strings.Index(blockType, " "); spIdx >= 0 {
+					blockType = blockType[:spIdx]
+				}
+				// Read block content until closing ```.
+				blockLines := readUntilClosingFence(scanner)
+				lineNum += len(blockLines) + 1 // +1 for the closing fence line
+
+				// Dispatch to the appropriate typed-block section parser.
+				switch blockType {
+				case "impl-file-ownership":
+					// Parse table rows from block content into doc.FileOwnership.
+					for _, bl := range blockLines {
+						if strings.HasPrefix(bl, "|") {
+							parseFileOwnershipRow(bl, doc.FileOwnership, &doc.FileOwnershipCol4)
+						}
+					}
+					hasTypedFileOwnership = true
+				case "impl-dep-graph":
+					doc.DependencyGraphText = strings.Join(blockLines, "\n")
+					hasTypedDepGraph = true
+				case "impl-wave-structure":
+					// Store raw content (ignored by parser beyond storage).
+					// Currently no field in IMPLDoc for this; skip silently.
+				case "impl-completion-report":
+					// Skip: completion reports are parsed by ParseCompletionReport.
+				}
+				// Do NOT set inYAMLBlock — the helper already consumed the block.
+				continue
+			}
+
 			inYAMLBlock = !inYAMLBlock
 			if state == stateAgent {
 				agentPromptLines = append(agentPromptLines, line)
@@ -154,6 +194,12 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 			currentWave = &types.Wave{Number: n}
 			state = stateWave
 
+		// ── Pre-Mortem section: ## Pre-Mortem or ### Pre-Mortem
+		case trimmed == "## Pre-Mortem" || trimmed == "### Pre-Mortem":
+			flushAgent()
+			doc.PreMortem = parsePreMortemSection(scanner)
+			state = stateTop
+
 		// ── Other ## headers (non-Wave): leave wave context
 		case strings.HasPrefix(line, "## ") && !strings.HasPrefix(line, "## Wave "):
 			flushWave()
@@ -167,7 +213,11 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 		// ── File ownership table header: ### File Ownership
 		case trimmed == "### File Ownership":
 			flushAgent()
-			state = stateFileOwner
+			if hasTypedFileOwnership {
+				state = stateTop // typed block already parsed; skip heading-based fallback
+			} else {
+				state = stateFileOwner
+			}
 
 		// ── Known Issues section: ### Known Issues
 		case trimmed == "### Known Issues":
@@ -191,8 +241,12 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 		// ── Dependency Graph section: ### Dependency Graph
 		case trimmed == "### Dependency Graph":
 			flushAgent()
-			doc.DependencyGraphText = parseDependencyGraphSection(scanner)
-			state = stateTop
+			if hasTypedDepGraph {
+				state = stateTop // typed block already parsed; skip heading-based fallback
+			} else {
+				doc.DependencyGraphText = parseDependencyGraphSection(scanner)
+				state = stateTop
+			}
 
 		// ── Post-Merge Checklist section: ### Orchestrator Post-Merge Checklist
 		case strings.HasPrefix(trimmed, "### Orchestrator Post-Merge Checklist"):
@@ -828,6 +882,117 @@ func parseFileOwnershipRow(line string, ownership map[string]types.FileOwnership
 	}
 
 	ownership[file] = info
+}
+
+// readUntilClosingFence reads scanner lines until a closing ``` fence is found
+// (or EOF). It returns the content lines (not including the closing fence line).
+// The caller must account for the consumed lines when tracking line numbers.
+func readUntilClosingFence(scanner *bufio.Scanner) []string {
+	var lines []string
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(strings.TrimSpace(line), "```") {
+			// Closing fence found — stop and do not include it in content.
+			break
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+// parsePreMortemSection parses a ## Pre-Mortem or ### Pre-Mortem section.
+// It scans until the next ## or ### header or EOF. It looks for:
+//   - **Overall risk:** <level>  (case-insensitive)
+//   - A markdown table with 4 columns: Scenario | Likelihood | Impact | Mitigation
+//
+// Returns nil if no table rows are found.
+func parsePreMortemSection(scanner *bufio.Scanner) *types.PreMortem {
+	pm := &types.PreMortem{}
+	inTable := false
+	headerSeen := false
+
+	for scanner.Scan() {
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+
+		// Stop at next section header.
+		if strings.HasPrefix(trimmed, "## ") || strings.HasPrefix(trimmed, "### ") {
+			break
+		}
+
+		// Detect **Overall risk:** line (case-insensitive).
+		lowerTrimmed := strings.ToLower(trimmed)
+		if strings.Contains(lowerTrimmed, "overall risk:") {
+			idx := strings.Index(lowerTrimmed, "overall risk:")
+			val := strings.TrimSpace(trimmed[idx+len("overall risk:"):])
+			// Strip trailing ** if present (bold markup).
+			val = strings.Trim(val, "* ")
+			val = strings.ToLower(val)
+			pm.OverallRisk = val
+			continue
+		}
+
+		// Parse markdown table rows.
+		if !strings.HasPrefix(line, "|") {
+			continue
+		}
+
+		parts := strings.Split(line, "|")
+		if len(parts) < 4 {
+			continue
+		}
+
+		col1 := strings.TrimSpace(parts[1])
+
+		// Skip header row (contains "Scenario") and separator row (contains "---").
+		if strings.Contains(col1, "---") {
+			continue
+		}
+		if !headerSeen && strings.EqualFold(col1, "scenario") {
+			headerSeen = true
+			inTable = true
+			continue
+		}
+		if !inTable {
+			// Treat first | row as header if we haven't seen one yet.
+			inTable = true
+			if strings.EqualFold(col1, "scenario") {
+				headerSeen = true
+				continue
+			}
+		}
+
+		// Data row.
+		scenario := col1
+		likelihood := ""
+		impact := ""
+		mitigation := ""
+		if len(parts) > 2 {
+			likelihood = strings.TrimSpace(parts[2])
+		}
+		if len(parts) > 3 {
+			impact = strings.TrimSpace(parts[3])
+		}
+		if len(parts) > 4 {
+			mitigation = strings.TrimSpace(parts[4])
+		}
+
+		if scenario == "" {
+			continue
+		}
+
+		pm.Rows = append(pm.Rows, types.PreMortemRow{
+			Scenario:   scenario,
+			Likelihood: likelihood,
+			Impact:     impact,
+			Mitigation: mitigation,
+		})
+	}
+
+	if len(pm.Rows) == 0 && pm.OverallRisk == "" {
+		return nil
+	}
+	return pm
 }
 
 // classifyAction normalizes an action string to "new", "modify", or "delete".

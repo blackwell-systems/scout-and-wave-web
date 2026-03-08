@@ -657,6 +657,150 @@ Goal: implement foo.
 	}
 }
 
+// ── TestParseIMPLDoc_TypedBlockFileOwnership ──────────────────────────────────
+
+func TestParseIMPLDoc_TypedBlockFileOwnership(t *testing.T) {
+	content := "# IMPL: Typed Block Test\n\n" +
+		"```yaml type=impl-file-ownership\n" +
+		"| file | agent-letter | wave | depends-on |\n" +
+		"|------|-------------|------|------------|\n" +
+		"| pkg/typed/foo.go | A | 1 | — |\n" +
+		"| pkg/typed/bar.go | B | 1 | — |\n" +
+		"```\n\n" +
+		"## Wave 1\n\n" +
+		"### Agent A: Implement typed foo\n\n" +
+		"Goal: implement typed foo.\n\n" +
+		"### Agent B: Implement typed bar\n\n" +
+		"Goal: implement typed bar.\n"
+
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if len(doc.FileOwnership) == 0 {
+		t.Fatal("FileOwnership is empty; typed block was not parsed")
+	}
+	infoA, ok := doc.FileOwnership["pkg/typed/foo.go"]
+	if !ok {
+		t.Errorf("FileOwnership[\"pkg/typed/foo.go\"] not found; got keys: %v", func() []string {
+			var ks []string
+			for k := range doc.FileOwnership {
+				ks = append(ks, k)
+			}
+			return ks
+		}())
+	} else if infoA.Agent != "A" {
+		t.Errorf("FileOwnership[\"pkg/typed/foo.go\"].Agent = %q; want \"A\"", infoA.Agent)
+	}
+
+	infoB, ok := doc.FileOwnership["pkg/typed/bar.go"]
+	if !ok {
+		t.Errorf("FileOwnership[\"pkg/typed/bar.go\"] not found")
+	} else if infoB.Agent != "B" {
+		t.Errorf("FileOwnership[\"pkg/typed/bar.go\"].Agent = %q; want \"B\"", infoB.Agent)
+	}
+}
+
+// ── TestParseIMPLDoc_TypedBlockFallback ───────────────────────────────────────
+
+func TestParseIMPLDoc_TypedBlockFallback(t *testing.T) {
+	// Heading-only format (no typed blocks) must preserve existing behavior.
+	path := writeTmpFile(t, minimalIMPL)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(doc.FileOwnership) == 0 {
+		t.Fatal("FileOwnership is empty; heading-based fallback was not parsed")
+	}
+	if _, ok := doc.FileOwnership["pkg/foo/foo.go"]; !ok {
+		t.Error("FileOwnership[\"pkg/foo/foo.go\"] not found in fallback parse")
+	}
+	if _, ok := doc.FileOwnership["pkg/bar/bar.go"]; !ok {
+		t.Error("FileOwnership[\"pkg/bar/bar.go\"] not found in fallback parse")
+	}
+}
+
+// ── TestParseIMPLDoc_PreMortem ────────────────────────────────────────────────
+
+func TestParseIMPLDoc_PreMortem(t *testing.T) {
+	content := `# IMPL: PreMortem Test
+
+## Pre-Mortem
+
+**Overall risk:** medium
+
+| Scenario | Likelihood | Impact | Mitigation |
+|----------|-----------|--------|------------|
+| DB schema mismatch | high | high | Run migration tests |
+| Agent timeout | low | medium | Add deadline context |
+
+## Wave 1
+
+### Agent A: Implement foo
+
+Goal: implement foo.
+`
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if doc.PreMortem == nil {
+		t.Fatal("PreMortem is nil; section was not parsed")
+	}
+	if doc.PreMortem.OverallRisk != "medium" {
+		t.Errorf("OverallRisk = %q; want \"medium\"", doc.PreMortem.OverallRisk)
+	}
+	if len(doc.PreMortem.Rows) != 2 {
+		t.Fatalf("PreMortem.Rows count = %d; want 2", len(doc.PreMortem.Rows))
+	}
+	if doc.PreMortem.Rows[0].Scenario != "DB schema mismatch" {
+		t.Errorf("Rows[0].Scenario = %q; want \"DB schema mismatch\"", doc.PreMortem.Rows[0].Scenario)
+	}
+	if doc.PreMortem.Rows[0].Likelihood != "high" {
+		t.Errorf("Rows[0].Likelihood = %q; want \"high\"", doc.PreMortem.Rows[0].Likelihood)
+	}
+	if doc.PreMortem.Rows[1].Scenario != "Agent timeout" {
+		t.Errorf("Rows[1].Scenario = %q; want \"Agent timeout\"", doc.PreMortem.Rows[1].Scenario)
+	}
+	if doc.PreMortem.Rows[1].Mitigation != "Add deadline context" {
+		t.Errorf("Rows[1].Mitigation = %q; want \"Add deadline context\"", doc.PreMortem.Rows[1].Mitigation)
+	}
+}
+
+// ── TestParseIMPLDoc_TypedBlockDepGraph ───────────────────────────────────────
+
+func TestParseIMPLDoc_TypedBlockDepGraph(t *testing.T) {
+	content := "# IMPL: DepGraph Typed Block Test\n\n" +
+		"```yaml type=impl-dep-graph\n" +
+		"scaffold --> Wave 1 [A, B]\n" +
+		"Wave 1   --> Wave 2 [C]\n" +
+		"```\n\n" +
+		"## Wave 1\n\n" +
+		"### Agent A: Implement foo\n\n" +
+		"Goal: implement foo.\n"
+
+	path := writeTmpFile(t, content)
+	doc, err := ParseIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if doc.DependencyGraphText == "" {
+		t.Fatal("DependencyGraphText is empty; typed block was not parsed")
+	}
+	if !strings.Contains(doc.DependencyGraphText, "scaffold --> Wave 1") {
+		t.Errorf("DependencyGraphText does not contain expected content: %q", doc.DependencyGraphText)
+	}
+	if !strings.Contains(doc.DependencyGraphText, "Wave 1   --> Wave 2") {
+		t.Errorf("DependencyGraphText missing second line: %q", doc.DependencyGraphText)
+	}
+}
+
 // ── TestParseIMPLDoc_PostMergeChecklist ──────────────────────────────────────
 
 func TestParseIMPLDoc_PostMergeChecklist(t *testing.T) {
