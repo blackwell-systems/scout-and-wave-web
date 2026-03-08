@@ -231,24 +231,33 @@ export default function App() {
 
         {/* Center column */}
         <div className="flex-1 overflow-y-auto min-w-0">
-          {showSettings ? (
-            <SettingsScreen onClose={() => setShowSettings(false)} onReposChange={handleReposChange} />
-          ) : (
-            <>
-              {error && <p className="text-destructive text-sm p-4">{error}</p>}
-              {loading && <p className="text-muted-foreground text-sm p-4">Loading...</p>}
-              {rejected && <p className="text-orange-600 text-sm p-4">Plan rejected.</p>}
-              {!loading && impl !== null && selectedSlug !== null && (
-                <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onRefreshImpl={handleSelect} repos={repos} />
-              )}
-              {!loading && impl === null && !error && (
-                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                  Select a plan from the list to review.
-                </div>
-              )}
-            </>
+          {error && <p className="text-destructive text-sm p-4">{error}</p>}
+          {loading && <p className="text-muted-foreground text-sm p-4">Loading...</p>}
+          {rejected && <p className="text-orange-600 text-sm p-4">Plan rejected.</p>}
+          {!loading && impl !== null && selectedSlug !== null && (
+            <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onRefreshImpl={handleSelect} repos={repos} />
+          )}
+          {!loading && impl === null && !error && (
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+              Select a plan from the list to review.
+            </div>
           )}
         </div>
+
+        {/* Settings modal overlay */}
+        {showSettings && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+            onClick={() => setShowSettings(false)}
+          >
+            <div
+              className="bg-background border border-border rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <SettingsScreen onClose={() => setShowSettings(false)} onReposChange={handleReposChange} />
+            </div>
+          </div>
+        )}
 
         {/* Right divider + rail — only when liveView is not null */}
         {liveView !== null && (
