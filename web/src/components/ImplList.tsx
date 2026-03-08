@@ -8,6 +8,7 @@ interface ImplListProps {
   onSelect: (slug: string) => void
   onDelete: (slug: string) => void
   loading: boolean
+  repos?: import('../types').RepoEntry[]
 }
 
 export default function ImplList(props: ImplListProps): JSX.Element {

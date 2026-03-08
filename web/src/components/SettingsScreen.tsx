@@ -11,10 +11,12 @@ const MODEL_OPTIONS = [
 
 interface SettingsScreenProps {
   onClose: () => void
+  onReposChange?: (repos: import('../types').RepoEntry[]) => void
 }
 
 export default function SettingsScreen({ onClose }: SettingsScreenProps): JSX.Element {
   const [config, setConfig] = useState<SAWConfig>({
+    repos: [],
     repo: { path: '' },
     agent: { scout_model: 'claude-sonnet-4-5', wave_model: 'claude-sonnet-4-5' },
     quality: { require_tests: false, require_lint: false, block_on_failure: false },
