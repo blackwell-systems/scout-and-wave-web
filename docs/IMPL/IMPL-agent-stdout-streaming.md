@@ -1,3 +1,6 @@
+# IMPL: agent-stdout-streaming
+<!-- SAW:COMPLETE 2026-03-07 -->
+
 ### Suitability Assessment
 
 Verdict: SUITABLE
