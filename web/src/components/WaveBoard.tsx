@@ -5,13 +5,40 @@ import { WaveMergeState, WaveTestState } from '../hooks/useWaveEvents'
 import AgentCard from './AgentCard'
 import ProgressBar from './ProgressBar'
 import ImplEditor from './ImplEditor'
-import { AgentStatus } from '../types'
+import { AgentStatus, RepoEntry } from '../types'
 import { mergeWave, runWaveTests, rerunAgent } from '../api'
 
 interface WaveBoardProps {
   slug: string
   compact?: boolean
   onRescout?: () => void
+  repos?: RepoEntry[]   // optional — graceful fallback when empty
+}
+
+function detectRepoName(filePath: string, repos: RepoEntry[]): string {
+  let best = ''
+  let bestLen = 0
+  for (const r of repos) {
+    if (filePath.startsWith(r.path) && r.path.length > bestLen) {
+      best = r.name
+      bestLen = r.path.length
+    }
+  }
+  return best
+}
+
+function dominantRepo(files: string[], repos: RepoEntry[]): string {
+  const counts = new Map<string, number>()
+  for (const f of files) {
+    const name = detectRepoName(f, repos)
+    if (name) counts.set(name, (counts.get(name) ?? 0) + 1)
+  }
+  let best = ''
+  let bestCount = 0
+  for (const [name, count] of counts) {
+    if (count > bestCount) { best = name; bestCount = count }
+  }
+  return best
 }
 
 // Key for the optimistic agent status override map
@@ -19,7 +46,7 @@ function agentKey(agent: string, wave: number): string {
   return `${wave}:${agent}`
 }
 
-export default function WaveBoard({ slug, compact, onRescout }: WaveBoardProps): JSX.Element {
+export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoardProps): JSX.Element {
   // Optimistic status overrides — keyed by "wave:agent"
   const [statusOverrides, setStatusOverrides] = useState<Map<string, 'pending'>>(new Map())
 
@@ -230,12 +257,20 @@ export default function WaveBoard({ slug, compact, onRescout }: WaveBoardProps):
                 )}
 
                 <div className={compact ? 'flex flex-col gap-2' : 'flex flex-wrap gap-3'}>
-                  {waveAgents.map(agent => (
-                    <div key={`${agent.agent}-${agent.wave}`} className="flex flex-col gap-1">
-                      <AgentCard agent={agent} />
-                      {agent.status === 'failed' && renderFailureActionButton(agent)}
-                    </div>
-                  ))}
+                  {waveAgents.map(agent => {
+                    const tag = dominantRepo(agent.files ?? [], repos ?? [])
+                    return (
+                      <div key={`${agent.agent}-${agent.wave}`} className="flex flex-col gap-1">
+                        <AgentCard agent={agent} />
+                        {tag && (
+                          <span className="self-start text-[9px] font-mono px-1.5 py-0.5 rounded border border-border text-muted-foreground bg-muted">
+                            [{tag}]
+                          </span>
+                        )}
+                        {agent.status === 'failed' && renderFailureActionButton(agent)}
+                      </div>
+                    )
+                  })}
                 </div>
               </div>
 
