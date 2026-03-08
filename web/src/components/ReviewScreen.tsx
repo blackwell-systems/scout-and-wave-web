@@ -75,7 +75,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
   }
 
   return (
-    <div className="min-h-screen bg-background">
+    <div className="h-full bg-background">
       <div className="max-w-6xl mx-auto px-4 py-8">
         {/* Header */}
         <div className="mb-6">

@@ -4,32 +4,33 @@ import { IMPLDocResponse, IMPLListEntry } from './types'
 import ReviewScreen from './components/ReviewScreen'
 import WaveBoard from './components/WaveBoard'
 import DarkModeToggle from './components/DarkModeToggle'
-import { Button } from './components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from './components/ui/card'
+import ImplList from './components/ImplList'
+import { useResizableDivider } from './hooks/useResizableDivider'
 
-type Screen = 'input' | 'review' | 'wave'
+type AppMode = 'split' | 'wave'
 
 export default function App() {
-  const [slug, setSlug] = useState('')
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
   const [entries, setEntries] = useState<IMPLListEntry[]>([])
-  const [screen, setScreen] = useState<Screen>('input')
+  const [appMode, setAppMode] = useState<AppMode>('split')
   const [impl, setImpl] = useState<IMPLDocResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [rejected, setRejected] = useState(false)
+
+  const { leftWidthPx, dividerProps } = useResizableDivider({ initialWidthPx: 260, minWidthPx: 180, maxFraction: 0.40 })
 
   useEffect(() => {
     listImpls().then(setEntries).catch(() => {})
   }, [])
 
   async function handleSelect(selected: string) {
-    setSlug(selected)
+    setSelectedSlug(selected)
     setLoading(true)
     setError(null)
     try {
       const data = await fetchImpl(selected)
       setImpl(data)
-      setScreen('review')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -37,18 +38,13 @@ export default function App() {
     }
   }
 
-  async function handleLoad(e: React.FormEvent) {
-    e.preventDefault()
-    await handleSelect(slug)
-  }
-
   async function handleApprove() {
     setLoading(true)
     setError(null)
     try {
-      await approveImpl(slug)
+      await approveImpl(selectedSlug!)
       try {
-        await startWave(slug)
+        await startWave(selectedSlug!)
       } catch (startErr) {
         // Swallow 409 (already running) and other start errors — still transition to wave screen
         const msg = startErr instanceof Error ? startErr.message : String(startErr)
@@ -56,7 +52,7 @@ export default function App() {
           console.warn('startWave error (non-fatal):', msg)
         }
       }
-      setScreen('wave')
+      setAppMode('wave')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -68,7 +64,7 @@ export default function App() {
     setLoading(true)
     setError(null)
     try {
-      await rejectImpl(slug)
+      await rejectImpl(selectedSlug!)
       setRejected(true)
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -77,106 +73,47 @@ export default function App() {
     }
   }
 
-  if (screen === 'wave') {
+  if (appMode === 'wave') {
     return (
       <>
         <div className="fixed top-4 right-4 z-50">
           <DarkModeToggle />
         </div>
-        <WaveBoard slug={slug} />
-      </>
-    )
-  }
-
-  if (screen === 'review' && impl !== null) {
-    return (
-      <>
-        <div className="fixed top-4 right-4 z-50">
-          <DarkModeToggle />
-        </div>
-        <ReviewScreen
-          slug={slug}
-          impl={impl}
-          onApprove={handleApprove}
-          onReject={handleReject}
-          onRefreshImpl={handleSelect}
-        />
+        <WaveBoard slug={selectedSlug!} />
       </>
     )
   }
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center">
-      <div className="fixed top-4 right-4 z-50">
+    <div className="h-screen flex flex-col bg-background overflow-hidden">
+      <header className="flex items-center justify-between px-4 py-2 border-b shrink-0">
+        <span className="text-sm font-semibold tracking-tight">Scout and Wave</span>
         <DarkModeToggle />
-      </div>
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle className="text-2xl">Scout and Wave</CardTitle>
-          <p className="text-sm text-muted-foreground">Select a plan to review.</p>
-        </CardHeader>
-        <CardContent>
-          {entries.length > 0 && (() => {
-            const active = entries.filter(e => e.doc_status !== 'complete')
-            const completed = entries.filter(e => e.doc_status === 'complete')
-            return (
-              <div className="space-y-2 mb-6">
-                {active.map(e => (
-                  <Button
-                    key={e.slug}
-                    onClick={() => handleSelect(e.slug)}
-                    disabled={loading}
-                    variant="outline"
-                    className="w-full justify-start hover:bg-accent"
-                  >
-                    {e.slug}
-                  </Button>
-                ))}
-                {completed.length > 0 && (
-                  <>
-                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground pt-2">Completed</p>
-                    {completed.map(e => (
-                      <Button
-                        key={e.slug}
-                        onClick={() => handleSelect(e.slug)}
-                        disabled={loading}
-                        variant="outline"
-                        className="w-full justify-start text-muted-foreground opacity-60 hover:opacity-100"
-                      >
-                        ✓ {e.slug}
-                      </Button>
-                    ))}
-                  </>
-                )}
-              </div>
-            )
-          })()}
-
-          {entries.length === 0 && (
-            <p className="text-muted-foreground text-sm mb-6">No IMPL docs found. Run <code className="bg-muted px-1 rounded">saw scout</code> first.</p>
+      </header>
+      <div className="flex flex-1 min-h-0">
+        <div className="flex flex-col overflow-y-auto shrink-0 border-r" style={{ width: leftWidthPx }}>
+          <ImplList
+            entries={entries}
+            selectedSlug={selectedSlug}
+            onSelect={handleSelect}
+            loading={loading}
+          />
+        </div>
+        <div {...dividerProps} />
+        <div className="flex-1 overflow-y-auto min-w-0">
+          {error && <p className="text-destructive text-sm p-4">{error}</p>}
+          {loading && <p className="text-muted-foreground text-sm p-4">Loading...</p>}
+          {rejected && <p className="text-orange-600 text-sm p-4">Plan rejected.</p>}
+          {!loading && impl !== null && selectedSlug !== null && (
+            <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onRefreshImpl={handleSelect} />
           )}
-
-          <div className="border-t pt-4">
-            <p className="text-muted-foreground text-xs mb-2">Or enter a slug manually:</p>
-            <form onSubmit={handleLoad} className="flex gap-2">
-              <input
-                type="text"
-                value={slug}
-                onChange={e => setSlug(e.target.value)}
-                placeholder="e.g. caching-layer"
-                className="flex-1 border border-input bg-background text-foreground rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
-                required
-              />
-              <Button type="submit" disabled={loading}>
-                {loading ? '...' : 'Go'}
-              </Button>
-            </form>
-          </div>
-
-          {error && <p className="text-destructive text-sm mt-3">{error}</p>}
-          {rejected && <p className="text-orange-600 text-sm mt-3">Plan rejected.</p>}
-        </CardContent>
-      </Card>
+          {!loading && impl === null && !error && (
+            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+              Select a plan from the list to review.
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   )
 }
