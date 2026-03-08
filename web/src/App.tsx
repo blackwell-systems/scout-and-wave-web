@@ -2,19 +2,18 @@ import { useState, useEffect } from 'react'
 import { listImpls, fetchImpl, approveImpl, rejectImpl, startWave } from './api'
 import { IMPLDocResponse, IMPLListEntry } from './types'
 import ReviewScreen from './components/ReviewScreen'
-import WaveBoard from './components/WaveBoard'
-import ScoutLauncher from './components/ScoutLauncher'
 import DarkModeToggle from './components/DarkModeToggle'
 import ImplList from './components/ImplList'
+import ThemePicker from './components/ThemePicker'
+import LiveRail from './components/LiveRail'
+import { LiveView } from './components/LiveRail'
 import { useResizableDivider } from './hooks/useResizableDivider'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-
-type AppMode = 'split' | 'wave' | 'scout'
 
 export default function App() {
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
   const [entries, setEntries] = useState<IMPLListEntry[]>([])
-  const [appMode, setAppMode] = useState<AppMode>('split')
+  const [liveView, setLiveView] = useState<LiveView>(null)
   const [impl, setImpl] = useState<IMPLDocResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -22,6 +21,20 @@ export default function App() {
 
   const { leftWidthPx, dividerProps } = useResizableDivider({ initialWidthPx: 220, minWidthPx: 140, maxFraction: 0.10 })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+
+  const [rightWidthPx, setRightWidthPx] = useState(380)
+  const rightDividerMouseDown = (e: React.MouseEvent) => {
+    e.preventDefault()
+    const onMove = (mv: MouseEvent) => {
+      setRightWidthPx(Math.max(280, Math.min(window.innerWidth - mv.clientX, window.innerWidth * 0.55)))
+    }
+    const onUp = () => {
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
 
   useEffect(() => {
     listImpls().then(setEntries).catch(() => {})
@@ -55,7 +68,7 @@ export default function App() {
           console.warn('startWave error (non-fatal):', msg)
         }
       }
-      setAppMode('wave')
+      setLiveView('wave')
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
@@ -96,37 +109,7 @@ export default function App() {
         setLoading(false)
       }
     }
-    setAppMode('split')
-  }
-
-  if (appMode === 'wave') {
-    return (
-      <>
-        <div className="fixed top-4 right-4 z-50">
-          <DarkModeToggle />
-        </div>
-        <WaveBoard slug={selectedSlug!} />
-      </>
-    )
-  }
-
-  if (appMode === 'scout') {
-    return (
-      <>
-        <div className="fixed top-4 left-4 z-50">
-          <button
-            onClick={() => setAppMode('split')}
-            className="text-xs px-2.5 py-1 rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
-          >
-            ← Back
-          </button>
-        </div>
-        <div className="fixed top-4 right-4 z-50">
-          <DarkModeToggle />
-        </div>
-        <ScoutLauncher onComplete={handleScoutComplete} />
-      </>
-    )
+    setLiveView(null)
   }
 
   return (
@@ -135,15 +118,19 @@ export default function App() {
         <div className="flex items-center gap-3">
           <span className="text-sm font-semibold tracking-tight">Scout and Wave</span>
           <button
-            onClick={() => setAppMode('scout')}
+            onClick={() => setLiveView('scout')}
             className="text-xs px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
           >
             New plan
           </button>
         </div>
-        <DarkModeToggle />
+        <div className="flex items-center gap-2">
+          <ThemePicker />
+          <DarkModeToggle />
+        </div>
       </header>
       <div className="flex flex-1 min-h-0">
+        {/* Left sidebar */}
         {sidebarCollapsed ? (
           <div
             className="flex flex-col items-center shrink-0 border-r w-9 bg-background dark:bg-[#191919] cursor-pointer"
@@ -178,6 +165,8 @@ export default function App() {
             <div {...dividerProps} />
           </>
         )}
+
+        {/* Center column */}
         <div className="flex-1 overflow-y-auto min-w-0">
           {error && <p className="text-destructive text-sm p-4">{error}</p>}
           {loading && <p className="text-muted-foreground text-sm p-4">Loading...</p>}
@@ -191,6 +180,26 @@ export default function App() {
             </div>
           )}
         </div>
+
+        {/* Right divider + rail — only when liveView is not null */}
+        {liveView !== null && (
+          <div
+            onMouseDown={rightDividerMouseDown}
+            style={{ width: '4px', flexShrink: 0, alignSelf: 'stretch' }}
+            className="cursor-col-resize select-none bg-border hover:bg-primary/30 transition-colors"
+          />
+        )}
+        {liveView !== null && (
+          <div className="shrink-0 overflow-hidden border-l" style={{ width: rightWidthPx }}>
+            <LiveRail
+              slug={selectedSlug}
+              liveView={liveView}
+              widthPx={rightWidthPx}
+              onScoutComplete={handleScoutComplete}
+              onClose={() => setLiveView(null)}
+            />
+          </div>
+        )}
       </div>
     </div>
   )
