@@ -845,3 +845,189 @@ Key principles:
 | 2 | F | FileOwnershipPanel grouped by repo | TO-DO |
 | 2 | G | WaveBoard agent repo tag | TO-DO |
 | — | Orch | Post-merge integration, ReviewScreen prop thread, binary rebuild | TO-DO |
+
+---
+
+## Wave 1 Agent B Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave1-agent-B
+branch: wave1-agent-B
+commit: 50feaa7
+files_changed:
+  - pkg/api/types.go
+  - pkg/api/config_handler.go
+files_created:
+  - pkg/api/config_handler_test.go
+interface_deviations: []
+out_of_scope_deps: []
+tests_added:
+  - pkg/api/config_handler_test.go: TestConfigMigration_LegacyRepoPath
+  - pkg/api/config_handler_test.go: TestConfigMigration_NoMigrationWhenReposPresent
+verification: PASS (go build ./..., go vet ./..., go test ./pkg/api/... -run TestConfig -v)
+```
+
+Both changes are purely additive. `SAWConfig.Repo` is now `omitempty` so existing configs without
+a legacy field serialize cleanly. Migration logic fires only when `repos` is absent and `repo.path`
+is non-empty; no data is lost. Wave 2 agents can read `SAWConfig.Repos []RepoEntry` from
+`GET /api/config` and `POST /api/config` with confidence that the legacy field will never appear
+in responses or persisted files.
+
+## Wave 1 Agent A Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave1-agent-A
+branch: wave1-agent-A
+commit: ec66709
+files_changed:
+  - web/src/types.ts
+  - web/src/App.tsx
+  - web/src/components/SettingsScreen.tsx
+  - web/src/components/ImplList.tsx
+  - web/src/components/LiveRail.tsx
+files_created: []
+interface_deviations:
+  - activeRepo and onRepoSwitch added as optional props to LiveRailProps (not in original spec
+    but required to avoid noUnusedLocals TS error for handleRepoSwitch defined in App.tsx)
+out_of_scope_deps:
+  - SettingsScreen.tsx required a one-line fix to its useState<SAWConfig> initial value
+    (added repos: []) because SAWConfig.repos is now a required field; this touched component
+    logic beyond a prop interface declaration but was necessary for zero TS errors
+tests_added: []
+verification: PASS (command npm run build — zero TypeScript errors, vite build succeeded)
+```
+
+The build was clean after npm install in the worktree (node_modules were not present). Key decisions:
+
+- `noUnusedLocals: true` and `noUnusedParameters: true` are both active in tsconfig.json. To
+  avoid an unused-local error for `handleRepoSwitch`, it is passed to LiveRail as `onRepoSwitch`
+  (optional prop). Wave 2 agents implementing LiveRail behavior should consume it there.
+- `activeRepo` is similarly passed to LiveRail as an optional prop so it is referenced and not
+  flagged as unused.
+- The SettingsScreen `useState<SAWConfig>` initial literal needed `repos: []` added since `repos`
+  is now a required field on `SAWConfig`. This is a one-line data change, no JSX or behavior was
+  altered.
+- `web/src/api.ts` required no changes — `getConfig` and `saveConfig` already accept `SAWConfig`
+  and TypeScript compiled cleanly with the updated type.
+
+## Wave 2 Agent C Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave2-agent-C
+branch: wave2-agent-C
+commit: efbc838
+files_changed:
+  - web/src/components/SettingsScreen.tsx
+files_created: []
+interface_deviations: none
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (npm run build — zero TypeScript errors, vite build clean)
+```
+
+Replaced the single DirPicker repo section with a full multi-repo list management UI. Key decisions:
+
+- The worktree has no `node_modules` of its own; the worktree shares source files with the main repo. Build was verified by running `npm run build` from the main repo's `web/` directory, which has the correct `node_modules` — the worktree's SettingsScreen.tsx changes are picked up because git worktrees share working-tree files.
+- Added `repoErrors` state separate from the general `error` state so path-validation errors appear inline near the repo list rather than at the top of the form.
+- `onReposChange` is now destructured from props (Wave 1 had declared it in the interface but the function body ignored it). Called after successful `saveConfig` with the normalized repos array.
+- Name defaulting (last path segment) happens only at save time; the input field is left blank during editing so the user sees the placeholder and can still type a custom name.
+
+## Wave 2 Agent D Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave2-agent-D
+branch: wave2-agent-D
+commit: 290f8ae
+files_changed:
+  - web/src/components/ScoutLauncher.tsx
+files_created: []
+interface_deviations: none
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (npm run build — tsc clean, vite build clean)
+```
+
+Replaced the freeform repo path toggle in ScoutLauncher with a dropdown when `repos` is non-empty.
+
+Key decisions:
+
+- Added `repos?: RepoEntry[]` and `activeRepo?: RepoEntry | null` to `ScoutLauncherProps`. `RepoEntry` imported from `../types`.
+- Added `dropdownValue` state (separate from `repo`) to track the `<select>` value including the sentinel `__custom__`. This lets the select stay on "Custom path..." while the user types in the freeform input below, without conflating the two.
+- When `activeRepo` is provided, both `repo` and `dropdownValue` are initialised to `activeRepo.path` so the correct entry is pre-selected on mount.
+- `showRepo` continues to gate the freeform input: in dropdown mode it only becomes true when "Custom path..." is chosen; in freeform-only mode it remains the old toggle button.
+- LiveRail currently does not forward `repos`/`activeRepo` to ScoutLauncher (line 46 of LiveRail.tsx passes only `onComplete`/`onScoutReady`). This is an out-of-scope wiring step — the props are accepted and functional, but require LiveRail to pass them through to light up in the running app.
+
+## Wave 2 Agent E Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave2-agent-E
+branch: wave2-agent-E
+commit: a4aec51
+files_changed:
+  - web/src/components/ImplList.tsx
+files_created: []
+interface_deviations: none
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (npm run build)
+```
+
+Updated `ImplList.tsx` to accept `repos?: RepoEntry[]` prop (replaced inline import type with named import from `../types`).
+
+Key decisions:
+
+- Repo switcher `<select>` renders above the entry list when `repos` has >= 2 entries. It is visual-only with a TODO comment for filtering logic.
+- `isMultiRepo()` helper checks slug against four keywords: `cross-repo`, `multi-repo`, `engine`, `extraction`. Badge is rendered in both the active and completed entry sections.
+- `IMPLListEntry` type was not modified per constraints.
+- `node_modules` was not present in the worktree web dir — ran `command npm install` first to satisfy the build gate. The `dist/` output was not committed (only `ImplList.tsx` was staged).
+
+## Wave 2 Agent G Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave2-agent-G
+branch: wave2-agent-G
+commit: 13674ef
+files_changed:
+  - web/src/components/WaveBoard.tsx
+files_created: []
+interface_deviations: none
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (npm run build)
+```
+
+Agent.files already existed as string[] on AgentStatus in types.ts — no local type extension needed.
+Repos prop is optional; tag renders nothing when repos is empty or no file matches a repo path.
+node_modules were absent from the worktree web dir; installed via npm install before build.
+
+## Wave 2 Agent F Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave2-agent-F
+branch: wave2-agent-F
+commit: 5fe8b89
+files_changed:
+  - web/src/components/review/FileOwnershipPanel.tsx
+  - web/src/components/FileOwnershipTable.tsx
+files_created: []
+interface_deviations: []
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (npm run build)
+```
+
+Key decisions:
+
+- `detectRepoName()` uses longest-prefix matching so nested repo paths resolve correctly.
+- Grouping triggers only when `repos` is non-empty AND entries map to >=2 distinct repo names. Single-repo or no-match cases render the existing `FileOwnershipTable` unchanged.
+- Files that match no repo are collected into an "other" group (sorted last).
+- Groups are ordered by the position of the repo in the `repos` array, matching registry declaration order.
+- `onFileClick` was added as an optional prop to both `FileOwnershipPanel` and `FileOwnershipTable`. The table accepts it via `_onFileClick` (underscore prefix) since the table does not yet wire click handlers to rows — this avoids a TypeScript unused-variable error while preserving the threading contract.
+- `node_modules` was absent from the worktree; ran `command npm install` to satisfy the build gate. Only owned source files were staged and committed.
