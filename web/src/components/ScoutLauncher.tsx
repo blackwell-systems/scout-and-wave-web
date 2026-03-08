@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { ScoutContext } from '../types'
 
 const WORKING_MESSAGES = [
   'Reading codebase…',
@@ -15,16 +16,37 @@ interface ScoutLauncherProps {
   onScoutReady?: () => void  // fires immediately when scout_complete fires (before user clicks Review)
 }
 
+const SESSION_KEY = 'saw-scout-context'
+
 export default function ScoutLauncher({ onComplete, onScoutReady }: ScoutLauncherProps): JSX.Element {
   const [feature, setFeature] = useState('')
   const [repo, setRepo] = useState('')
   const [showRepo, setShowRepo] = useState(false)
+  const [showContext, setShowContext] = useState(false)
+  const [contextData, setContextData] = useState<ScoutContext>(() => {
+    try {
+      const raw = sessionStorage.getItem(SESSION_KEY)
+      if (raw) return JSON.parse(raw) as ScoutContext
+    } catch {
+      // ignore parse errors
+    }
+    return { files: [], notes: '', constraints: [] }
+  })
   const [running, setRunning] = useState(false)
   const [output, setOutput] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [completedSlug, setCompletedSlug] = useState<string | null>(null)
   const [msgIdx, setMsgIdx] = useState(0)
   const runIdRef = useRef<string | null>(null)
+
+  // Persist contextData to sessionStorage whenever it changes
+  useEffect(() => {
+    try {
+      sessionStorage.setItem(SESSION_KEY, JSON.stringify(contextData))
+    } catch {
+      // ignore storage errors
+    }
+  }, [contextData])
 
   useEffect(() => {
     if (!running) return
@@ -58,7 +80,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady }: ScoutLaunche
 
     let runId: string
     try {
-      const result = await runScout(feature.trim(), repo.trim() || undefined)
+      const result = await runScout(feature.trim(), repo.trim() || undefined, contextData)
       runId = result.runId
       runIdRef.current = runId
     } catch (err) {
@@ -131,6 +153,23 @@ export default function ScoutLauncher({ onComplete, onScoutReady }: ScoutLaunche
     }
   }
 
+  const CONSTRAINTS = [
+    'Minimize API surface changes',
+    'Prefer additive changes (no deletions)',
+    'Keep existing tests passing',
+    'Single-wave only (no multi-wave)',
+  ]
+
+  function toggleConstraint(label: string) {
+    setContextData(d => {
+      const has = d.constraints.includes(label)
+      return {
+        ...d,
+        constraints: has ? d.constraints.filter(c => c !== label) : [...d.constraints, label],
+      }
+    })
+  }
+
   return (
     <div className="bg-gray-50 dark:bg-gray-950 p-4 flex flex-col">
       <div className="w-full space-y-4">
@@ -172,6 +211,74 @@ export default function ScoutLauncher({ onComplete, onScoutReady }: ScoutLaunche
                 onChange={e => setRepo(e.target.value)}
                 disabled={running}
               />
+            )}
+          </div>
+
+          {/* Context toggle */}
+          <div>
+            <button
+              type="button"
+              className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              onClick={() => setShowContext(v => !v)}
+            >
+              {showContext ? '- Hide context' : '+ Add context (optional)'}
+            </button>
+            {showContext && (
+              <div className="mt-2 space-y-3">
+                {/* File paths */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                    Relevant file paths
+                  </label>
+                  <textarea
+                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:ring-1 focus:ring-blue-500 resize-none min-h-[60px]"
+                    placeholder="Paste file paths, one per line"
+                    defaultValue={contextData.files.join('\n')}
+                    onBlur={e =>
+                      setContextData(d => ({
+                        ...d,
+                        files: e.target.value.split('\n').filter(Boolean),
+                      }))
+                    }
+                    disabled={running}
+                  />
+                </div>
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                    Notes
+                  </label>
+                  <textarea
+                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:ring-1 focus:ring-blue-500 resize-none min-h-[60px]"
+                    placeholder="Additional notes or constraints for the Scout agent"
+                    value={contextData.notes}
+                    onChange={e => setContextData(d => ({ ...d, notes: e.target.value }))}
+                    disabled={running}
+                  />
+                </div>
+
+                {/* Constraint checkboxes */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                    Constraints
+                  </label>
+                  <div className="space-y-1">
+                    {CONSTRAINTS.map(label => (
+                      <label key={label} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                          checked={contextData.constraints.includes(label)}
+                          onChange={() => toggleConstraint(label)}
+                          disabled={running}
+                        />
+                        <span className="text-xs text-gray-700 dark:text-gray-300">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
             )}
           </div>
 
