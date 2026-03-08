@@ -2,6 +2,33 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.15.0] - Unreleased
+
+### Added
+
+**GUI-driven protocol loop**
+- **Scout launcher** — "New plan" button opens a full-screen launcher; type a feature description, click Run Scout, watch live output stream in; auto-navigates to review screen on completion
+- **Back button** — Scout launcher has a "← Back" button to return to the review screen without completing a run
+- **Wave gate** — `runWaveLoop` pauses between waves and publishes `wave_gate_pending` SSE event; WaveBoard shows a blue gate banner with "Proceed to Wave N+1" button
+- **IMPL editor in gate banner** — when wave gate is pending, an inline IMPL doc editor appears in the banner; users can edit interface contracts before proceeding to the next wave
+- **Re-run button** — failed agent cards show a "↺ Re-run" button that POSTs to the rerun endpoint and optimistically resets the agent to pending state
+- **AgentCard output toggle** — "▼ Show more / ▲ Show less" toggle on agent output pane (shown when output > 200 chars); auto-scroll disabled when expanded
+
+**New API endpoints**
+- `POST /api/scout/run` — launches a Scout agent, returns `run_id`
+- `GET /api/scout/{runID}/events` — SSE stream of scout output (`scout_output`, `scout_complete`, `scout_failed` events)
+- `POST /api/wave/{slug}/gate/proceed` — unblocks the wave gate for a slug
+- `POST /api/wave/{slug}/agent/{letter}/rerun` — stub endpoint for agent rerun (full implementation deferred)
+- `GET /api/impl/{slug}/raw` — returns raw IMPL doc markdown as `text/plain`
+- `PUT /api/impl/{slug}/raw` — atomically writes raw markdown to the IMPL doc on disk
+
+**Bug fixes**
+- **Completion report path fix** — orchestrator now polls the worktree copy of the IMPL doc (not the main repo copy) when waiting for agent completion reports; resolves the circular dependency that caused all wave runs to time out
+- **`--cwd` flag removed** — CLI backend uses `cmd.Dir` instead of `--cwd` flag (removed in claude v2.x)
+- **Nested Claude session** — stripped `CLAUDECODE` env var from agent subprocess so SAW works without an API key inside an existing Claude Code session
+
+---
+
 ## [0.14.0] - Unreleased
 
 ### Added
