@@ -43,6 +43,18 @@ export interface ScaffoldFileEntry {
   import_path: string
 }
 
+export interface PreMortemRow {
+  scenario: string
+  likelihood: string
+  impact: string
+  mitigation: string
+}
+
+export interface PreMortem {
+  overall_risk: string  // "low", "medium", or "high"
+  rows: PreMortemRow[]
+}
+
 export interface AgentPromptEntry {
   wave: number
   agent: string
@@ -51,8 +63,8 @@ export interface AgentPromptEntry {
 
 export interface IMPLDocResponse {
   slug: string
-  doc_status: string // "ACTIVE" or "COMPLETE"
-  completed_at?: string // ISO date, present only when COMPLETE
+  doc_status: string // "active" or "complete" (lowercase)
+  completed_at?: string // ISO date, present only when complete
   suitability: SuitabilityInfo
   file_ownership: FileOwnershipEntry[]
   file_ownership_col4_name: string // detected 4th column header (e.g. "Action", "Depends On")
@@ -64,11 +76,12 @@ export interface IMPLDocResponse {
   dependency_graph_text: string
   post_merge_checklist_text: string
   agent_prompts: AgentPromptEntry[]
+  pre_mortem?: PreMortem
 }
 
 export interface IMPLListEntry {
   slug: string
-  doc_status: string // "ACTIVE" or "COMPLETE"
+  doc_status: string // "active" or "complete" (lowercase)
 }
 
 // SSE event data shapes

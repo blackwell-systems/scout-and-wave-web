@@ -11,6 +11,7 @@ import ScaffoldsPanel from './review/ScaffoldsPanel'
 import DependencyGraphPanel from './review/DependencyGraphPanel'
 import KnownIssuesPanel from './review/KnownIssuesPanel'
 import PostMergeChecklistPanel from './review/PostMergeChecklistPanel'
+import PreMortemPanel from './review/PreMortemPanel'
 
 interface ReviewScreenProps {
   slug: string
@@ -20,9 +21,10 @@ interface ReviewScreenProps {
   onRefreshImpl?: (slug: string) => Promise<void>
 }
 
-type PanelKey = 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist'
+type PanelKey = 'pre-mortem' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist'
 
 const panels: Array<{ key: PanelKey; label: string }> = [
+  { key: 'pre-mortem', label: 'Pre-Mortem' },
   { key: 'file-ownership', label: 'File Ownership' },
   { key: 'wave-structure', label: 'Wave Structure' },
   { key: 'agent-prompts', label: 'Agent Prompts' },
@@ -38,7 +40,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
   const isNotSuitable = impl.suitability.verdict === 'NOT SUITABLE'
 
   const [activePanels, setActivePanels] = useState<PanelKey[]>(
-    ['wave-structure', 'dependency-graph']
+    ['pre-mortem', 'wave-structure', 'dependency-graph']
   )
   const [isStuck, setIsStuck] = useState(false)
   const sentinelRef = useRef<HTMLDivElement>(null)
@@ -120,6 +122,8 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
           <div className="space-y-6">
             {activePanels.map(key => {
               switch (key) {
+                case 'pre-mortem':
+                  return <PreMortemPanel key={key} preMortem={impl.pre_mortem} />
                 case 'file-ownership':
                   return <FileOwnershipPanel key={key} impl={impl} />
                 case 'wave-structure':
