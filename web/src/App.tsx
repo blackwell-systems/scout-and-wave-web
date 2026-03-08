@@ -273,18 +273,14 @@ export default function App() {
     </div>
 
     {showSettings && createPortal(
-      <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-        onClick={() => setShowSettings(false)}
-      >
-        <div
-          className="bg-background border border-border rounded-lg shadow-xl w-full max-w-2xl overflow-y-auto"
-          style={{ maxHeight: '85vh' }}
-          onClick={(e) => e.stopPropagation()}
-        >
+      <>
+        {/* Backdrop */}
+        <div className="fixed inset-0 z-40 bg-black/30" onClick={() => setShowSettings(false)} />
+        {/* Drawer */}
+        <div className="fixed inset-y-0 right-0 z-50 w-[560px] max-w-full bg-background border-l border-border shadow-2xl overflow-y-auto">
           <SettingsScreen onClose={() => setShowSettings(false)} onReposChange={handleReposChange} />
         </div>
-      </div>,
+      </>,
       document.body
     )}
     </>

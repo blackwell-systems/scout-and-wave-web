@@ -96,7 +96,7 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+      <div className="flex items-center justify-center py-20 text-muted-foreground text-sm">
         Loading settings...
       </div>
     )
