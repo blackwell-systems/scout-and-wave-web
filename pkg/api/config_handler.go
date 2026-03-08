@@ -30,6 +30,12 @@ func (s *Server) handleGetConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Backward-compat: if no repos registry, migrate legacy repo.path
+	if len(cfg.Repos) == 0 && cfg.Repo.Path != "" {
+		cfg.Repos = []RepoEntry{{Name: "repo", Path: cfg.Repo.Path}}
+	}
+	cfg.Repo = RepoConfig{} // clear legacy field from response
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(cfg) //nolint:errcheck
 }
@@ -42,6 +48,8 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid config JSON", http.StatusBadRequest)
 		return
 	}
+
+	cfg.Repo = RepoConfig{} // ensure legacy field is never written back
 
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {

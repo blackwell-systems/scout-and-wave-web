@@ -125,16 +125,24 @@ type FileDiffResponse struct {
 	Diff   string `json:"diff"`
 }
 
+// RepoEntry is one named repository in the repo registry.
+type RepoEntry struct {
+	Name string `json:"name"`
+	Path string `json:"path"`
+}
+
+// RepoConfig is kept for backward-compat JSON deserialization of old configs.
+type RepoConfig struct {
+	Path string `json:"path"`
+}
+
 // SAWConfig is the shape of saw.config.json and the GET/POST /api/config body.
 type SAWConfig struct {
-	Repo    RepoConfig    `json:"repo"`
+	Repos   []RepoEntry   `json:"repos,omitempty"`   // authoritative registry
+	Repo    RepoConfig    `json:"repo,omitempty"`     // legacy, read-only for migration
 	Agent   AgentConfig   `json:"agent"`
 	Quality QualityConfig `json:"quality"`
 	Appear  AppearConfig  `json:"appearance"`
-}
-
-type RepoConfig struct {
-	Path string `json:"path"`
 }
 
 type AgentConfig struct {
