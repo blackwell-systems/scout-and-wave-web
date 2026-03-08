@@ -18,6 +18,7 @@ import QualityGatesPanel from './review/QualityGatesPanel'
 import NotSuitableResearchPanel from './review/NotSuitableResearchPanel'
 import FileDiffPanel from './review/FileDiffPanel'
 import ContextViewerPanel from './review/ContextViewerPanel'
+import ChatPanel from './ChatPanel'
 
 interface ReviewScreenProps {
   slug: string
@@ -49,6 +50,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
   const isNotSuitable = impl.suitability.verdict === 'NOT SUITABLE'
 
   const [showRevise, setShowRevise] = useState(false)
+  const [showChat, setShowChat] = useState(false)
   const [diffTarget, setDiffTarget] = useState<{ agent: string; wave: number; file: string } | null>(null)
   const [activePanels, setActivePanels] = useState<PanelKey[]>(() => {
     const defaults: PanelKey[] = []
@@ -216,12 +218,16 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
             </div>
 
             {/* Action buttons - always interactive, fixed at bottom */}
-            <div className="mt-8">
+            <div className="mt-8 flex flex-wrap items-center gap-3">
               <ActionButtons onApprove={onApprove} onReject={onReject} onRequestChanges={() => setShowRevise(true)} />
+              <button onClick={() => setShowChat(true)} className="text-sm border rounded px-3 py-1.5 hover:bg-gray-50 dark:hover:bg-gray-800">Ask Claude</button>
             </div>
           </>
         )}
       </div>
+
+      {/* Chat Panel — modal overlay */}
+      {showChat && <ChatPanel slug={slug} onClose={() => setShowChat(false)} />}
 
       {/* Context Viewer — modal overlay */}
       {activePanels.includes('context-viewer') && (
