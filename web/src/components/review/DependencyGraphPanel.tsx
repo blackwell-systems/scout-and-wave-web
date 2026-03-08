@@ -183,12 +183,12 @@ export default function DependencyGraphPanel({ dependencyGraphText }: Dependency
   const { nodes, width, height } = layoutNodes(parsed)
   const nodeMap = new Map(nodes.map(n => [n.agent.letter, n]))
 
-  // Build edges
+  // Build edges — skip same-wave deps (they render backwards in column layout)
   const edges: Array<{ from: NodePos; to: NodePos; color: string }> = []
   for (const node of nodes) {
     for (const dep of node.agent.dependencies) {
       const source = nodeMap.get(dep)
-      if (source) {
+      if (source && source.agent.wave !== node.agent.wave) {
         const fill = AGENT_FILLS[node.agent.letter] || DEFAULT_FILL
         edges.push({ from: source, to: node, color: fill.border.replace('50', 'aa') })
       }
