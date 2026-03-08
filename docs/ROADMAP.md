@@ -216,7 +216,7 @@ scout-and-wave-app/      Wails desktop app (future)
 
 ### v0.18.0-D — Failure Type Action Buttons
 
-**Why:** A blocked wave is currently a dead end in the UI — you see `status: blocked` with no path forward. Protocol v0.12.0 added `failure_type: transient | fixable | needs_replan | escalate` to completion reports. The UI can now offer the right action per failure type instead of leaving the user to figure it out.
+**Why:** A blocked wave is currently a dead end in the UI — you see `status: blocked` with no path forward. Protocol v0.12.0 added `failure_type: transient | fixable | needs_replan | escalate` and v0.13.0 added `timeout` to completion reports. The UI can now offer the right action per failure type instead of leaving the user to figure it out.
 
 **Scope:**
 - WaveBoard failed agent cards: parse `failure_type` from completion report, show action button per type
@@ -224,12 +224,14 @@ scout-and-wave-app/      Wails desktop app (future)
   - `fixable` → "Fix + Retry" button — surfaces agent's free-form notes describing the fix, then re-runs
   - `needs_replan` → "Re-Scout" button — launches a new scout run with the agent's completion report as additional context
   - `escalate` → "Escalate" badge — no button, highlights for human attention
+  - `timeout` → "Retry (scope down)" button — surfaces agent's partial completion summary showing what was finished, prompts user to confirm before re-running with a scope-reduction note injected into the retry prompt
 - If `failure_type` is absent from a `partial`/`blocked` report, treat as `escalate` (backward compat)
 - Parse `failure_type` from the `impl-completion-report` typed block in IMPL doc
 
 **Success criteria:**
 - No blocked wave requires a terminal to resolve
 - The correct recovery action is one click
+- Timeout retries show partial completion context before the user confirms
 
 ---
 
@@ -279,6 +281,62 @@ scout-and-wave-app/      Wails desktop app (future)
 
 **Success criteria:**
 - Users can read and correct project memory without opening a text editor
+
+---
+
+### v0.18.0-H — NOT SUITABLE Full Research View
+
+**Why:** When Scout returns NOT SUITABLE, ReviewScreen shows a dead end — a verdict and a short rationale. Protocol roadmap item "Full Research Output on NOT SUITABLE Verdicts" will make Scouts write complete research regardless of verdict (dep graph, file survey, risk assessment, "what would make it suitable"). The UI needs to render this when it arrives rather than treating NOT SUITABLE as an empty state.
+
+**Scope:**
+- ReviewScreen: detect NOT SUITABLE verdict from `## Suitability Assessment` section
+- Render all research panels normally (dep graph, file ownership, interface contracts) with verdict badge prominent at top in red
+- Add "What Would Make It Suitable" callout card — parsed from a new `## What Would Make It Suitable` section in NOT SUITABLE IMPL docs
+- Add "Serial Implementation Notes" panel — parsed from `## Serial Implementation Notes` section
+- "Approve" and "Reject" buttons replaced with "Archive" (moves IMPL doc to `docs/IMPL/archived/`)
+- API: `GET /api/impl/{slug}/raw` already sufficient — client-side parse
+
+**Dependency:** Requires the protocol "Full Research Output on NOT SUITABLE Verdicts" change to Scout to be useful. UI can be built now as a no-op fallback (just renders the existing minimal NOT SUITABLE doc without breaking).
+
+**Success criteria:**
+- NOT SUITABLE is not a dead end — it's a map of why and what to do next
+- All research panels populate even when the verdict is negative
+
+---
+
+### v0.18.0-I — Scaffold Build Failure Detail
+
+**Why:** Protocol E22 (v0.13.0) requires the Scaffold Agent to run `go build ./...` (or equivalent) and report `status: FAILED` with build error output if it fails. Currently this surfaces as a generic BLOCKED state with no detail. The wave won't launch and the user doesn't know why or what to fix.
+
+**Scope:**
+- ReviewScreen/WaveBoard: detect SCAFFOLD_PENDING → BLOCKED transition from scaffold status field in IMPL doc Scaffolds section
+- When scaffold status contains `FAILED:`, show build error output in a syntax-highlighted code block (streaming via existing SSE if build is still running; static if already failed)
+- "Revise Interface Contracts" button opens the IMPL doc editor (RevisePanel) pre-focused on the Interface Contracts section
+- Clear "why this failed" explanation: "The Scaffold Agent could not compile the interface definitions. Fix the contracts above and re-run."
+- API: `GET /api/impl/{slug}/raw` for current scaffold status; re-run scaffold via new `POST /api/impl/{slug}/scaffold/rerun`
+
+**Success criteria:**
+- Build failure output visible in UI within 2 seconds of scaffold reporting FAILED
+- User can identify and fix the failing interface contract without leaving SAW
+
+---
+
+### v0.18.0-J — Pre-Wave Quality Gates Preview
+
+**Why:** v0.18.0-F shows quality gate *results* after wave completion. But Scout writes the `## Quality Gates` section at planning time — the gates are configured before any agent launches. Surfacing them during review gives the user a chance to adjust gate configuration before approving, and sets expectations for what will block the merge.
+
+**Scope:**
+- ReviewScreen: parse `## Quality Gates` section from IMPL doc during the pre-wave review step (same client-side parse as v0.18.0-F)
+- Show "Quality Gates" panel in the review sidebar: level badge (`quick`/`standard`/`full`), list of gates with command and required/advisory status
+- Required gates shown with lock icon — "merge will block if this fails"
+- Advisory gates shown with warning icon — "informational only"
+- "Edit Gates" inline: toggle required/optional per gate, add/remove gates — writes back via `PUT /api/impl/{slug}/raw`
+- Panel collapses to a summary line when gates are default/standard: "3 gates configured (2 required)"
+- API: `GET /api/impl/{slug}/raw` — client-side parse, no new endpoint needed
+
+**Success criteria:**
+- User sees exactly what will run before approving — no surprises at merge time
+- Gate configuration adjustable in one click without opening a text editor
 
 ---
 
