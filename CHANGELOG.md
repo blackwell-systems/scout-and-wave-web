@@ -2,7 +2,69 @@
 
 All notable changes to this project will be documented in this file.
 
-## [0.16.0] - Unreleased
+## [0.18.0] - 2026-03-08
+
+### Added
+
+**Chat with Claude (v0.18.0-B)**
+- **ChatPanel.tsx** — Fixed-position chat overlay in ReviewScreen; user messages right-aligned (blue), assistant messages left-aligned (gray), auto-scroll, Copy button on last assistant message
+- **useChatWithClaude.ts** — Hook managing chat state: `sendMessage` (appends user turn, streams assistant chunks via SSE), `clearHistory`, running/error state
+- **chat_handler.go** — `handleImplChat` (POST) launches a read-only Claude agent with IMPL doc context; `handleImplChatEvents` streams `chat_output`, `chat_complete`, `chat_failed` SSE events; run_id scoped per request
+- **ReviewScreen wiring** — "Ask Claude" button in actions row opens ChatPanel overlay
+
+**Per-Agent Context Payload (v0.18.0-K)**
+- **AgentContextToggle.tsx** — Collapsible "View Agent Context" button per agent; fetches `context_text` from backend, renders in `<pre>` block with Copy button
+- **AgentContextPanel.tsx** — Composes `AgentPromptsPanel` + one `AgentContextToggle` per agent prompt entry; wired into ReviewScreen `agent-prompts` slot
+
+---
+
+## [0.17.0] - 2026-03-08
+
+### Added
+
+**New review panels (v0.17.0-C)**
+- **QualityGatesPanel** — Parses `[required]`/`[optional]` gate lines from IMPL doc text, renders a Command / Required? / Description table with badge column
+- **NotSuitableResearchPanel** — Full research output for NOT SUITABLE verdicts: red verdict banner, rationale via MarkdownContent, numbered blockers callout, serial implementation notes (dep graph + interface contracts), Archive button
+- **FileDiffPanel** — On-demand file diff viewer: fetches diff on mount, per-line syntax coloring (`+` green, `-` red, `@@` blue-gray), Back button
+- **ContextViewerPanel** — Read/edit toggle for `docs/CONTEXT.md`: read mode shows `<pre>` block, edit mode is a full textarea with Save (calls `putContext`) and Close
+
+**ReviewScreen integration (v0.17.0-D / v0.18.0-C)**
+- `PanelKey` extended with `'quality-gates' | 'context-viewer'`
+- NOT SUITABLE branch renders `NotSuitableResearchPanel` as primary content, hides panel toggles and ActionButtons
+- `FileDiffPanel` takes over as full-screen when a file is clicked; `ContextViewerPanel` renders as fixed z-50 modal overlay
+- "Ask Claude" button added to actions row (see v0.18.0)
+
+**WaveBoard failure-type action buttons (v0.18.0-D)**
+- Local `WaveMergeState`/`WaveTestState` stubs replaced with proper import from `useWaveEvents`
+- Failure-type dispatch table: `transient` → "Retry", `fixable` → "Fix + Retry", `needs_replan` → "Re-Scout" (with optional `onRescout` prop), `timeout` → "Retry (scope down)", `escalate` → orange "Needs Manual Review" badge (no button)
+- All retry paths preserve the `setStatusOverrides` optimistic update
+
+**Scout context panel (v0.18.0-A)**
+- `ScoutLauncher` gains a collapsible "Add context (optional)" section: file paths textarea, notes textarea, four predefined constraint checkboxes
+- `contextData` (`ScoutContext`) passed as third argument to `runScout`; persisted in `sessionStorage`
+
+**Settings screen (v0.18.0-G)**
+- **SettingsScreen.tsx** — Four-section settings UI: Repo path, Agent model selects (scout/wave, three model options), Quality gates checkboxes, Appearance theme select; loads via `getConfig()`, saves via `saveConfig()`
+- **App.tsx** — Gear icon in header opens SettingsScreen; replaces center-column content while open
+
+**New backend handlers (v0.17.0-A, v0.17.0-C)**
+- `diff_handler.go` — `GET /api/impl/{slug}/wave/{wave}/agent/{agent}/diff?file={file}`; uses `git diff main...{branch} -- {file}` with `HEAD~1...HEAD` fallback
+- `worktree_handler.go` — `GET /api/worktrees` (list, filtered by SAW branch pattern), `DELETE /api/worktrees/{branch}` (409 on unmerged without force)
+- `context_handler.go` — `GET/PUT /api/context`; reads/writes `docs/CONTEXT.md` with atomic rename
+- `config_handler.go` — `GET/PUT /api/config`; reads/writes `saw-config.json`
+- `agent_context_handler.go` — `GET /api/impl/{slug}/agent/{agent}/context`; uses `engine.ParseIMPLDoc` for structured extraction, raw markdown fallback
+
+**New API types + routes**
+- `types.go`: `WorktreeEntry`, `WorktreeListResponse`, `FileDiffResponse`, `SAWConfig` (+ `RepoConfig`, `AgentConfig`, `QualityConfig`, `AppearConfig`), `ChatRequest`, `ChatMessage`, `ChatRunResponse`, `AgentContextResponse`
+- `server.go`: 11 new route registrations
+
+**Frontend types + API client (v0.17.0-B)**
+- `types.ts`: 8 new interfaces (`WorktreeEntry`, `WorktreeListResponse`, `FileDiffResponse`, `SAWConfig`, `ChatMessage`, `QualityGate`, `ScoutContext`, `AgentContextResponse`)
+- `api.ts`: 11 new functions (`listWorktrees`, `deleteWorktree`, `fetchFileDiff`, `getConfig`, `saveConfig`, `getContext`, `putContext`, `startImplChat`, `subscribeChatEvents`, `rerunScaffold`, `fetchAgentContext`); `runScout` updated with optional `context?: ScoutContext` third parameter
+
+---
+
+## [0.16.0] - 2026-03-08
 
 ### Added
 

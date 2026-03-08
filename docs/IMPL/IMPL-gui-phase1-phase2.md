@@ -1,4 +1,5 @@
 # IMPL: GUI Phase 1 + Phase 2 (v0.17.0 + v0.18.0)
+<!-- SAW:COMPLETE 2026-03-08 -->
 
 ## Suitability Assessment
 
@@ -1160,3 +1161,124 @@ Key decisions:
 - `handleDeleteWorktree`: returns 409 JSON with error message if branch is unmerged and force=true not set; uses soft `-d` then hard `-D` delete
 - `handleGetAgentContext`: uses engine.ParseIMPLDoc for structured data; falls back to raw markdown section extraction if parser returns no prompt for the agent
 - All file writes use atomic temp-file + os.Rename pattern consistent with impl_edit.go
+
+### Agent E - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave2-agent-E
+branch: wave2-agent-E
+commit: 1f57cbbd002500838ae038fa66791a9c8b791092
+files_changed:
+  - web/src/components/WaveBoard.tsx
+interface_deviations: []
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (npm run build)
+```
+
+Removed local `WaveMergeState`/`WaveTestState` stub interfaces and replaced with imports from `../hooks/useWaveEvents`. Added optional `onRescout?: () => void` prop to `WaveBoardProps`. Replaced the generic Re-run button with a `renderFailureActionButton` helper that renders failure-type-specific actions per the spec table: `transient`/undefined shows "Retry", `fixable` shows "Fix + Retry", `needs_replan` shows "Re-Scout" (calls `onRescout` prop if provided, falls back to `rerunAgent`), `timeout` shows "Retry (scope down)", and `escalate` renders an orange "Needs Manual Review" badge with no button. All retry-style paths preserve the `setStatusOverrides` optimistic update pattern. Switched from inline `fetch` to `rerunAgent()` from `api.ts`.
+
+### Agent G - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave2-agent-G
+branch: wave2-agent-G
+commit: a8b2e821798d486f5ece7511787caf3bd2797443
+files_changed:
+  - web/src/components/ScoutLauncher.tsx
+interface_deviations: []
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (npm run build)
+```
+
+### Agent H - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave2-agent-H
+branch: wave2-agent-H
+commit: f62b0e5a7e4c727792ba3a1f1154b3483a314580
+files_created:
+  - web/src/components/SettingsScreen.tsx
+files_changed:
+  - web/src/App.tsx
+interface_deviations: []
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (npm run build)
+```
+
+SettingsScreen renders four card sections (Repo, Agent, Quality Gates, Appearance) populated from `getConfig()` on mount. Save calls `saveConfig()`, shows a brief "Saved!" message, then calls `onClose`. The Appearance section uses a simple `<select>` for system/light/dark rather than wiring into the existing ThemePicker (which manages color themes independently via localStorage — these are orthogonal concerns). App.tsx renders the SettingsScreen in place of the center-column content when `showSettings` is true, which fits the existing layout without requiring a modal overlay. The Settings gear button is placed after DarkModeToggle in the header.
+
+Added collapsible "Add context (optional)" panel below the repo path toggle, using the same toggle button pattern. Panel contains: a file-paths textarea (split on newline, updated on blur), a notes textarea (controlled, updates on change), and four predefined constraint checkboxes. `contextData` is passed as the third argument to `runScout` in `handleRun`. Session persistence uses `sessionStorage` — state is initialized lazily from storage on mount and written back via a `useEffect` on every `contextData` change. The files textarea uses `defaultValue` + `onBlur` to avoid re-rendering on every keystroke while the panel is open.
+
+### Agent F - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave2-agent-F
+branch: wave2-agent-F
+commit: ff57696b3e4b3df3c3d29c62640601e4c78bcfd3
+files_changed:
+  - web/src/components/ReviewScreen.tsx
+interface_deviations: []
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (npm run build)
+```
+
+Added imports for all four new Wave 1 panels. Extended `PanelKey` union with `'quality-gates' | 'context-viewer'` and added both to the `panels` array. Added `diffTarget` state for file diff navigation.
+
+When `isNotSuitable` is true, renders `<NotSuitableResearchPanel>` as primary content and hides panel toggles and `<ActionButtons>` entirely (replaced the original `opacity-40 pointer-events-none` wrapper with a conditional branch).
+
+`FileDiffPanel` renders as a full-screen early-return when `diffTarget` is non-null, with `onBack` clearing the state.
+
+`QualityGatesPanel` renders inline in the panels grid when `'quality-gates'` is active.
+
+`ContextViewerPanel` renders as a fixed-position modal overlay (z-50) outside the scrolling content div, with `onClose` toggling the panel off.
+
+For `FileOwnershipPanel.onFileClick`: since `FileOwnershipPanel.tsx` is not in my ownership and its props interface does not yet declare `onFileClick`, used an IIFE with a local `AnyFileOwnershipPanel` cast to pass the prop without editing the panel file. A TODO comment marks this for cleanup after Wave 1 merge.
+
+### Agent J - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave3-agent-J
+branch: wave3-agent-J
+commit: a079fea
+files_created:
+  - web/src/components/review/AgentContextToggle.tsx
+  - web/src/components/review/AgentContextPanel.tsx
+interface_deviations: []
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (go build + npm run build)
+downstream_action_required: true
+```
+
+AgentContextPanel.tsx wraps AgentPromptsPanel + AgentContextToggle per-agent. ReviewScreen.tsx needs to import AgentContextPanel instead of AgentPromptsPanel for the agent-prompts panel key to show per-agent context toggles. Downstream: orchestrator should update ReviewScreen.tsx after merge.
+
+### Agent I - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave3-agent-I
+branch: wave3-agent-I
+commit: 39a3d12
+files_created:
+  - pkg/api/chat_handler.go
+  - web/src/hooks/useChatWithClaude.ts
+  - web/src/components/ChatPanel.tsx
+files_changed:
+  - web/src/components/ReviewScreen.tsx
+  - pkg/api/stubs.go
+interface_deviations: []
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (go build + npm run build)
+```
+
+Previous agent run had already written `chat_handler.go`, `useChatWithClaude.ts`, and modified `stubs.go`. Only `ChatPanel.tsx` and the ReviewScreen wiring were missing. Created `ChatPanel.tsx` with the full spec: user messages right-aligned (blue), assistant left-aligned (gray), auto-scroll via `useRef`, disabled input while running, Copy/Copied! feedback on last assistant message, and `state.error` display. Wired into ReviewScreen.tsx by adding the import, `showChat` state, an "Ask Claude" button next to ActionButtons, and the fixed-overlay `{showChat && <ChatPanel ... />}` render. Both `go build ./...` and `npm run build` pass cleanly.
