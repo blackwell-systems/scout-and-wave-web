@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.14.0] - Unreleased
+
+### Added
+
+**v0.10.0 protocol support**
+- **Typed-block dispatch** — parser detects `` ```yaml type=impl-* `` fenced blocks as canonical section anchors; heading-based detection retained as fallback for pre-v0.10.0 docs
+- **PreMortem parsing** — `ParseIMPLDoc` extracts `## Pre-Mortem` risk table into `IMPLDoc.PreMortem` (`*types.PreMortem`)
+- **ScoutValidating state** — new `State` constant inserted between `ScoutPending` and `NotSuitable`; represents IMPL doc written, E16 validation in progress
+- **E16 Go validator** — `protocol.ValidateIMPLDoc(path)` validates all typed blocks in an IMPL doc; returns `[]types.ValidationError` with block type, line number, and message; equivalent to `validate-impl.sh` reference implementation
+- **New types** — `PreMortemRow`, `PreMortem`, `ValidationError` in `pkg/types/types.go`; `IMPLDoc.PreMortem *PreMortem` field
+
+---
+
 ## [0.13.0] - 2026-03-07
 
 ### Added

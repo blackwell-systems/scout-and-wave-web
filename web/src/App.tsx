@@ -117,8 +117,8 @@ export default function App() {
         </CardHeader>
         <CardContent>
           {entries.length > 0 && (() => {
-            const active = entries.filter(e => e.doc_status !== 'COMPLETE')
-            const completed = entries.filter(e => e.doc_status === 'COMPLETE')
+            const active = entries.filter(e => e.doc_status !== 'complete')
+            const completed = entries.filter(e => e.doc_status === 'complete')
             return (
               <div className="space-y-2 mb-6">
                 {active.map(e => (
