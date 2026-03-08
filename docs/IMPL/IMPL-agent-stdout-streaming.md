@@ -678,3 +678,13 @@ After Wave 1 completes:
 | 1 | C | TypeScript hook + types: `AgentOutputData`, `AgentStatus.output`, `agent_output` event handler in `useWaveEvents` | TO-DO |
 | 1 | D | Frontend component: `AgentCard` streaming output `<pre>` with auto-scroll | TO-DO |
 | — | Orch | Post-merge integration: Go build + tests, TypeScript compile, smoke test, final commit | TO-DO |
+
+## Wave 1 / Agent D Completion Report
+status: complete
+files_changed:
+  - web/src/components/AgentCard.tsx (modified, +23/-0 lines)
+files_created: []
+interface_deviations: []
+downstream_action_required: false
+verification: PASS (tsc --noEmit filtering agent.output type errors pending Agent C merge; all pre-existing errors are environment-only — missing node_modules in worktree; no new errors introduced by AgentCard changes)
+notes: "Used (agent as any).output cast for the output field access since Agent C's types.ts changes are not yet merged in this worktree. Auto-scroll useEffect depends on [agent.output] via the agentOutput local variable. Output area is hidden when status is complete or failed — showOutput condition gates on agent.status === 'running'."

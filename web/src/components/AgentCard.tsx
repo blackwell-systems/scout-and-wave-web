@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react'
 import { AgentStatus } from '../types'
 import { Card, CardContent, CardHeader } from './ui/card'
 import { Badge } from './ui/badge'
@@ -21,6 +22,17 @@ const statusLabels: Record<string, string> = {
 }
 
 export default function AgentCard({ agent }: AgentCardProps) {
+  const preRef = useRef<HTMLPreElement>(null)
+
+  useEffect(() => {
+    if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight
+  // @ts-expect-error — output added by Agent C
+  }, [agent.output])
+
+  // output field added by Agent C (parallel wave); using cast until types.ts is merged
+  const agentOutput: string | undefined = (agent as any).output
+  const showOutput = agent.status === 'running' && agentOutput && agentOutput.length > 0
+
   return (
     <Card className="min-w-[200px] max-w-xs">
       <CardHeader className="pb-3">
@@ -34,6 +46,17 @@ export default function AgentCard({ agent }: AgentCardProps) {
           </Badge>
         </div>
       </CardHeader>
+
+      {showOutput && (
+        <CardContent className="pt-0">
+          <pre
+            ref={preRef}
+            className="text-xs font-mono text-muted-foreground bg-muted/50 rounded p-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-all"
+          >
+            {agentOutput}
+          </pre>
+        </CardContent>
+      )}
 
       {(agent.files.length > 0 || agent.status === 'failed') && (
         <CardContent className="pt-0">
