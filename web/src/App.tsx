@@ -148,7 +148,7 @@ export default function App() {
         <div className="flex items-center gap-3">
           <span className="text-sm font-semibold tracking-tight">Scout and Wave</span>
           <button
-            onClick={() => setLiveView('scout')}
+            onClick={() => setLiveView(v => v === 'scout' ? null : 'scout')}
             className="text-xs px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
           >
             New plan
