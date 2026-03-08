@@ -1231,3 +1231,27 @@ The GET handler reads from `s.cfg.IMPLDir/IMPL-{slug}.md` and returns `text/plai
 One interface deviation: the prompt specified `filepath.Join(s.cfg.RepoPath, "docs", "IMPL", ...)` for path construction, but the existing `impl.go` uses `s.cfg.IMPLDir` directly. Using `s.cfg.IMPLDir` is consistent with the rest of the codebase and avoids hardcoding the `docs/IMPL` subdirectory (which is already baked into `IMPLDir` at server startup). Both approaches resolve to the same path in production.
 
 The two route registrations (`GET /api/impl/{slug}/raw` and `PUT /api/impl/{slug}/raw`) must be added to `pkg/api/server.go` by Agent B or the orchestrator — this file is outside my ownership.
+
+---
+
+### Agent H - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave2-agent-H
+branch: saw/wave2-agent-H
+commit: c3b2121728ab7042664a67ea7ccd2df9a0bf7a9f
+files_changed: []
+files_created:
+  - web/src/components/ImplEditor.tsx
+interface_deviations: []
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (npx tsc --noEmit)
+```
+
+Component fetches raw markdown via `fetch('/api/impl/${slug}/raw')` on mount, renders in a monospace textarea with dark theme (`bg-gray-900 text-gray-100 font-mono text-sm`), tracks dirty state by comparing textarea content to last-saved content, and shows an amber "Unsaved changes" indicator when dirty. Save uses `PUT /api/impl/${slug}/raw` with a `text/plain` body — on success shows a green "Saved ✓" flash for 2 seconds; on error shows the error message in red inline. Revert resets textarea to `savedContent` and clears dirty state. Loading and error states are handled with a retry button. All state is self-contained; no api.ts imports were used.
+
+**downstream_action_required:** true
+
+**orchestrator_action:** Wire ImplEditor into WaveBoard gate banner: import ImplEditor and render `<ImplEditor slug={slug} />` inside the wave_gate_pending banner in WaveBoard.tsx (after the Proceed button). Also optionally add to review sidebar.
