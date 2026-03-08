@@ -9,6 +9,11 @@ require (
 )
 
 require (
+	github.com/fsnotify/fsnotify v1.9.0 // indirect
+	golang.org/x/sys v0.34.0 // indirect
+)
+
+require (
 	github.com/blackwell-systems/scout-and-wave-go v0.0.0
 	github.com/creack/pty v1.1.24
 	github.com/tidwall/gjson v1.18.0 // indirect

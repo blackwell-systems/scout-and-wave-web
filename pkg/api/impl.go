@@ -125,6 +125,7 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	s.broker.Publish(slug, SSEEvent{Event: "plan_approved", Data: map[string]string{"slug": slug}})
+	s.globalBroker.broadcast("impl_list_updated") // status change visible in sidebar
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -133,6 +134,7 @@ func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReject(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	s.broker.Publish(slug, SSEEvent{Event: "plan_rejected", Data: map[string]string{"slug": slug}})
+	s.globalBroker.broadcast("impl_list_updated") // status change visible in sidebar
 	w.WriteHeader(http.StatusAccepted)
 }
 

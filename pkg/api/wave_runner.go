@@ -36,6 +36,9 @@ func (s *Server) handleWaveStart(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer s.activeRuns.Delete(slug)
 		runWaveLoopFunc(implPath, slug, s.cfg.RepoPath, publish)
+		// Notify all sidebar clients that doc status may have changed
+		// (e.g. COMPLETE marker written, waves finished).
+		s.globalBroker.broadcast("impl_list_updated")
 	}()
 
 	w.WriteHeader(http.StatusAccepted)

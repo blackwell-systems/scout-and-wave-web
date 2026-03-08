@@ -20,12 +20,13 @@ type Config struct {
 type Server struct {
 	cfg           Config
 	mux           *http.ServeMux
-	broker        *sseBroker // unexported; used by wave.go handlers
-	activeRuns    sync.Map   // slug -> struct{}; tracks in-progress wave runs
-	scoutRuns     sync.Map   // runID -> context.CancelFunc; tracks in-progress scout runs
-	reviseCancels sync.Map   // runID -> context.CancelFunc; tracks in-progress revise runs
-	mergingRuns   sync.Map   // slug -> struct{}; tracks in-progress merge operations
-	testingRuns   sync.Map   // slug -> struct{}; tracks in-progress test runs
+	broker        *sseBroker   // unexported; used by wave.go handlers
+	globalBroker  *globalBroker // fans out global SSE events (impl_list_updated, etc.)
+	activeRuns    sync.Map     // slug -> struct{}; tracks in-progress wave runs
+	scoutRuns     sync.Map     // runID -> context.CancelFunc; tracks in-progress scout runs
+	reviseCancels sync.Map     // runID -> context.CancelFunc; tracks in-progress revise runs
+	mergingRuns   sync.Map     // slug -> struct{}; tracks in-progress merge operations
+	testingRuns   sync.Map     // slug -> struct{}; tracks in-progress test runs
 }
 
 // New creates a Server with the given Config and registers all routes.
@@ -36,8 +37,14 @@ func New(cfg Config) *Server {
 		broker: &sseBroker{
 			clients: make(map[string][]chan SSEEvent),
 		},
+		globalBroker: newGlobalBroker(),
 	}
 
+	// Watch the IMPL directory for new/changed docs so connected clients
+	// get an impl_list_updated event without needing to poll or refresh.
+	s.startIMPLWatcher(cfg.IMPLDir)
+
+	s.mux.HandleFunc("GET /api/events", s.handleGlobalEvents)
 	s.mux.HandleFunc("GET /api/browse", s.handleBrowse)
 	s.mux.HandleFunc("GET /api/impl", s.handleListImpls)
 	s.mux.HandleFunc("GET /api/impl/{slug}", s.handleGetImpl)
