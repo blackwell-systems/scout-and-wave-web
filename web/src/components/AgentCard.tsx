@@ -34,6 +34,7 @@ export default function AgentCard({ agent }: AgentCardProps) {
 
   const agentColor = getAgentColor(agent.agent)
   const agentBgColor = getAgentColorWithOpacity(agent.agent, 0.1)
+  const branchName = agent.branch || `wave${agent.wave}-agent-${agent.agent.toLowerCase()}`
 
   return (
     <Card
@@ -44,14 +45,19 @@ export default function AgentCard({ agent }: AgentCardProps) {
         className="pb-3"
         style={{ backgroundColor: agentBgColor }}
       >
-        <div className="flex items-center justify-between">
-          <span className="font-bold text-sm truncate mr-2">{agent.agent}</span>
-          <Badge
-            variant="secondary"
-            className={`text-xs whitespace-nowrap ${statusStyles[agent.status] ?? statusStyles.pending} ${agent.status === 'running' ? 'animate-pulse' : ''}`}
-          >
-            {statusLabels[agent.status] ?? agent.status}
-          </Badge>
+        <div className="flex flex-col gap-1">
+          <div className="flex items-center justify-between">
+            <span className="font-bold text-sm truncate mr-2">{agent.agent}</span>
+            <Badge
+              variant="secondary"
+              className={`text-xs whitespace-nowrap ${statusStyles[agent.status] ?? statusStyles.pending} ${agent.status === 'running' ? 'animate-pulse' : ''}`}
+            >
+              {statusLabels[agent.status] ?? agent.status}
+            </Badge>
+          </div>
+          <div className="text-[10px] text-muted-foreground font-mono">
+            {branchName}
+          </div>
         </div>
       </CardHeader>
 
