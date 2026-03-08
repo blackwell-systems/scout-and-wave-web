@@ -70,45 +70,24 @@ None identified. `go test ./...` passes cleanly on the current codebase.
 ### Dependency Graph
 
 ```
-pkg/agent/backend/backend.go   (scaffold — defines Backend interface + Config)
-         |
-         +——> pkg/agent/backend/api/client.go   [Agent A]
-         |         (extracts current Client into api sub-package)
-         |
-         +——> pkg/agent/backend/cli/client.go   [Agent B]
-         |         (new CLI backend; shells out to `claude --print`)
-         |
-         +——> pkg/agent/runner.go               [Agent C]
-         |         (accepts Backend, removes ToolRunner/Sender split)
-         |
-         +——> pkg/orchestrator/orchestrator.go  [Agent C]
-         |         (newRunnerFunc accepts Backend; backend selection logic)
-         |
-         +——> cmd/saw/commands.go               [Agent D]
-                   (--backend flag, ANTHROPIC_API_KEY auto-detect)
+Wave 1 (2 parallel agents, both roots):
+    [A] pkg/agent/backend/api/client.go
+         (extracts current Client into api sub-package)
+         ✓ root (depends on scaffold only)
+
+    [B] pkg/agent/backend/cli/client.go
+         (new CLI backend; shells out to `claude --print`)
+         ✓ root (depends on scaffold only)
+
+Wave 2 (2 parallel agents):
+    [C] pkg/agent/runner.go + pkg/orchestrator/orchestrator.go
+         (accepts Backend, removes ToolRunner/Sender split)
+         depends on: [A] [B]
+
+    [D] cmd/saw/commands.go
+         (--backend flag, ANTHROPIC_API_KEY auto-detect)
+         depends on: [A] [B]
 ```
-
-Roots (no dependencies on new work):
-- `pkg/agent/backend/backend.go` (scaffold, created before Wave 1)
-
-Leaf nodes (depend on scaffold only, no inter-agent dependencies):
-- `pkg/agent/backend/api/` [Agent A]
-- `pkg/agent/backend/cli/` [Agent B]
-
-Wave 2 nodes (depend on A and B being merged):
-- `pkg/agent/runner.go` and `pkg/orchestrator/orchestrator.go` [Agent C]
-- `cmd/saw/commands.go` [Agent D]
-
-Cascade candidates (files that reference changed interfaces but are NOT in any
-agent's scope — post-merge verification will surface these):
-- `pkg/agent/client_test.go` — tests `*Client` directly; once `Client` moves
-  to `pkg/agent/backend/api`, the test file must move or its import path must
-  update. **Agent A owns this file.**
-- `pkg/orchestrator/orchestrator_test.go` — uses `newRunnerFunc` seam; the
-  seam signature changes when `Runner` accepts `Backend`. **Agent C owns this
-  file.**
-- `cmd/saw/commands_test.go` — tests `runScout`/`runScaffold` which call
-  `agent.NewClient` directly. **Agent D owns this file.**
 
 ---
 

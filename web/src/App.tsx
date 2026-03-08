@@ -140,10 +140,10 @@ export default function App() {
                         key={e.slug}
                         onClick={() => handleSelect(e.slug)}
                         disabled={loading}
-                        variant="ghost"
-                        className="w-full justify-start text-muted-foreground"
+                        variant="outline"
+                        className="w-full justify-start text-muted-foreground opacity-60 hover:opacity-100"
                       >
-                        {e.slug}
+                        ✓ {e.slug}
                       </Button>
                     ))}
                   </>
