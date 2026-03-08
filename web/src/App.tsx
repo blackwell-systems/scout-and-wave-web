@@ -3,12 +3,13 @@ import { listImpls, fetchImpl, approveImpl, rejectImpl, startWave } from './api'
 import { IMPLDocResponse, IMPLListEntry } from './types'
 import ReviewScreen from './components/ReviewScreen'
 import WaveBoard from './components/WaveBoard'
+import ScoutLauncher from './components/ScoutLauncher'
 import DarkModeToggle from './components/DarkModeToggle'
 import ImplList from './components/ImplList'
 import { useResizableDivider } from './hooks/useResizableDivider'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
-type AppMode = 'split' | 'wave'
+type AppMode = 'split' | 'wave' | 'scout'
 
 export default function App() {
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
@@ -75,6 +76,29 @@ export default function App() {
     }
   }
 
+  async function handleScoutComplete(slug: string) {
+    try {
+      const updated = await listImpls()
+      setEntries(updated)
+    } catch {
+      // non-fatal: sidebar will just not show the new entry until next refresh
+    }
+    if (slug) {
+      setSelectedSlug(slug)
+      setLoading(true)
+      setError(null)
+      try {
+        const data = await fetchImpl(slug)
+        setImpl(data)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err))
+      } finally {
+        setLoading(false)
+      }
+    }
+    setAppMode('split')
+  }
+
   if (appMode === 'wave') {
     return (
       <>
@@ -86,10 +110,29 @@ export default function App() {
     )
   }
 
+  if (appMode === 'scout') {
+    return (
+      <>
+        <div className="fixed top-4 right-4 z-50">
+          <DarkModeToggle />
+        </div>
+        <ScoutLauncher onComplete={handleScoutComplete} />
+      </>
+    )
+  }
+
   return (
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       <header className="flex items-center justify-between px-4 py-2 border-b shrink-0">
-        <span className="text-sm font-semibold tracking-tight">Scout and Wave</span>
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-semibold tracking-tight">Scout and Wave</span>
+          <button
+            onClick={() => setAppMode('scout')}
+            className="text-xs px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
+          >
+            New plan
+          </button>
+        </div>
         <DarkModeToggle />
       </header>
       <div className="flex flex-1 min-h-0">

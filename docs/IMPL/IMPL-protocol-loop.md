@@ -1230,6 +1230,30 @@ The GET handler reads from `s.cfg.IMPLDir/IMPL-{slug}.md` and returns `text/plai
 
 One interface deviation: the prompt specified `filepath.Join(s.cfg.RepoPath, "docs", "IMPL", ...)` for path construction, but the existing `impl.go` uses `s.cfg.IMPLDir` directly. Using `s.cfg.IMPLDir` is consistent with the rest of the codebase and avoids hardcoding the `docs/IMPL` subdirectory (which is already baked into `IMPLDir` at server startup). Both approaches resolve to the same path in production.
 
+---
+
+### Agent E - Completion Report
+
+```yaml type=impl-completion-report
+status: complete
+worktree: .claude/worktrees/wave2-agent-E
+branch: saw/wave2-agent-E
+commit: 9643421
+files_changed:
+  - web/src/App.tsx
+  - web/src/api.ts
+files_created:
+  - web/src/components/ScoutLauncher.tsx
+interface_deviations: []
+out_of_scope_deps: []
+tests_added: []
+verification: PASS (npx tsc --noEmit)
+```
+
+ScoutLauncher is a self-contained React component that calls `runScout`, opens an `EventSource` via `subscribeScoutEvents`, accumulates `scout_output` chunks into a scrolling `<pre>`, and calls `props.onComplete(slug)` on `scout_complete`. On `scout_failed` it surfaces a red error banner. The repo path input is collapsible to keep the UI clean for the common case. Cmd/Ctrl+Enter on the textarea also triggers the run.
+
+App.tsx adds `'scout'` to the `AppMode` union (`'split' | 'wave' | 'scout'`). A "New plan" button sits in the header next to the app title and switches to scout mode. `handleScoutComplete` refreshes the impl list, fetches the new impl doc, sets it as selected, and returns to `'split'` mode — so the user lands directly on the new plan's review screen after Scout finishes.
+
 The two route registrations (`GET /api/impl/{slug}/raw` and `PUT /api/impl/{slug}/raw`) must be added to `pkg/api/server.go` by Agent B or the orchestrator — this file is outside my ownership.
 
 ### Agent D - Completion Report
