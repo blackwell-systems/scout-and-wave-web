@@ -46,7 +46,7 @@ type fakeBackend struct {
 	runFn func(systemPrompt string) (string, error)
 }
 
-func (f *fakeBackend) RunStreaming(_ context.Context, systemPrompt, _, _ string, _ func(string)) (string, error) {
+func (f *fakeBackend) RunStreaming(_ context.Context, systemPrompt, _, _ string, _ backend.ChunkCallback) (string, error) {
 	return f.Run(context.Background(), systemPrompt, "", "")
 }
 

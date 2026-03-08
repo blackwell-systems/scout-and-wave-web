@@ -405,9 +405,17 @@ func TestHandleApprove_PublishesEvent(t *testing.T) {
 func TestHandleWaveStart_Returns202(t *testing.T) {
 	// Inject a no-op loop so the background goroutine doesn't write to the
 	// temp dir after the test ends (which would cause TempDir cleanup to fail).
+	// done channel ensures t.Cleanup waits for the goroutine to finish reading
+	// runWaveLoopFunc before restoring it, preventing a data race.
+	done := make(chan struct{})
 	orig := runWaveLoopFunc
-	runWaveLoopFunc = func(implPath, slug, repoPath string, publish func(string, interface{})) {}
-	t.Cleanup(func() { runWaveLoopFunc = orig })
+	runWaveLoopFunc = func(implPath, slug, repoPath string, publish func(string, interface{})) {
+		defer close(done)
+	}
+	t.Cleanup(func() {
+		<-done
+		runWaveLoopFunc = orig
+	})
 
 	s, dir := makeTestServer(t)
 	writeIMPLDoc(t, dir, "my-feature", minimalIMPL)

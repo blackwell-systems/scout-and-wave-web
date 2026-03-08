@@ -26,11 +26,9 @@ export default function AgentCard({ agent }: AgentCardProps) {
 
   useEffect(() => {
     if (preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight
-  // @ts-expect-error — output added by Agent C
   }, [agent.output])
 
-  // output field added by Agent C (parallel wave); using cast until types.ts is merged
-  const agentOutput: string | undefined = (agent as any).output
+  const agentOutput: string | undefined = agent.output
   const showOutput = agent.status === 'running' && agentOutput && agentOutput.length > 0
 
   return (
