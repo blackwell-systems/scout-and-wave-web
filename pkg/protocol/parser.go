@@ -137,7 +137,11 @@ func ParseIMPLDoc(path string) (*types.IMPLDoc, error) {
 			doc.LintCommand = val
 
 		// ── Wave section: ## Wave N
-		case strings.HasPrefix(line, "## Wave "):
+		// Guard: "## Wave N / Agent X Completion Report" appears in some IMPL
+		// doc formats — not a wave boundary, skip it as a completion report.
+		case strings.HasPrefix(line, "## Wave ") &&
+			!strings.Contains(line, "Completion Report") &&
+			!strings.Contains(line, "/ Agent"):
 			flushWave()
 			rest := strings.TrimPrefix(line, "## Wave ")
 			rest = strings.Fields(rest)[0] // take first token (the number)
