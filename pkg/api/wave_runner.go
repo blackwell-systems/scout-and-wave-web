@@ -1,8 +1,11 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"path/filepath"
+	"sync"
+	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -16,6 +19,10 @@ func init() {
 	orchestrator.SetParseIMPLDocFunc(protocol.ParseIMPLDoc)
 	orchestrator.SetValidateInvariantsFunc(protocol.ValidateInvariants)
 }
+
+// gateChannels stores per-slug gate channels used to pause runWaveLoop
+// between waves. Keys are slugs (string), values are chan bool (buffered 1).
+var gateChannels sync.Map
 
 // waveOrchestrator is the interface needed by runWaveLoop.
 // Matches pkg/orchestrator.Orchestrator methods.
@@ -58,6 +65,12 @@ func (s *Server) handleWaveStart(w http.ResponseWriter, r *http.Request) {
 // wires the SSE event publisher, and executes all waves defined in the IMPL
 // doc in order: RunWave → MergeWave → RunVerification → UpdateIMPLStatus.
 //
+// Between waves, runWaveLoop publishes a "wave_gate_pending" SSE event and
+// blocks for up to 30 minutes waiting for a proceed signal via gateChannels.
+// If the gate times out or receives false, it publishes "run_failed" and
+// returns. If it receives true, it publishes "wave_gate_resolved" and
+// continues to the next wave.
+//
 // On any error the function publishes "run_failed" and returns.
 // On success it publishes "run_complete".
 func runWaveLoop(implPath, slug, repoPath string, publish func(event string, data interface{})) {
@@ -84,7 +97,7 @@ func runWaveLoop(implPath, slug, repoPath string, publish func(event string, dat
 		totalAgents += len(w.Agents)
 	}
 
-	for _, wave := range waves {
+	for i, wave := range waves {
 		waveNum := wave.Number
 
 		if err := orch.RunWave(waveNum); err != nil {
@@ -112,6 +125,45 @@ func runWaveLoop(implPath, slug, repoPath string, publish func(event string, dat
 				"error": err.Error(),
 			})
 		}
+
+		// If there is a next wave, pause at the gate and wait for approval.
+		if i < len(waves)-1 {
+			nextWaveNum := waves[i+1].Number
+
+			// Create a buffered channel and register it so handleWaveGateProceed
+			// can signal us.
+			gateCh := make(chan bool, 1)
+			gateChannels.Store(slug, gateCh)
+
+			publish("wave_gate_pending", map[string]interface{}{
+				"wave":      waveNum,
+				"next_wave": nextWaveNum,
+				"slug":      slug,
+			})
+
+			const gateTimeout = 30 * time.Minute
+			select {
+			case ok := <-gateCh:
+				gateChannels.Delete(slug)
+				if !ok {
+					publish("run_failed", map[string]string{
+						"error": "gate cancelled or timed out",
+					})
+					return
+				}
+				publish("wave_gate_resolved", map[string]interface{}{
+					"wave":   waveNum,
+					"action": "proceed",
+					"slug":   slug,
+				})
+			case <-time.After(gateTimeout):
+				gateChannels.Delete(slug)
+				publish("run_failed", map[string]string{
+					"error": "gate cancelled or timed out",
+				})
+				return
+			}
+		}
 	}
 
 	publish("run_complete", orchestrator.RunCompletePayload{
@@ -119,6 +171,50 @@ func runWaveLoop(implPath, slug, repoPath string, publish func(event string, dat
 		Waves:  len(waves),
 		Agents: totalAgents,
 	})
+}
+
+// handleWaveGateProceed handles POST /api/wave/{slug}/gate/proceed.
+// It looks up the gate channel for the slug and sends true to unblock
+// runWaveLoop so it continues to the next wave. Returns 202 Accepted.
+func (s *Server) handleWaveGateProceed(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+
+	val, ok := gateChannels.Load(slug)
+	if !ok {
+		http.Error(w, fmt.Sprintf("no gate pending for slug %q", slug), http.StatusNotFound)
+		return
+	}
+
+	ch, ok := val.(chan bool)
+	if !ok {
+		http.Error(w, "internal: gate channel type assertion failed", http.StatusInternalServerError)
+		return
+	}
+
+	// Non-blocking send: if the channel already has a value (e.g. double-click),
+	// we just drop this one rather than blocking.
+	select {
+	case ch <- true:
+	default:
+	}
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// handleWaveAgentRerun handles POST /api/wave/{slug}/agent/{letter}/rerun.
+// This is a stub — re-run is not yet implemented. Returns 202 Accepted with
+// a JSON body indicating the stub status.
+//
+// TODO: Full implementation required in a follow-up wave. The handler should
+// re-spawn the named agent worktree, re-run its assigned task, and update
+// the IMPL doc status accordingly.
+func (s *Server) handleWaveAgentRerun(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	letter := r.PathValue("letter")
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	fmt.Fprintf(w, `{"status":"stub","message":"agent rerun not yet implemented","slug":%q,"agent":%q}`, slug, letter)
 }
 
 // makePublisher creates a function that maps orchestrator events to SSE events.
