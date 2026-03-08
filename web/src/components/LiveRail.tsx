@@ -47,8 +47,6 @@ export default function LiveRail({ slug, liveView, onScoutComplete, onClose }: L
       {liveView === 'wave' && slug && (
         <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
           <div className="flex-1 overflow-y-auto min-h-0">
-            {/* compact prop added by Agent C (wave1-agent-C) — suppress until merged */}
-            {/* @ts-expect-error compact prop will exist after Agent C merges */}
             <WaveBoard slug={slug} compact={true} />
           </div>
           <div className="border-t shrink-0 p-3">
