@@ -124,21 +124,21 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
 
           {/* Active panels — fixed layout grid */}
           <div className="space-y-6">
-            {/* Wave Structure — full width */}
-            {activePanels.includes('wave-structure') && (
-              <div className="col-span-2"><WaveStructurePanel impl={impl} /></div>
-            )}
-
-            {/* File Ownership + Dependency Graph pair */}
-            {(activePanels.includes('file-ownership') || activePanels.includes('dependency-graph')) && (
+            {/* Wave Structure + Dependency Graph pair */}
+            {(activePanels.includes('wave-structure') || activePanels.includes('dependency-graph')) && (
               <div className={`grid gap-6 ${
-                activePanels.includes('file-ownership') && activePanels.includes('dependency-graph')
+                activePanels.includes('wave-structure') && activePanels.includes('dependency-graph')
                   ? 'grid-cols-1 md:grid-cols-2'
                   : 'grid-cols-1'
               }`}>
-                {activePanels.includes('file-ownership') && <FileOwnershipPanel impl={impl} />}
+                {activePanels.includes('wave-structure') && <WaveStructurePanel impl={impl} />}
                 {activePanels.includes('dependency-graph') && <DependencyGraphPanel dependencyGraphText={(impl as any).dependency_graph_text} />}
               </div>
+            )}
+
+            {/* File Ownership — full width when alone */}
+            {activePanels.includes('file-ownership') && (
+              <FileOwnershipPanel impl={impl} />
             )}
 
             {/* Interface Contracts — full width */}

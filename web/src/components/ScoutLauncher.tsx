@@ -91,8 +91,8 @@ export default function ScoutLauncher({ onComplete }: ScoutLauncherProps): JSX.E
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-950 p-6 flex flex-col items-center">
-      <div className="w-full max-w-2xl space-y-4">
+    <div className="bg-gray-50 dark:bg-gray-950 p-4 flex flex-col">
+      <div className="w-full space-y-4">
 
         {/* Header */}
         <div>
