@@ -46,6 +46,14 @@ func TestValidateIMPLDoc_ValidFileOwnership(t *testing.T) {
 		"| File | Agent | Wave | Depends On |\n" +
 		"|------|-------|------|------------|\n" +
 		"| pkg/foo/bar.go | A | 1 | — |\n" +
+		"```\n\n" +
+		"```yaml type=impl-dep-graph\n" +
+		"Wave 1 (parallel):\n" +
+		"    [A] pkg/foo/bar.go\n" +
+		"        ✓ root\n" +
+		"```\n\n" +
+		"```yaml type=impl-wave-structure\n" +
+		"Wave 1: [A]\n" +
 		"```\n"
 	path := writeTempFile(t, content)
 	errs, err := ValidateIMPLDoc(path)
@@ -63,6 +71,14 @@ func TestValidateIMPLDoc_MissingFileOwnershipHeader(t *testing.T) {
 	content := "# IMPL: Test\n\n" +
 		"```yaml type=impl-file-ownership\n" + // line 3
 		"| pkg/foo/bar.go | A | 1 | — |\n" +
+		"```\n\n" +
+		"```yaml type=impl-dep-graph\n" +
+		"Wave 1 (parallel):\n" +
+		"    [A] pkg/foo/bar.go\n" +
+		"        ✓ root\n" +
+		"```\n\n" +
+		"```yaml type=impl-wave-structure\n" +
+		"Wave 1: [A]\n" +
 		"```\n"
 	path := writeTempFile(t, content)
 	errs, err := ValidateIMPLDoc(path)
@@ -87,6 +103,14 @@ func TestValidateIMPLDoc_MissingFileOwnershipDataRow(t *testing.T) {
 		"```yaml type=impl-file-ownership\n" + // line 3
 		"| File | Agent | Wave | Depends On |\n" +
 		"|------|-------|------|------------|\n" +
+		"```\n\n" +
+		"```yaml type=impl-dep-graph\n" +
+		"Wave 1 (parallel):\n" +
+		"    [A] pkg/foo/bar.go\n" +
+		"        ✓ root\n" +
+		"```\n\n" +
+		"```yaml type=impl-wave-structure\n" +
+		"Wave 1: [A]\n" +
 		"```\n"
 	path := writeTempFile(t, content)
 	errs, err := ValidateIMPLDoc(path)
@@ -105,12 +129,21 @@ func TestValidateIMPLDoc_MissingFileOwnershipDataRow(t *testing.T) {
 // block passes with no errors.
 func TestValidateIMPLDoc_ValidDepGraph(t *testing.T) {
 	content := "# IMPL: Test\n\n" +
+		"```yaml type=impl-file-ownership\n" +
+		"| File | Agent | Wave | Depends On |\n" +
+		"|------|-------|------|------------|\n" +
+		"| pkg/foo/bar.go | A | 1 | — |\n" +
+		"| pkg/foo/baz.go | B | 1 | — |\n" +
+		"```\n\n" +
 		"```yaml type=impl-dep-graph\n" +
 		"Wave 1 (parallel):\n" +
 		"    [A] pkg/foo/bar.go\n" +
 		"        ✓ root\n" +
 		"    [B] pkg/foo/baz.go\n" +
 		"        ✓ root\n" +
+		"```\n\n" +
+		"```yaml type=impl-wave-structure\n" +
+		"Wave 1: [A] [B]\n" +
 		"```\n"
 	path := writeTempFile(t, content)
 	errs, err := ValidateIMPLDoc(path)
@@ -126,9 +159,17 @@ func TestValidateIMPLDoc_ValidDepGraph(t *testing.T) {
 // without any "Wave N" header returns an error.
 func TestValidateIMPLDoc_DepGraphMissingWaveHeader(t *testing.T) {
 	content := "# IMPL: Test\n\n" +
-		"```yaml type=impl-dep-graph\n" + // line 3
+		"```yaml type=impl-file-ownership\n" +
+		"| File | Agent | Wave | Depends On |\n" +
+		"|------|-------|------|------------|\n" +
+		"| pkg/foo/bar.go | A | 1 | — |\n" +
+		"```\n\n" +
+		"```yaml type=impl-dep-graph\n" + // line 9
 		"    [A] pkg/foo/bar.go\n" +
 		"        ✓ root\n" +
+		"```\n\n" +
+		"```yaml type=impl-wave-structure\n" +
+		"Wave 1: [A]\n" +
 		"```\n"
 	path := writeTempFile(t, content)
 	errs, err := ValidateIMPLDoc(path)
@@ -141,8 +182,8 @@ func TestValidateIMPLDoc_DepGraphMissingWaveHeader(t *testing.T) {
 	if errs[0].BlockType != "impl-dep-graph" {
 		t.Errorf("expected BlockType 'impl-dep-graph', got %q", errs[0].BlockType)
 	}
-	if errs[0].LineNumber != 3 {
-		t.Errorf("expected LineNumber 3, got %d", errs[0].LineNumber)
+	if errs[0].LineNumber != 9 {
+		t.Errorf("expected LineNumber 9, got %d", errs[0].LineNumber)
 	}
 }
 
@@ -150,11 +191,20 @@ func TestValidateIMPLDoc_DepGraphMissingWaveHeader(t *testing.T) {
 // neither "✓ root" nor "depends on:" returns an error.
 func TestValidateIMPLDoc_AgentMissingRootOrDependsOn(t *testing.T) {
 	content := "# IMPL: Test\n\n" +
-		"```yaml type=impl-dep-graph\n" + // line 3
+		"```yaml type=impl-file-ownership\n" +
+		"| File | Agent | Wave | Depends On |\n" +
+		"|------|-------|------|------------|\n" +
+		"| pkg/foo/bar.go | A | 1 | — |\n" +
+		"| pkg/foo/baz.go | B | 1 | — |\n" +
+		"```\n\n" +
+		"```yaml type=impl-dep-graph\n" +
 		"Wave 1 (parallel):\n" +
 		"    [A] pkg/foo/bar.go\n" +
 		"        ✓ root\n" +
 		"    [B] pkg/foo/baz.go\n" +
+		"```\n\n" +
+		"```yaml type=impl-wave-structure\n" +
+		"Wave 1: [A] [B]\n" +
 		"```\n"
 	path := writeTempFile(t, content)
 	errs, err := ValidateIMPLDoc(path)
@@ -173,6 +223,23 @@ func TestValidateIMPLDoc_AgentMissingRootOrDependsOn(t *testing.T) {
 // impl-wave-structure block passes with no errors.
 func TestValidateIMPLDoc_ValidWaveStructure(t *testing.T) {
 	content := "# IMPL: Test\n\n" +
+		"```yaml type=impl-file-ownership\n" +
+		"| File | Agent | Wave | Depends On |\n" +
+		"|------|-------|------|------------|\n" +
+		"| pkg/foo.go | A | 1 | — |\n" +
+		"| pkg/bar.go | B | 1 | — |\n" +
+		"| pkg/baz.go | C | 2 | A,B |\n" +
+		"```\n\n" +
+		"```yaml type=impl-dep-graph\n" +
+		"Wave 1 (parallel):\n" +
+		"    [A] pkg/foo.go\n" +
+		"        ✓ root\n" +
+		"    [B] pkg/bar.go\n" +
+		"        ✓ root\n" +
+		"Wave 2:\n" +
+		"    [C] pkg/baz.go\n" +
+		"        depends on: A, B\n" +
+		"```\n\n" +
 		"```yaml type=impl-wave-structure\n" +
 		"Wave 1: [A] [B]\n" +
 		"Wave 2: [C]\n" +
@@ -191,6 +258,19 @@ func TestValidateIMPLDoc_ValidWaveStructure(t *testing.T) {
 // report with all required fields passes with no errors.
 func TestValidateIMPLDoc_ValidCompletionReport(t *testing.T) {
 	content := "# IMPL: Test\n\n" +
+		"```yaml type=impl-file-ownership\n" +
+		"| File | Agent | Wave | Depends On |\n" +
+		"|------|-------|------|------------|\n" +
+		"| pkg/foo.go | A | 1 | — |\n" +
+		"```\n\n" +
+		"```yaml type=impl-dep-graph\n" +
+		"Wave 1 (parallel):\n" +
+		"    [A] pkg/foo.go\n" +
+		"        ✓ root\n" +
+		"```\n\n" +
+		"```yaml type=impl-wave-structure\n" +
+		"Wave 1: [A]\n" +
+		"```\n\n" +
 		"```yaml type=impl-completion-report\n" +
 		"status: complete\n" +
 		"worktree: wave1-agent-A\n" +
@@ -214,7 +294,20 @@ func TestValidateIMPLDoc_ValidCompletionReport(t *testing.T) {
 // placeholder status returns an error.
 func TestValidateIMPLDoc_CompletionReportBadStatus(t *testing.T) {
 	content := "# IMPL: Test\n\n" +
-		"```yaml type=impl-completion-report\n" + // line 3
+		"```yaml type=impl-file-ownership\n" +
+		"| File | Agent | Wave | Depends On |\n" +
+		"|------|-------|------|------------|\n" +
+		"| pkg/foo.go | A | 1 | — |\n" +
+		"```\n\n" +
+		"```yaml type=impl-dep-graph\n" +
+		"Wave 1 (parallel):\n" +
+		"    [A] pkg/foo.go\n" +
+		"        ✓ root\n" +
+		"```\n\n" +
+		"```yaml type=impl-wave-structure\n" +
+		"Wave 1: [A]\n" +
+		"```\n\n" +
+		"```yaml type=impl-completion-report\n" +
 		"status: complete | partial | blocked\n" +
 		"worktree: wave1-agent-A\n" +
 		"branch: wave1-agent-A\n" +
@@ -243,7 +336,12 @@ func TestValidateIMPLDoc_MultipleErrors(t *testing.T) {
 		"```yaml type=impl-file-ownership\n" + // line 3 — no header row
 		"| pkg/foo/bar.go | A | 1 | — |\n" +
 		"```\n\n" +
-		"```yaml type=impl-wave-structure\n" + // line 7 — no Wave N: lines
+		"```yaml type=impl-dep-graph\n" +
+		"Wave 1 (parallel):\n" +
+		"    [A] pkg/foo/bar.go\n" +
+		"        ✓ root\n" +
+		"```\n\n" +
+		"```yaml type=impl-wave-structure\n" + // no Wave N: lines
 		"just some text\n" +
 		"```\n"
 	path := writeTempFile(t, content)
@@ -259,5 +357,146 @@ func TestValidateIMPLDoc_MultipleErrors(t *testing.T) {
 	}
 	if errs[1].BlockType != "impl-wave-structure" {
 		t.Errorf("expected second error BlockType 'impl-wave-structure', got %q", errs[1].BlockType)
+	}
+}
+
+// TestValidateIMPLDoc_E16A_MissingRequiredBlocks verifies that a doc with typed
+// blocks but missing impl-dep-graph and impl-file-ownership fails E16A.
+func TestValidateIMPLDoc_E16A_MissingRequiredBlocks(t *testing.T) {
+	content := "# IMPL: Test\n\n" +
+		"```yaml type=impl-wave-structure\n" +
+		"Wave 1: [A]\n" +
+		"```\n"
+	path := writeTempFile(t, content)
+	errs, err := ValidateIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	// Expect E16A errors for the two missing required blocks
+	missing := map[string]bool{}
+	for _, e := range errs {
+		if e.BlockType == "e16a" {
+			missing[e.Message] = true
+		}
+	}
+	if !missing["missing required block: impl-file-ownership"] {
+		t.Errorf("expected E16A error for missing impl-file-ownership, got: %v", errs)
+	}
+	if !missing["missing required block: impl-dep-graph"] {
+		t.Errorf("expected E16A error for missing impl-dep-graph, got: %v", errs)
+	}
+}
+
+// TestValidateIMPLDoc_E16A_AllRequiredPresent verifies that a doc with all three
+// required block types does not produce E16A errors.
+func TestValidateIMPLDoc_E16A_AllRequiredPresent(t *testing.T) {
+	content := "# IMPL: Test\n\n" +
+		"```yaml type=impl-file-ownership\n" +
+		"| File | Agent | Wave | Depends On |\n" +
+		"|------|-------|------|------------|\n" +
+		"| pkg/foo.go | A | 1 | — |\n" +
+		"```\n\n" +
+		"```yaml type=impl-dep-graph\n" +
+		"Wave 1 (parallel):\n" +
+		"    [A] pkg/foo.go\n" +
+		"        ✓ root\n" +
+		"```\n\n" +
+		"```yaml type=impl-wave-structure\n" +
+		"Wave 1: [A]\n" +
+		"```\n"
+	path := writeTempFile(t, content)
+	errs, err := ValidateIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, e := range errs {
+		if e.BlockType == "e16a" {
+			t.Errorf("unexpected E16A error: %s", e.Message)
+		}
+	}
+}
+
+// TestValidateIMPLDoc_E16A_NoTypedBlocks verifies that E16A does not fire when
+// there are no typed blocks at all (pre-v0.10.0 doc format).
+func TestValidateIMPLDoc_E16A_NoTypedBlocks(t *testing.T) {
+	content := "# IMPL: Old format\n\n### File Ownership\n\nSome text.\n"
+	path := writeTempFile(t, content)
+	errs, err := ValidateIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if errs != nil {
+		t.Errorf("expected nil errors for pre-typed-block doc, got: %v", errs)
+	}
+}
+
+// TestValidateIMPLDoc_E16C_OutOfBandDepGraph verifies that a plain fenced block
+// containing [A-Z] agent refs and "Wave" produces a warning.
+func TestValidateIMPLDoc_E16C_OutOfBandDepGraph(t *testing.T) {
+	content := "# IMPL: Test\n\n" +
+		"```yaml type=impl-file-ownership\n" +
+		"| File | Agent | Wave | Depends On |\n" +
+		"|------|-------|------|------------|\n" +
+		"| pkg/foo.go | A | 1 | — |\n" +
+		"```\n\n" +
+		"```yaml type=impl-dep-graph\n" +
+		"Wave 1 (parallel):\n" +
+		"    [A] pkg/foo.go\n" +
+		"        ✓ root\n" +
+		"```\n\n" +
+		"```yaml type=impl-wave-structure\n" +
+		"Wave 1: [A]\n" +
+		"```\n\n" +
+		"```\n" +
+		"Wave 1 (parallel):\n" +
+		"    [A] pkg/foo.go\n" +
+		"        [B] pkg/bar.go\n" +
+		"```\n"
+	path := writeTempFile(t, content)
+	errs, err := ValidateIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	found := false
+	for _, e := range errs {
+		if e.BlockType == "warning" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected E16C warning for out-of-band dep graph content, got: %v", errs)
+	}
+}
+
+// TestValidateIMPLDoc_E16C_NoFalsePositive verifies that a plain fenced block
+// with only agent refs (no Wave keyword) does not trigger E16C.
+func TestValidateIMPLDoc_E16C_NoFalsePositive(t *testing.T) {
+	content := "# IMPL: Test\n\n" +
+		"```yaml type=impl-file-ownership\n" +
+		"| File | Agent | Wave | Depends On |\n" +
+		"|------|-------|------|------------|\n" +
+		"| pkg/foo.go | A | 1 | — |\n" +
+		"```\n\n" +
+		"```yaml type=impl-dep-graph\n" +
+		"Wave 1 (parallel):\n" +
+		"    [A] pkg/foo.go\n" +
+		"        ✓ root\n" +
+		"```\n\n" +
+		"```yaml type=impl-wave-structure\n" +
+		"Wave 1: [A]\n" +
+		"```\n\n" +
+		"```go\n" +
+		"// [A] is a variable name here\n" +
+		"var A = 1\n" +
+		"```\n"
+	path := writeTempFile(t, content)
+	errs, err := ValidateIMPLDoc(path)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	for _, e := range errs {
+		if e.BlockType == "warning" {
+			t.Errorf("unexpected E16C warning on false positive: %s", e.Message)
+		}
 	}
 }

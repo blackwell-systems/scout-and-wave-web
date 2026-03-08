@@ -6,6 +6,10 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 
+**E16 validator sub-rules (E16A/E16C)**
+- **E16A: required block presence** — `ValidateIMPLDoc` now enforces that `impl-file-ownership`, `impl-dep-graph`, and `impl-wave-structure` blocks all appear when any typed block is present; fires only when `blockCount > 0` so pre-v0.10.0 docs are unaffected
+- **E16C: out-of-band dep graph detection** — plain fenced blocks whose content matches `[A-Z]` agent refs and the word `Wave` produce a `warning`-type `ValidationError` (not an exit-1 error); prompts author to move the content into a typed `impl-dep-graph` block
+
 **v0.10.0 protocol support**
 - **Typed-block dispatch** — parser detects `` ```yaml type=impl-* `` fenced blocks as canonical section anchors; heading-based detection retained as fallback for pre-v0.10.0 docs
 - **PreMortem parsing** — `ParseIMPLDoc` extracts `## Pre-Mortem` risk table into `IMPLDoc.PreMortem` (`*types.PreMortem`)

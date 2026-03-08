@@ -15,6 +15,17 @@ import (
 //	```yaml type=impl-file-ownership
 var typedBlockRe = regexp.MustCompile("^```yaml\\s+type=(impl-[a-z-]+)")
 
+// plainFenceRe matches a plain opening fence with no type= annotation.
+var plainFenceRe = regexp.MustCompile("^```[a-zA-Z]*$")
+
+// e16cAgentRe and e16cWaveRe are used together to detect likely dep-graph content.
+var e16cAgentRe = regexp.MustCompile(`\[[A-Z]\]`)
+var e16cWaveRe = regexp.MustCompile(`Wave`)
+
+// e16aRequiredBlocks lists the typed block types that must appear in every IMPL doc
+// that uses typed blocks (i.e. block_count > 0).
+var e16aRequiredBlocks = []string{"impl-file-ownership", "impl-dep-graph", "impl-wave-structure"}
+
 // agentLineRe matches agent lines like "    [A] some/file" (leading whitespace + [LETTER]).
 var agentLineRe = regexp.MustCompile(`^\s+\[([A-Z])\]`)
 
@@ -53,6 +64,8 @@ func ValidateIMPLDoc(path string) ([]types.ValidationError, error) {
 	}
 
 	var errs []types.ValidationError
+	seenBlocks := map[string]bool{}
+	blockCount := 0
 
 	for i, line := range lines {
 		m := typedBlockRe.FindStringSubmatch(line)
@@ -71,6 +84,9 @@ func ValidateIMPLDoc(path string) ([]types.ValidationError, error) {
 			blockLines = append(blockLines, lines[j])
 		}
 
+		seenBlocks[blockType] = true
+		blockCount++
+
 		var blockErrs []types.ValidationError
 		switch blockType {
 		case "impl-file-ownership":
@@ -83,6 +99,68 @@ func ValidateIMPLDoc(path string) ([]types.ValidationError, error) {
 			blockErrs = validateCompletionReport(blockLines, lineNumber)
 		}
 		errs = append(errs, blockErrs...)
+	}
+
+	// E16A: Required block presence — only when at least one typed block exists.
+	if blockCount > 0 {
+		for _, req := range e16aRequiredBlocks {
+			if !seenBlocks[req] {
+				errs = append(errs, types.ValidationError{
+					BlockType:  "e16a",
+					LineNumber: 0,
+					Message:    fmt.Sprintf("missing required block: %s", req),
+				})
+			}
+		}
+	}
+
+	// E16C: Out-of-band dep graph detection (warn only).
+	// Scan plain fenced blocks for content that looks like a dep graph.
+	// Must skip typed blocks so their closing ``` fences are not mistaken for
+	// plain fence openings.
+	{
+		inTypedBlock := false
+		inPlainBlock := false
+		plainBlockStart := 0
+		var plainBlockLines []string
+		for i, line := range lines {
+			lineNum := i + 1
+			closingFence := strings.TrimRight(line, " \t") == "```"
+
+			if inTypedBlock {
+				if closingFence {
+					inTypedBlock = false
+				}
+				continue
+			}
+			if strings.Contains(line, "type=") && strings.HasPrefix(strings.TrimLeft(line, " \t"), "```") {
+				inTypedBlock = true
+				continue
+			}
+
+			if !inPlainBlock {
+				if plainFenceRe.MatchString(line) {
+					inPlainBlock = true
+					plainBlockStart = lineNum
+					plainBlockLines = nil
+				}
+			} else {
+				if closingFence {
+					content := strings.Join(plainBlockLines, "\n")
+					if e16cAgentRe.MatchString(content) && e16cWaveRe.MatchString(content) {
+						errs = append(errs, types.ValidationError{
+							BlockType:  "warning",
+							LineNumber: plainBlockStart,
+							Message:    fmt.Sprintf("WARNING: possible dep-graph content found outside typed block at line %d — use ```yaml type=impl-dep-graph```", plainBlockStart),
+						})
+					}
+					inPlainBlock = false
+					plainBlockLines = nil
+				} else {
+					plainBlockLines = append(plainBlockLines, line)
+				}
+			}
+		}
 	}
 
 	if len(errs) == 0 {
