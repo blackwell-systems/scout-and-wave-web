@@ -421,6 +421,51 @@ GitHub App that posts IMPL doc reviews as PR comments. Approval workflow in GitH
 
 ---
 
+## Agent Color System (Cross-Cutting)
+
+### Unified Deterministic Agent Color Palette
+
+**Current state:** `lib/agentColors.ts` maps agent letters A–K to a fixed hand-picked palette. WaveBoard and WaveStructurePanel use it; FileOwnershipTable does not. Colors are not consistent across all surfaces.
+
+**Problem:** Three surfaces (wave structure boxes, file ownership table rows, WaveBoard agent cards) should use the same color per agent. Currently they don't. Additionally, the fixed A–K palette breaks down if a wave ever exceeds 11 agents, and multi-generation agent IDs (A2, B3) are not handled at all.
+
+**Design:**
+
+Agent IDs decompose into `(letter, generation)`:
+- `"A"` → `(A, 1)`, `"B"` → `(B, 1)`
+- `"A2"` → `(A, 2)`, `"B3"` → `(B, 3)`
+
+**Hue** is derived from the letter using the golden angle for maximum perceptual separation:
+```
+hue = (charIndex * 137.508) % 360   // charIndex: A=0, B=1, ... Z=25
+```
+A=0° → red-orange, B≈137° → blue-green, C≈275° → violet, etc. Adjacent letters land on opposite sides of the color wheel.
+
+**Lightness** varies by generation within the same hue, keeping the family relationship visually clear:
+```
+generation 1: hsl(hue, 65%, 45%)   // primary
+generation 2: hsl(hue, 65%, 30%)   // darker shade
+generation 3: hsl(hue, 65%, 60%)   // lighter shade
+generation 4+: cycle with saturation variation
+```
+
+**Two derived values per agent** (matching current API in `agentColors.ts`):
+- `getAgentColor(id)` → solid color for border, text, SVG nodes
+- `getAgentColorWithOpacity(id, opacity)` → rgba fill for card backgrounds, table row tints
+
+**Surfaces to update:**
+1. `lib/agentColors.ts` — replace lookup table with deterministic function; add multi-char ID parser
+2. `WaveStructurePanel.tsx` — already uses `getAgentColor`; picks up change automatically
+3. `WaveBoard.tsx` / `AgentCard.tsx` — already uses `getAgentColor`; picks up automatically
+4. `FileOwnershipTable.tsx` — add per-row agent color tint using `getAgentColorWithOpacity`
+5. `DependencyGraphPanel.tsx` — SVG nodes already colored; verify consistent with new function
+
+**Dark mode / light mode:** Hue stays constant across modes; lightness is mode-aware. In dark mode, lower base lightness (e.g. 40%) keeps colors vivid without washing out against dark backgrounds. In light mode, higher base lightness (e.g. 50%) prevents colors from being too dark against white. The HSL function handles this with a single `isDark` parameter that adjusts the lightness range used for each generation.
+
+**Protocol dependency:** Multi-generation IDs (A2, B3) require the protocol to define them as valid agent identifiers. The parser must recognize them, and the IMPL doc format must allow them in wave structure and file ownership tables. See protocol roadmap for the corresponding change.
+
+---
+
 ## Stretch Goals
 
 - **Visual IMPL Builder** — drag-and-drop wave/agent definition, visual dep graph editor
