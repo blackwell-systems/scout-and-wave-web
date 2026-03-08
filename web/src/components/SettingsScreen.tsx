@@ -32,7 +32,15 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
   useEffect(() => {
     getConfig()
       .then(c => {
-        setConfig(c)
+        setConfig(prev => ({
+          ...prev,
+          ...c,
+          repos: c.repos ?? prev.repos,
+          repo: c.repo ?? prev.repo,
+          agent: { ...prev.agent, ...c.agent },
+          quality: { ...prev.quality, ...c.quality },
+          appearance: { ...prev.appearance, theme: c.appearance?.theme || prev.appearance.theme },
+        }))
         setLoading(false)
       })
       .catch(err => {
