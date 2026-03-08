@@ -61,47 +61,54 @@ function DeleteModal({ slug, onConfirm, onCancel }: DeleteModalProps): JSX.Eleme
   )
 }
 
+interface EntryRowProps {
+  e: IMPLListEntry
+  selectedSlug: string | null
+  loading: boolean
+  onSelect: (slug: string) => void
+  onRequestDelete: (slug: string) => void
+}
+
+function EntryRow({ e, selectedSlug, loading, onSelect, onRequestDelete }: EntryRowProps): JSX.Element {
+  const isSelected = e.slug === selectedSlug
+  const isComplete = e.doc_status === 'complete'
+  return (
+    <div className="group relative flex items-center">
+      <Button
+        variant="ghost"
+        size="sm"
+        className={cn(
+          'flex-1 justify-start font-mono text-xs pr-6',
+          isSelected && 'bg-accent border-l-2 border-primary rounded-none',
+          isComplete && !isSelected && 'opacity-60 hover:opacity-100'
+        )}
+        disabled={loading}
+        onClick={() => onSelect(e.slug)}
+      >
+        {isComplete ? '\u2713 ' : ''}{e.slug}
+        {isMultiRepo(e.slug) && (
+          <>
+            <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300 ml-1 font-mono">multirepo</span>
+          </>
+        )}
+      </Button>
+      <button
+        onClick={(ev) => { ev.stopPropagation(); onRequestDelete(e.slug) }}
+        className="absolute right-1 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-destructive transition-opacity"
+        title="Delete"
+      >
+        ✕
+      </button>
+    </div>
+  )
+}
+
 export default function ImplList(props: ImplListProps): JSX.Element {
   const { entries, selectedSlug, onSelect, onDelete, loading, repos } = props
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
 
   const activeEntries = entries.filter((e) => e.doc_status !== 'complete')
   const completedEntries = entries.filter((e) => e.doc_status === 'complete')
-
-  function EntryRow({ e }: { e: IMPLListEntry }) {
-    const isSelected = e.slug === selectedSlug
-    const isComplete = e.doc_status === 'complete'
-    return (
-      <div key={e.slug} className="group relative flex items-center">
-        <Button
-          variant="ghost"
-          size="sm"
-          className={cn(
-            'flex-1 justify-start font-mono text-xs pr-6',
-            isSelected && 'bg-accent border-l-2 border-primary rounded-none',
-            isComplete && !isSelected && 'opacity-60 hover:opacity-100'
-          )}
-          disabled={loading}
-          onClick={() => onSelect(e.slug)}
-        >
-          {isComplete ? '\u2713 ' : ''}{e.slug}
-          {isMultiRepo(e.slug) && (
-            <>
-              <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300 ml-1 font-mono">multi</span>
-              {/* TODO: detect from file ownership paths */}
-            </>
-          )}
-        </Button>
-        <button
-          onClick={(ev) => { ev.stopPropagation(); setPendingDelete(e.slug) }}
-          className="absolute right-1 opacity-0 group-hover:opacity-100 p-0.5 rounded text-muted-foreground hover:text-destructive transition-opacity"
-          title="Delete"
-        >
-          ✕
-        </button>
-      </div>
-    )
-  }
 
   return (
     <>
@@ -119,7 +126,6 @@ export default function ImplList(props: ImplListProps): JSX.Element {
               <option value="">All repos</option>
               {repos.map((r, i) => <option key={i} value={r.path}>{r.name || r.path}</option>)}
             </select>
-            {/* TODO: filter entries by active repo */}
           </>
         )}
         {entries.length === 0 ? (
@@ -128,14 +134,31 @@ export default function ImplList(props: ImplListProps): JSX.Element {
           </p>
         ) : (
           <>
-            {activeEntries.map((e) => <EntryRow key={e.slug} e={e} />)}
-
+            {activeEntries.map((e) => (
+              <EntryRow
+                key={e.slug}
+                e={e}
+                selectedSlug={selectedSlug}
+                loading={loading}
+                onSelect={onSelect}
+                onRequestDelete={setPendingDelete}
+              />
+            ))}
             {completedEntries.length > 0 && (
               <>
                 <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground pt-2">
                   Completed
                 </p>
-                {completedEntries.map((e) => <EntryRow key={e.slug} e={e} />)}
+                {completedEntries.map((e) => (
+                  <EntryRow
+                    key={e.slug}
+                    e={e}
+                    selectedSlug={selectedSlug}
+                    loading={loading}
+                    onSelect={onSelect}
+                    onRequestDelete={setPendingDelete}
+                  />
+                ))}
               </>
             )}
           </>

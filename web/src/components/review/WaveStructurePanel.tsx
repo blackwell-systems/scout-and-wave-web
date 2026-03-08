@@ -83,16 +83,17 @@ export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): J
     nodes.push({
       type: 'scaffold',
       label: 'Scaffold',
-      scaffoldFiles: impl.scaffold.files.length,
+      scaffoldFiles: impl.scaffold.files?.length ?? 0,
     })
   }
 
   sortedWaves.forEach((wave, i) => {
+    const agents = wave.agents ?? []
     nodes.push({
       type: 'wave',
       label: `Wave ${wave.number}`,
-      agents: wave.agents,
-      agentCount: wave.agents.length,
+      agents,
+      agentCount: agents.length,
     })
     nodes.push({
       type: 'merge',

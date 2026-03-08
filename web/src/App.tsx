@@ -32,7 +32,7 @@ export default function App() {
     setActiveRepoIndex(index)
   }
 
-  const { leftWidthPx, dividerProps } = useResizableDivider({ initialWidthPx: 220, minWidthPx: 140, maxFraction: 0.10 })
+  const { leftWidthPx, dividerProps } = useResizableDivider({ initialWidthPx: Math.round(window.innerWidth * 0.15), minWidthPx: 140, maxFraction: 0.15 })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
