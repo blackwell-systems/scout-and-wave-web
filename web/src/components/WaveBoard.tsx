@@ -1,29 +1,17 @@
 import { useState } from 'react'
 import { useWaveEvents } from '../hooks/useWaveEvents'
 import type { AppWaveState } from '../hooks/useWaveEvents'
+import { WaveMergeState, WaveTestState } from '../hooks/useWaveEvents'
 import AgentCard from './AgentCard'
 import ProgressBar from './ProgressBar'
 import ImplEditor from './ImplEditor'
 import { AgentStatus } from '../types'
-import { mergeWave, runWaveTests } from '../api'
-
-// Local stub types matching Agent B's interface contract for WaveMergeState/WaveTestState.
-// Once Agent B's changes are merged, these can be replaced with imports from useWaveEvents.
-interface WaveMergeState {
-  status: 'idle' | 'merging' | 'success' | 'failed'
-  output: string
-  conflictingFiles: string[]
-  error?: string
-}
-
-interface WaveTestState {
-  status: 'idle' | 'running' | 'pass' | 'fail'
-  output: string
-}
+import { mergeWave, runWaveTests, rerunAgent } from '../api'
 
 interface WaveBoardProps {
   slug: string
   compact?: boolean
+  onRescout?: () => void
 }
 
 // Key for the optimistic agent status override map
@@ -31,7 +19,7 @@ function agentKey(agent: string, wave: number): string {
   return `${wave}:${agent}`
 }
 
-export default function WaveBoard({ slug, compact }: WaveBoardProps): JSX.Element {
+export default function WaveBoard({ slug, compact, onRescout }: WaveBoardProps): JSX.Element {
   // Optimistic status overrides — keyed by "wave:agent"
   const [statusOverrides, setStatusOverrides] = useState<Map<string, 'pending'>>(new Map())
 
@@ -57,29 +45,37 @@ export default function WaveBoard({ slug, compact }: WaveBoardProps): JSX.Elemen
       return next
     })
     try {
-      const res = await fetch(
-        `/api/wave/${encodeURIComponent(slug)}/agent/${encodeURIComponent(agent.agent)}/rerun`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ wave: agent.wave }),
-        }
-      )
-      if (res.status !== 202) {
-        // Revert optimistic update on non-202
+      await rerunAgent(slug, agent.wave, agent.agent)
+    } catch {
+      // Revert optimistic update on error
+      setStatusOverrides(prev => {
+        const next = new Map(prev)
+        next.delete(agentKey(agent.agent, agent.wave))
+        return next
+      })
+    }
+  }
+
+  async function handleRescout(agent: AgentStatus): Promise<void> {
+    // Optimistic update: mark agent as pending immediately
+    setStatusOverrides(prev => {
+      const next = new Map(prev)
+      next.set(agentKey(agent.agent, agent.wave), 'pending')
+      return next
+    })
+    if (onRescout) {
+      onRescout()
+    } else {
+      try {
+        await rerunAgent(slug, agent.wave, agent.agent)
+      } catch {
+        // Revert optimistic update on error
         setStatusOverrides(prev => {
           const next = new Map(prev)
           next.delete(agentKey(agent.agent, agent.wave))
           return next
         })
       }
-    } catch {
-      // Revert optimistic update on network error
-      setStatusOverrides(prev => {
-        const next = new Map(prev)
-        next.delete(agentKey(agent.agent, agent.wave))
-        return next
-      })
     }
   }
 
@@ -102,6 +98,61 @@ export default function WaveBoard({ slug, compact }: WaveBoardProps): JSX.Elemen
     } catch (err) {
       console.error('runWaveTests request failed:', err)
     }
+  }
+
+  function renderFailureActionButton(agent: AgentStatus): JSX.Element | null {
+    const failureType = agent.failure_type
+
+    if (failureType === 'escalate') {
+      return (
+        <span className="self-start text-xs font-medium px-2 py-1 rounded bg-orange-50 border border-orange-300 text-orange-700 dark:bg-orange-950 dark:border-orange-700 dark:text-orange-400">
+          Needs Manual Review
+        </span>
+      )
+    }
+
+    if (failureType === 'needs_replan') {
+      return (
+        <button
+          onClick={() => void handleRescout(agent)}
+          className="self-start text-xs font-medium px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900 transition-colors"
+        >
+          &#x21BA; Re-Scout
+        </button>
+      )
+    }
+
+    if (failureType === 'timeout') {
+      return (
+        <button
+          onClick={() => void handleRerun(agent)}
+          className="self-start text-xs font-medium px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900 transition-colors"
+        >
+          &#x21BA; Retry (scope down)
+        </button>
+      )
+    }
+
+    if (failureType === 'fixable') {
+      return (
+        <button
+          onClick={() => void handleRerun(agent)}
+          className="self-start text-xs font-medium px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900 transition-colors"
+        >
+          &#x21BA; Fix + Retry
+        </button>
+      )
+    }
+
+    // transient or undefined — default Retry
+    return (
+      <button
+        onClick={() => void handleRerun(agent)}
+        className="self-start text-xs font-medium px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900 transition-colors"
+      >
+        &#x21BA; Retry
+      </button>
+    )
   }
 
   return (
@@ -182,14 +233,7 @@ export default function WaveBoard({ slug, compact }: WaveBoardProps): JSX.Elemen
                   {waveAgents.map(agent => (
                     <div key={`${agent.agent}-${agent.wave}`} className="flex flex-col gap-1">
                       <AgentCard agent={agent} />
-                      {agent.status === 'failed' && (
-                        <button
-                          onClick={() => void handleRerun(agent)}
-                          className="self-start text-xs font-medium px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900 transition-colors"
-                        >
-                          &#x21BA; Re-run
-                        </button>
-                      )}
+                      {agent.status === 'failed' && renderFailureActionButton(agent)}
                     </div>
                   ))}
                 </div>
