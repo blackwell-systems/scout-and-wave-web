@@ -2,18 +2,13 @@ package main
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/agent"
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/agent/backend"
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/agent/backend/api"
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/agent/backend/cli"
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/types"
+	etypes "github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // minimalIMPLDoc is a minimal IMPL doc fixture used in tests that need a
@@ -203,21 +198,21 @@ func TestRunScaffold_MissingImpl(t *testing.T) {
 func TestRunWave_Auto_MultiWave_Integration(t *testing.T) {
 	// Build a two-wave fake orchestrator.
 	fake := &fakeWaveOrch{
-		doc: &types.IMPLDoc{
+		doc: &etypes.IMPLDoc{
 			FeatureName: "Integration Test Feature",
-			Waves: []types.Wave{
+			Waves: []etypes.Wave{
 				{
 					Number: 1,
-					Agents: []types.AgentSpec{{Letter: "A", Prompt: "wave1 work"}},
+					Agents: []etypes.AgentSpec{{Letter: "A", Prompt: "wave1 work"}},
 				},
 				{
 					Number: 2,
-					Agents: []types.AgentSpec{{Letter: "B", Prompt: "wave2 work"}},
+					Agents: []etypes.AgentSpec{{Letter: "B", Prompt: "wave2 work"}},
 				},
 			},
 			TestCommand: "go test ./...",
 		},
-		state: types.ScoutPending,
+		state: etypes.ScoutPending,
 	}
 
 	// Set up the temp dir with .git and IMPL doc file.
@@ -255,7 +250,7 @@ func TestRunWave_Auto_MultiWave_Integration(t *testing.T) {
 	}
 
 	// Final state is Complete.
-	if fake.state != types.Complete {
+	if fake.state != etypes.Complete {
 		t.Errorf("expected final state Complete, got: %s", fake.state)
 	}
 }
@@ -362,39 +357,12 @@ func TestRunWave_AutoFlag(t *testing.T) {
 	}
 }
 
-// fakeToolRunner is a mock that implements agent.ToolRunner for testing.
-type fakeToolRunner struct {
-	capturedPrompt string
-	returnResult   string
-}
-
-func (f *fakeToolRunner) RunWithTools(_ context.Context, prompt string, _ []agent.Tool, _ int) (string, error) {
-	f.capturedPrompt = prompt
-	return f.returnResult, nil
-}
-
-// fakeRunnerSender wraps fakeToolRunner to also satisfy agent.Sender.
-type fakeRunnerSender struct {
-	fakeToolRunner
-}
-
-func (f *fakeRunnerSender) SendMessage(_, _ string) (string, error) {
-	return f.returnResult, nil
-}
-
 // TestRunScout_PromptIncludesFeature verifies that the feature description
-// passed via --feature ends up in the prompt sent to ExecuteWithTools.
-// It injects a fake runner via a package-level var to capture the prompt.
+// passed via --feature ends up in the prompt sent to the scout agent.
 func TestRunScout_PromptIncludesFeature(t *testing.T) {
 	const featureDesc = "add-unique-feature-xyz-9876"
 
-	// Create a temp dir with a .git to act as repoRoot.
-	repoRoot := t.TempDir()
-	if err := os.Mkdir(filepath.Join(repoRoot, ".git"), 0o755); err != nil {
-		t.Fatalf("failed to create .git: %v", err)
-	}
-
-	// Create a fake SAW_REPO with a prompts/scout.md file.
+	// Build the prompt the same way runScout does, then assert the feature is present.
 	sawRepo := t.TempDir()
 	promptsDir := filepath.Join(sawRepo, "prompts")
 	if err := os.MkdirAll(promptsDir, 0o755); err != nil {
@@ -404,15 +372,12 @@ func TestRunScout_PromptIncludesFeature(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(promptsDir, "scout.md"), []byte(scoutMdContent), 0o644); err != nil {
 		t.Fatalf("failed to write scout.md: %v", err)
 	}
-	t.Setenv("SAW_REPO", sawRepo)
 
-	// Use the package's agent functions but intercept via overrideExecuteWithTools.
-	// We test at the prompt-construction level by calling internal helpers directly.
-	// Build the prompt the same way runScout does, then assert the feature is present.
+	repoRoot := t.TempDir()
 	implOut := filepath.Join(repoRoot, "docs", "IMPL", "IMPL-"+slugify(featureDesc)+".md")
 	prompt := string([]byte(scoutMdContent)) + "\n\n## Feature\n" + featureDesc + "\n\n## IMPL Output Path\n" + implOut + "\n"
 
-	spec := types.AgentSpec{Letter: "scout", Prompt: prompt}
+	spec := etypes.AgentSpec{Letter: "scout", Prompt: prompt}
 	if !strings.Contains(spec.Prompt, featureDesc) {
 		t.Errorf("expected prompt to contain feature description %q, got:\n%s", featureDesc, spec.Prompt)
 	}
@@ -446,11 +411,7 @@ func captureRunStatus(t *testing.T, args []string) (string, error) {
 }
 
 // minimalIMPLDocWithReport is an IMPL doc that includes a completion report
-// for Agent A with status "complete", so TestRunStatus_JSONOutput and
-// TestRunStatus_SummaryLine can verify counts reliably.
-// Agent B is listed in the wave section (no completion report) so it appears
-// as "pending". Completion reports are appended after the wave definition,
-// which is how the SAW protocol structures IMPL docs.
+// for Agent A with status "complete".
 const minimalIMPLDocWithReport = `# IMPL: JSON Test Feature
 
 ## Wave 1
@@ -473,9 +434,7 @@ commit: abc1234
 ` + "```" + `
 `
 
-// TestRunStatus_JSONOutput calls runStatus with --json, captures stdout, and
-// verifies the output is valid JSON with the correct feature name and
-// summary.total count.
+// TestRunStatus_JSONOutput calls runStatus with --json and verifies valid JSON output.
 func TestRunStatus_JSONOutput(t *testing.T) {
 	dir := t.TempDir()
 	implFile := filepath.Join(dir, "IMPL-json-test.md")
@@ -488,16 +447,8 @@ func TestRunStatus_JSONOutput(t *testing.T) {
 		t.Fatalf("runStatus --json returned unexpected error: %v", runErr)
 	}
 
-	// Parse the JSON output.
 	var result struct {
 		Feature string `json:"feature"`
-		Waves   []struct {
-			Number int `json:"number"`
-			Agents []struct {
-				Letter string `json:"letter"`
-				Status string `json:"status"`
-			} `json:"agents"`
-		} `json:"waves"`
 		Summary struct {
 			Total    int `json:"total"`
 			Complete int `json:"complete"`
@@ -507,7 +458,6 @@ func TestRunStatus_JSONOutput(t *testing.T) {
 	if err := json.Unmarshal([]byte(output), &result); err != nil {
 		t.Fatalf("runStatus --json output is not valid JSON: %v\noutput:\n%s", err, output)
 	}
-
 	if result.Feature != "JSON Test Feature" {
 		t.Errorf("JSON feature = %q, want %q", result.Feature, "JSON Test Feature")
 	}
@@ -527,7 +477,6 @@ func TestRunStatus_JSONOutput(t *testing.T) {
 func TestRunStatus_MissingFlag(t *testing.T) {
 	dir := t.TempDir()
 	implFile := filepath.Join(dir, "IMPL-missing-test.md")
-	// Use the minimal doc (no completion reports) so both agents appear as missing.
 	if err := os.WriteFile(implFile, []byte(minimalIMPLDoc), 0o644); err != nil {
 		t.Fatalf("failed to write IMPL doc: %v", err)
 	}
@@ -548,12 +497,10 @@ func TestRunStatus_MissingFlag(t *testing.T) {
 	}
 }
 
-// TestRunStatus_SummaryLine calls runStatus in default (human-readable) mode
-// and verifies the "Agents: X complete, Y pending, Z blocked" summary line.
+// TestRunStatus_SummaryLine verifies the "Agents: X complete, Y pending, Z blocked" line.
 func TestRunStatus_SummaryLine(t *testing.T) {
 	dir := t.TempDir()
 	implFile := filepath.Join(dir, "IMPL-summary-test.md")
-	// Use the doc with one complete report (Agent A) and one pending (Agent B).
 	if err := os.WriteFile(implFile, []byte(minimalIMPLDocWithReport), 0o644); err != nil {
 		t.Fatalf("failed to write IMPL doc: %v", err)
 	}
@@ -563,93 +510,7 @@ func TestRunStatus_SummaryLine(t *testing.T) {
 		t.Fatalf("runStatus returned unexpected error: %v", runErr)
 	}
 
-	// Expect the summary line with accurate counts.
 	if !strings.Contains(output, "Agents: 1 complete, 1 pending, 0 blocked") {
 		t.Errorf("output missing expected summary line; got:\n%s", output)
-	}
-}
-
-// TestResolveBackend_API verifies that kind="api" returns an *api.Client.
-func TestResolveBackend_API(t *testing.T) {
-	t.Setenv("ANTHROPIC_API_KEY", "test-key")
-	b, err := resolveBackend("api", backend.Config{})
-	if err != nil {
-		t.Fatalf("resolveBackend(api) returned error: %v", err)
-	}
-	if _, ok := b.(*api.Client); !ok {
-		t.Errorf("resolveBackend(api) returned %T, want *api.Client", b)
-	}
-}
-
-// TestResolveBackend_CLI verifies that kind="cli" returns a *cli.Client.
-func TestResolveBackend_CLI(t *testing.T) {
-	b, err := resolveBackend("cli", backend.Config{})
-	if err != nil {
-		t.Fatalf("resolveBackend(cli) returned error: %v", err)
-	}
-	if _, ok := b.(*cli.Client); !ok {
-		t.Errorf("resolveBackend(cli) returned %T, want *cli.Client", b)
-	}
-}
-
-// TestResolveBackend_Auto_WithKey verifies that kind="auto" with ANTHROPIC_API_KEY
-// set returns an *api.Client.
-func TestResolveBackend_Auto_WithKey(t *testing.T) {
-	t.Setenv("ANTHROPIC_API_KEY", "test-key-auto")
-	b, err := resolveBackend("auto", backend.Config{})
-	if err != nil {
-		t.Fatalf("resolveBackend(auto) returned error: %v", err)
-	}
-	if _, ok := b.(*api.Client); !ok {
-		t.Errorf("resolveBackend(auto) with key returned %T, want *api.Client", b)
-	}
-}
-
-// TestResolveBackend_Auto_WithoutKey verifies that kind="auto" with no
-// ANTHROPIC_API_KEY set returns a *cli.Client.
-func TestResolveBackend_Auto_WithoutKey(t *testing.T) {
-	t.Setenv("ANTHROPIC_API_KEY", "")
-	b, err := resolveBackend("auto", backend.Config{})
-	if err != nil {
-		t.Fatalf("resolveBackend(auto) returned error: %v", err)
-	}
-	if _, ok := b.(*cli.Client); !ok {
-		t.Errorf("resolveBackend(auto) without key returned %T, want *cli.Client", b)
-	}
-}
-
-// TestResolveBackend_EnvFallback verifies that when kind is empty, the
-// SAW_BACKEND env var is used as the backend selector.
-func TestResolveBackend_EnvFallback(t *testing.T) {
-	t.Setenv("SAW_BACKEND", "cli")
-	t.Setenv("ANTHROPIC_API_KEY", "") // ensure auto would pick cli anyway, but we test env routing
-	b, err := resolveBackend("", backend.Config{})
-	if err != nil {
-		t.Fatalf("resolveBackend via SAW_BACKEND=cli returned error: %v", err)
-	}
-	if _, ok := b.(*cli.Client); !ok {
-		t.Errorf("resolveBackend via SAW_BACKEND=cli returned %T, want *cli.Client", b)
-	}
-
-	// Also verify that SAW_BACKEND=api routes to api.Client.
-	t.Setenv("SAW_BACKEND", "api")
-	t.Setenv("ANTHROPIC_API_KEY", "test-key")
-	b2, err := resolveBackend("", backend.Config{})
-	if err != nil {
-		t.Fatalf("resolveBackend via SAW_BACKEND=api returned error: %v", err)
-	}
-	if _, ok := b2.(*api.Client); !ok {
-		t.Errorf("resolveBackend via SAW_BACKEND=api returned %T, want *api.Client", b2)
-	}
-}
-
-// TestResolveBackend_Invalid verifies that an unknown kind returns a non-nil error.
-func TestResolveBackend_Invalid(t *testing.T) {
-	_, err := resolveBackend("bogus", backend.Config{})
-	if err == nil {
-		t.Fatal("resolveBackend(bogus) expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "bogus") {
-		t.Errorf("error should mention the unknown kind; got: %v", err)
 	}
 }

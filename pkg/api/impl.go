@@ -8,8 +8,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/types"
+	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+	etypes "github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // completionStatusRe matches a real agent-written status line (not the template placeholder).
@@ -58,13 +58,13 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 
 // handleGetImpl serves GET /api/impl/{slug}.
 // It locates the IMPL doc file at cfg.IMPLDir/IMPL-{slug}.md, parses it
-// via protocol.ParseIMPLDoc, and returns IMPLDocResponse as JSON.
+// via engine.ParseIMPLDoc, and returns IMPLDocResponse as JSON.
 // 404 if the file does not exist; 500 on parse error.
 func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
 
-	doc, err := protocol.ParseIMPLDoc(implPath)
+	doc, err := engine.ParseIMPLDoc(implPath)
 	if err != nil {
 		if isNotExistErr(err) {
 			http.Error(w, "IMPL doc not found", http.StatusNotFound)
@@ -74,7 +74,7 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Map types.IMPLDoc -> IMPLDocResponse
+	// Map etypes.IMPLDoc -> IMPLDocResponse
 	docStatus := "active"
 	if doc.DocStatus == "COMPLETE" {
 		docStatus = "complete"
@@ -190,7 +190,7 @@ func suitabilityVerdict(status string) string {
 }
 
 // mapFileOwnership converts the file->FileOwnershipInfo map to []FileOwnershipEntry.
-func mapFileOwnership(ownership map[string]types.FileOwnershipInfo) []FileOwnershipEntry {
+func mapFileOwnership(ownership map[string]etypes.FileOwnershipInfo) []FileOwnershipEntry {
 	entries := make([]FileOwnershipEntry, 0, len(ownership))
 	for file, info := range ownership {
 		entries = append(entries, FileOwnershipEntry{
@@ -204,8 +204,8 @@ func mapFileOwnership(ownership map[string]types.FileOwnershipInfo) []FileOwners
 	return entries
 }
 
-// mapWaves converts []types.Wave to []WaveInfo.
-func mapWaves(waves []types.Wave) []WaveInfo {
+// mapWaves converts []etypes.Wave to []WaveInfo.
+func mapWaves(waves []etypes.Wave) []WaveInfo {
 	result := make([]WaveInfo, 0, len(waves))
 	for _, w := range waves {
 		agents := make([]string, 0, len(w.Agents))
@@ -221,8 +221,8 @@ func mapWaves(waves []types.Wave) []WaveInfo {
 	return result
 }
 
-// mapKnownIssues converts []types.KnownIssue to []KnownIssueEntry.
-func mapKnownIssues(issues []types.KnownIssue) []KnownIssueEntry {
+// mapKnownIssues converts []etypes.KnownIssue to []KnownIssueEntry.
+func mapKnownIssues(issues []etypes.KnownIssue) []KnownIssueEntry {
 	if issues == nil {
 		return []KnownIssueEntry{}
 	}
@@ -237,8 +237,8 @@ func mapKnownIssues(issues []types.KnownIssue) []KnownIssueEntry {
 	return result
 }
 
-// mapScaffoldsDetail converts []types.ScaffoldFile to []ScaffoldFileEntry.
-func mapScaffoldsDetail(scaffolds []types.ScaffoldFile) []ScaffoldFileEntry {
+// mapScaffoldsDetail converts []etypes.ScaffoldFile to []ScaffoldFileEntry.
+func mapScaffoldsDetail(scaffolds []etypes.ScaffoldFile) []ScaffoldFileEntry {
 	if scaffolds == nil {
 		return []ScaffoldFileEntry{}
 	}
@@ -254,7 +254,7 @@ func mapScaffoldsDetail(scaffolds []types.ScaffoldFile) []ScaffoldFileEntry {
 }
 
 // extractAgentPrompts flattens agent prompts from all waves into a single list.
-func extractAgentPrompts(waves []types.Wave) []AgentPromptEntry {
+func extractAgentPrompts(waves []etypes.Wave) []AgentPromptEntry {
 	result := []AgentPromptEntry{}
 	for _, wave := range waves {
 		for _, agent := range wave.Agents {
@@ -271,8 +271,8 @@ func extractAgentPrompts(waves []types.Wave) []AgentPromptEntry {
 	return result
 }
 
-// mapPreMortem converts a *types.PreMortem to *PreMortemEntry for the API response.
-func mapPreMortem(pm *types.PreMortem) *PreMortemEntry {
+// mapPreMortem converts a *etypes.PreMortem to *PreMortemEntry for the API response.
+func mapPreMortem(pm *etypes.PreMortem) *PreMortemEntry {
 	if pm == nil {
 		return nil
 	}

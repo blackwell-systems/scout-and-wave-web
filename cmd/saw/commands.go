@@ -13,22 +13,18 @@ import (
 	"strings"
 
 	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/agent/backend"
-	backendapi "github.com/blackwell-systems/scout-and-wave-web/pkg/agent/backend/api"
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/agent/backend/cli"
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/types"
+	etypes "github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // waveOrchestrator is the minimal interface runWave needs from an Orchestrator.
 // Using an interface enables tests to inject a fake without real git/API calls.
 type waveOrchestrator interface {
-	TransitionTo(newState types.State) error
+	TransitionTo(newState etypes.State) error
 	RunWave(waveNum int) error
 	MergeWave(waveNum int) error
 	RunVerification(testCommand string) error
 	UpdateIMPLStatus(waveNum int) error
-	IMPLDoc() *types.IMPLDoc
+	IMPLDoc() *etypes.IMPLDoc
 }
 
 // engineOrchAdapter wraps the engine package functions to satisfy waveOrchestrator.
@@ -36,12 +32,12 @@ type waveOrchestrator interface {
 type engineOrchAdapter struct {
 	repoPath string
 	implPath string
-	doc      *types.IMPLDoc
+	doc      *etypes.IMPLDoc
 	// state tracks the current protocol state (simplified; engine handles real state).
-	state types.State
+	state etypes.State
 }
 
-func (a *engineOrchAdapter) TransitionTo(newState types.State) error {
+func (a *engineOrchAdapter) TransitionTo(newState etypes.State) error {
 	a.state = newState
 	return nil
 }
@@ -86,16 +82,14 @@ func (a *engineOrchAdapter) UpdateIMPLStatus(waveNum int) error {
 	return engine.UpdateIMPLStatus(a.implPath, letters)
 }
 
-func (a *engineOrchAdapter) IMPLDoc() *types.IMPLDoc {
+func (a *engineOrchAdapter) IMPLDoc() *etypes.IMPLDoc {
 	return a.doc
 }
 
 // orchestratorNewFunc is a seam for tests: creates a waveOrchestrator from a
 // repo path and IMPL doc path. Tests can replace this to inject a fake.
 var orchestratorNewFunc = func(repoPath, implPath string) (waveOrchestrator, error) {
-	// Use the web repo's protocol.ParseIMPLDoc so the returned doc uses
-	// the web repo's *types.IMPLDoc (required by the waveOrchestrator interface).
-	doc, err := protocol.ParseIMPLDoc(implPath)
+	doc, err := engine.ParseIMPLDoc(implPath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse IMPL doc: %w", err)
 	}
@@ -106,33 +100,8 @@ var orchestratorNewFunc = func(repoPath, implPath string) (waveOrchestrator, err
 		repoPath: repoPath,
 		implPath: implPath,
 		doc:      doc,
-		state:    types.ScoutPending,
+		state:    etypes.ScoutPending,
 	}, nil
-}
-
-// resolveBackend returns a backend.Backend based on kind and cfg.
-// kind precedence: explicit flag value > SAW_BACKEND env var > "auto".
-// "auto" selects api when ANTHROPIC_API_KEY is set, otherwise cli.
-func resolveBackend(kind string, cfg backend.Config) (backend.Backend, error) {
-	if kind == "" {
-		kind = os.Getenv("SAW_BACKEND")
-	}
-	if kind == "" {
-		kind = "auto"
-	}
-	switch kind {
-	case "api":
-		return backendapi.New(os.Getenv("ANTHROPIC_API_KEY"), cfg), nil
-	case "cli":
-		return cli.New("", cfg), nil
-	case "auto":
-		if os.Getenv("ANTHROPIC_API_KEY") != "" {
-			return backendapi.New(os.Getenv("ANTHROPIC_API_KEY"), cfg), nil
-		}
-		return cli.New("", cfg), nil
-	default:
-		return nil, fmt.Errorf("unknown backend kind %q; valid: api, cli, auto", kind)
-	}
 }
 
 // runWave executes a wave from an IMPL doc.
@@ -167,10 +136,10 @@ func runWave(args []string) error {
 	}
 
 	// Advance through state machine: ScoutPending -> Reviewed -> WavePending
-	if err := o.TransitionTo(types.Reviewed); err != nil {
+	if err := o.TransitionTo(etypes.Reviewed); err != nil {
 		return fmt.Errorf("wave: %w", err)
 	}
-	if err := o.TransitionTo(types.WavePending); err != nil {
+	if err := o.TransitionTo(etypes.WavePending); err != nil {
 		return fmt.Errorf("wave: %w", err)
 	}
 
@@ -196,7 +165,7 @@ func runWave(args []string) error {
 
 		// For subsequent waves (after the first), transition back to WavePending.
 		if idx > startIdx {
-			if err := o.TransitionTo(types.WavePending); err != nil {
+			if err := o.TransitionTo(etypes.WavePending); err != nil {
 				return fmt.Errorf("wave: %w", err)
 			}
 		}
@@ -207,7 +176,7 @@ func runWave(args []string) error {
 			return fmt.Errorf("wave: %w", err)
 		}
 
-		if err := o.TransitionTo(types.WaveExecuting); err != nil {
+		if err := o.TransitionTo(etypes.WaveExecuting); err != nil {
 			return fmt.Errorf("wave: %w", err)
 		}
 
@@ -230,7 +199,7 @@ func runWave(args []string) error {
 			fmt.Fprintf(os.Stderr, "wave: warning: UpdateIMPLStatus: %v\n", err)
 		}
 
-		if err := o.TransitionTo(types.WaveVerified); err != nil {
+		if err := o.TransitionTo(etypes.WaveVerified); err != nil {
 			return fmt.Errorf("wave: %w", err)
 		}
 
@@ -250,7 +219,7 @@ func runWave(args []string) error {
 	}
 
 	// All waves executed — transition to Complete.
-	if err := o.TransitionTo(types.Complete); err != nil {
+	if err := o.TransitionTo(etypes.Complete); err != nil {
 		return fmt.Errorf("wave: %w", err)
 	}
 	fmt.Println("All waves complete.")
@@ -280,8 +249,7 @@ func runStatus(args []string) error {
 		return errors.New("status: --impl is required\nRun 'saw status --help' for usage.")
 	}
 
-	// Use the web repo's protocol package — the engine stubs return nil.
-	doc, err := protocol.ParseIMPLDoc(*implPath)
+	doc, err := engine.ParseIMPLDoc(*implPath)
 	if err != nil {
 		return fmt.Errorf("status: %w", err)
 	}
@@ -320,9 +288,9 @@ func runStatus(args []string) error {
 	for _, wave := range doc.Waves {
 		for _, ag := range wave.Agents {
 			r := agentResult{waveNum: wave.Number, letter: ag.Letter}
-			report, rptErr := protocol.ParseCompletionReport(*implPath, ag.Letter)
+			report, rptErr := engine.ParseCompletionReport(*implPath, ag.Letter)
 			if rptErr != nil {
-				if errors.Is(rptErr, protocol.ErrReportNotFound) {
+				if errors.Is(rptErr, engine.ErrReportNotFound) {
 					r.status = "pending"
 					r.missing = true
 				} else {

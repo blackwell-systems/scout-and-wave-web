@@ -6,15 +6,15 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/types"
+	etypes "github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // fakeWaveOrch is a test double for waveOrchestrator.
 // It tracks RunWave/MergeWave/RunVerification calls and drives a minimal
 // state machine so TransitionTo behaves correctly.
 type fakeWaveOrch struct {
-	doc            *types.IMPLDoc
-	state          types.State
+	doc            *etypes.IMPLDoc
+	state          etypes.State
 	runWaveCalls   []int
 	mergeWaveCalls []int
 	runVerifCalls  []string
@@ -23,15 +23,15 @@ type fakeWaveOrch struct {
 }
 
 // validTransitions mirrors the SAW state machine for the states runWave uses.
-var fakeValidTransitions = map[types.State][]types.State{
-	types.ScoutPending:  {types.Reviewed, types.NotSuitable},
-	types.Reviewed:      {types.WavePending},
-	types.WavePending:   {types.WaveExecuting},
-	types.WaveExecuting: {types.WaveVerified},
-	types.WaveVerified:  {types.Complete, types.WavePending},
+var fakeValidTransitions = map[etypes.State][]etypes.State{
+	etypes.ScoutPending:  {etypes.Reviewed, etypes.NotSuitable},
+	etypes.Reviewed:      {etypes.WavePending},
+	etypes.WavePending:   {etypes.WaveExecuting},
+	etypes.WaveExecuting: {etypes.WaveVerified},
+	etypes.WaveVerified:  {etypes.Complete, etypes.WavePending},
 }
 
-func (f *fakeWaveOrch) TransitionTo(newState types.State) error {
+func (f *fakeWaveOrch) TransitionTo(newState etypes.State) error {
 	if f.transitionErr != nil {
 		err := f.transitionErr
 		f.transitionErr = nil
@@ -69,20 +69,20 @@ func (f *fakeWaveOrch) UpdateIMPLStatus(waveNum int) error {
 	return nil
 }
 
-func (f *fakeWaveOrch) IMPLDoc() *types.IMPLDoc {
+func (f *fakeWaveOrch) IMPLDoc() *etypes.IMPLDoc {
 	return f.doc
 }
 
 // makeIMPLWithWaves builds a minimal IMPLDoc with the given wave numbers.
-func makeIMPLWithWaves(waveNums ...int) *types.IMPLDoc {
-	waves := make([]types.Wave, len(waveNums))
+func makeIMPLWithWaves(waveNums ...int) *etypes.IMPLDoc {
+	waves := make([]etypes.Wave, len(waveNums))
 	for i, n := range waveNums {
-		waves[i] = types.Wave{
+		waves[i] = etypes.Wave{
 			Number: n,
-			Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}},
+			Agents: []etypes.AgentSpec{{Letter: "A", Prompt: "do work"}},
 		}
 	}
-	return &types.IMPLDoc{
+	return &etypes.IMPLDoc{
 		FeatureName: "Test Feature",
 		Waves:       waves,
 		TestCommand: "go test ./...",
@@ -124,7 +124,7 @@ func setupRunWaveTest(t *testing.T, fake *fakeWaveOrch) (implPath string, cleanu
 func TestRunWave_SingleWave_Completes(t *testing.T) {
 	fake := &fakeWaveOrch{
 		doc:   makeIMPLWithWaves(1),
-		state: types.ScoutPending,
+		state: etypes.ScoutPending,
 	}
 	implPath, cleanup := setupRunWaveTest(t, fake)
 	defer cleanup()
@@ -150,7 +150,7 @@ func TestRunWave_SingleWave_Completes(t *testing.T) {
 	}
 
 	// Final state must be Complete.
-	if fake.state != types.Complete {
+	if fake.state != etypes.Complete {
 		t.Errorf("expected final state Complete, got: %s", fake.state)
 	}
 }
@@ -160,7 +160,7 @@ func TestRunWave_SingleWave_Completes(t *testing.T) {
 func TestRunWave_MultiWave_LoopsAll(t *testing.T) {
 	fake := &fakeWaveOrch{
 		doc:   makeIMPLWithWaves(1, 2),
-		state: types.ScoutPending,
+		state: etypes.ScoutPending,
 	}
 	implPath, cleanup := setupRunWaveTest(t, fake)
 	defer cleanup()
@@ -192,7 +192,7 @@ func TestRunWave_MultiWave_LoopsAll(t *testing.T) {
 	}
 
 	// Final state must be Complete.
-	if fake.state != types.Complete {
+	if fake.state != etypes.Complete {
 		t.Errorf("expected final state Complete, got: %s", fake.state)
 	}
 }
@@ -202,7 +202,7 @@ func TestRunWave_MultiWave_LoopsAll(t *testing.T) {
 func TestRunWave_StartFromWave2(t *testing.T) {
 	fake := &fakeWaveOrch{
 		doc:   makeIMPLWithWaves(1, 2),
-		state: types.ScoutPending,
+		state: etypes.ScoutPending,
 	}
 	implPath, cleanup := setupRunWaveTest(t, fake)
 	defer cleanup()
@@ -226,7 +226,7 @@ func TestRunWave_StartFromWave2(t *testing.T) {
 	}
 
 	// Final state must be Complete.
-	if fake.state != types.Complete {
+	if fake.state != etypes.Complete {
 		t.Errorf("expected final state Complete, got: %s", fake.state)
 	}
 }

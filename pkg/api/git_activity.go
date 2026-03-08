@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/blackwell-systems/scout-and-wave-web/pkg/git"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/git"
 )
 
 // handleGitActivity serves GET /api/git/{slug}/activity as an SSE stream.
