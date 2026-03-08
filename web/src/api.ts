@@ -42,3 +42,18 @@ export async function startWave(slug: string): Promise<void> {
     throw new Error(`HTTP ${response.status}: ${await response.text()}`)
   }
 }
+
+export async function runScout(feature: string, repo?: string): Promise<{ runId: string }> {
+  const r = await fetch('/api/scout/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ feature, repo }),
+  })
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  const data = await r.json()
+  return { runId: data.run_id }
+}
+
+export function subscribeScoutEvents(runId: string): EventSource {
+  return new EventSource(`/api/scout/${encodeURIComponent(runId)}/events`)
+}
