@@ -186,3 +186,88 @@ func TestRun_ToolUseLoop(t *testing.T) {
 func TestRun_ImplementsBackendInterface(t *testing.T) {
 	var _ backend.Backend = (*Client)(nil)
 }
+
+// anthropicSSEStream builds a minimal SSE stream response that emits one
+// content_block_delta with a text_delta, then a message_delta with stop_reason=end_turn.
+func anthropicSSEStream(text string) string {
+	// Each SSE event: "event: <type>\ndata: <json>\n\n"
+	events := []string{
+		"event: message_start\ndata: {\"type\":\"message_start\",\"message\":{\"id\":\"msg_test\",\"type\":\"message\",\"role\":\"assistant\",\"content\":[],\"model\":\"claude-sonnet-4-5\",\"stop_reason\":null,\"stop_sequence\":null,\"usage\":{\"input_tokens\":10,\"output_tokens\":0}}}\n\n",
+		"event: content_block_start\ndata: {\"type\":\"content_block_start\",\"index\":0,\"content_block\":{\"type\":\"text\",\"text\":\"\"}}\n\n",
+		"event: content_block_delta\ndata: {\"type\":\"content_block_delta\",\"index\":0,\"delta\":{\"type\":\"text_delta\",\"text\":" + jsonString(text) + "}}\n\n",
+		"event: content_block_stop\ndata: {\"type\":\"content_block_stop\",\"index\":0}\n\n",
+		"event: message_delta\ndata: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"end_turn\",\"stop_sequence\":null},\"usage\":{\"output_tokens\":5}}\n\n",
+		"event: message_stop\ndata: {\"type\":\"message_stop\"}\n\n",
+	}
+	var sb strings.Builder
+	for _, e := range events {
+		sb.WriteString(e)
+	}
+	return sb.String()
+}
+
+// jsonString returns the JSON encoding of s (a quoted string).
+func jsonString(s string) string {
+	b, _ := json.Marshal(s)
+	return string(b)
+}
+
+// TestRunStreaming_EndTurn verifies that RunStreaming calls onChunk with the
+// streamed text and returns the full text when the mock returns end_turn via SSE.
+func TestRunStreaming_EndTurn(t *testing.T) {
+	t.Parallel()
+
+	want := "streaming output text"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(anthropicSSEStream(want)))
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+	}))
+	defer srv.Close()
+
+	c := New("test-key", backend.Config{MaxTurns: 5}).WithBaseURL(srv.URL)
+
+	var chunks []string
+	result, err := c.RunStreaming(context.Background(), "system prompt", "do something", t.TempDir(), func(chunk string) {
+		chunks = append(chunks, chunk)
+	})
+	if err != nil {
+		t.Fatalf("RunStreaming returned error: %v", err)
+	}
+	if result != want {
+		t.Errorf("result = %q; want %q", result, want)
+	}
+	if len(chunks) == 0 {
+		t.Error("onChunk was never called")
+	}
+	joined := strings.Join(chunks, "")
+	if joined != want {
+		t.Errorf("joined chunks = %q; want %q", joined, want)
+	}
+}
+
+// TestRunStreaming_NilCallback verifies that RunStreaming with nil onChunk
+// delegates to Run and returns the same result.
+func TestRunStreaming_NilCallback(t *testing.T) {
+	t.Parallel()
+
+	want := "nil callback result"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		w.Write(anthropicEndTurnResponse(want))
+	}))
+	defer srv.Close()
+
+	c := New("test-key", backend.Config{MaxTurns: 5}).WithBaseURL(srv.URL)
+	result, err := c.RunStreaming(context.Background(), "sys", "usr", t.TempDir(), nil)
+	if err != nil {
+		t.Fatalf("RunStreaming(nil) returned error: %v", err)
+	}
+	if !strings.Contains(result, want) {
+		t.Errorf("result = %q; want it to contain %q", result, want)
+	}
+}

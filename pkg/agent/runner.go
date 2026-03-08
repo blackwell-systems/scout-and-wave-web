@@ -48,6 +48,33 @@ func (r *Runner) Execute(ctx context.Context, agentSpec *types.AgentSpec, worktr
 	return response, nil
 }
 
+// ExecuteStreaming sends the agent prompt to the backend via RunStreaming.
+// onChunk receives each text fragment as it arrives.
+// Returns the full response text and any error, identical to Execute.
+func (r *Runner) ExecuteStreaming(
+	ctx context.Context,
+	agentSpec *types.AgentSpec,
+	worktreePath string,
+	onChunk backend.ChunkCallback,
+) (string, error) {
+	systemPrompt := agentSpec.Prompt
+
+	userMessage := fmt.Sprintf(
+		"You are operating in worktree: %s\n"+
+			"Navigate there first (cd %s) before any file operations.\n\n"+
+			"Your task is defined in Field 0 of your prompt above. Begin now.",
+		worktreePath,
+		worktreePath,
+	)
+
+	response, err := r.client.RunStreaming(ctx, systemPrompt, userMessage, worktreePath, onChunk)
+	if err != nil {
+		return "", fmt.Errorf("runner: ExecuteStreaming agent %s: %w", agentSpec.Letter, err)
+	}
+
+	return response, nil
+}
+
 // ParseCompletionReport reads the IMPL doc at implDocPath and extracts the
 // completion report for agentLetter. It delegates to protocol.ParseCompletionReport.
 // Returns protocol.ErrReportNotFound if the section does not exist yet.

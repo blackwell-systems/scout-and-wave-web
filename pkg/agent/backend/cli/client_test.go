@@ -11,6 +11,9 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 )
 
+// compile-time assertion: *Client implements backend.Backend.
+var _ backend.Backend = (*Client)(nil)
+
 // TestNew_EmptyClaudePath_UsesLookPath verifies that when claudePath is empty,
 // Run attempts to locate claude via PATH (and returns a meaningful error when
 // claude is not installed, rather than panicking).
@@ -175,5 +178,65 @@ exit 0
 	}
 	if strings.Contains(out, "\n\n") {
 		t.Errorf("expected no double-newline separator when systemPrompt is empty, got: %q", out)
+	}
+}
+
+// TestRunStreaming_CallsOnChunkPerLine verifies that RunStreaming calls onChunk
+// once per output line and that the accumulated result matches all chunks joined.
+func TestRunStreaming_CallsOnChunkPerLine(t *testing.T) {
+	tmpDir := t.TempDir()
+	scriptPath := writeFakeScript(t, tmpDir, "claude", `printf "line one\nline two\nline three\n"
+exit 0
+`)
+
+	c := New(scriptPath, backend.Config{})
+	ctx := context.Background()
+
+	var chunks []string
+	out, err := c.RunStreaming(ctx, "system", "user", tmpDir, func(chunk string) {
+		chunks = append(chunks, chunk)
+	})
+	if err != nil {
+		t.Fatalf("RunStreaming returned error: %v", err)
+	}
+
+	// onChunk should be called once per line (3 lines).
+	if len(chunks) != 3 {
+		t.Errorf("expected 3 onChunk calls, got %d: %v", len(chunks), chunks)
+	}
+
+	// Each chunk should end with "\n".
+	for i, ch := range chunks {
+		if !strings.HasSuffix(ch, "\n") {
+			t.Errorf("chunk[%d] = %q; expected trailing newline", i, ch)
+		}
+	}
+
+	// The full output should equal all chunks concatenated.
+	joined := strings.Join(chunks, "")
+	if out != joined {
+		t.Errorf("RunStreaming output %q != joined chunks %q", out, joined)
+	}
+}
+
+// TestRunStreaming_NilCallback verifies that RunStreaming with nil onChunk
+// behaves identically to Run.
+func TestRunStreaming_NilCallback(t *testing.T) {
+	tmpDir := t.TempDir()
+	scriptPath := writeFakeScript(t, tmpDir, "claude", `echo "nil callback test"
+exit 0
+`)
+
+	c := New(scriptPath, backend.Config{})
+	ctx := context.Background()
+
+	outRun, errRun := c.Run(ctx, "sys", "usr", tmpDir)
+	outStream, errStream := c.RunStreaming(ctx, "sys", "usr", tmpDir, nil)
+
+	if errRun != nil || errStream != nil {
+		t.Fatalf("unexpected errors: Run=%v RunStreaming=%v", errRun, errStream)
+	}
+	if outRun != outStream {
+		t.Errorf("Run=%q RunStreaming(nil)=%q; expected equal", outRun, outStream)
 	}
 }

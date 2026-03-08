@@ -194,3 +194,212 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 
 	return "", fmt.Errorf("api: tool use loop exceeded maxTurns (%d)", c.maxTurns)
 }
+
+// RunStreaming implements backend.Backend.
+// It behaves identically to Run for all tool-use turns (non-streaming).
+// For the final end_turn response, it uses the streaming API and calls onChunk
+// for each text_delta chunk as it arrives.
+// If onChunk is nil, RunStreaming behaves identically to Run.
+func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback) (string, error) {
+	// If no callback provided, delegate to the non-streaming path.
+	if onChunk == nil {
+		return c.Run(ctx, systemPrompt, userMessage, workDir)
+	}
+
+	tools := StandardTools(workDir)
+
+	sdkClient := anthropic.NewClient(c.sendOpts()...)
+
+	// Build tool params for the API.
+	toolParams := make([]anthropic.ToolUnionParam, 0, len(tools))
+	for _, t := range tools {
+		schema := anthropic.ToolInputSchemaParam{
+			Properties: t.InputSchema["properties"],
+		}
+		if req, ok := t.InputSchema["required"]; ok {
+			if reqSlice, ok := req.([]string); ok {
+				schema.Required = reqSlice
+			}
+		}
+		tp := anthropic.ToolUnionParamOfTool(schema, t.Name)
+		if tp.OfTool != nil && t.Description != "" {
+			tp.OfTool.Description = param.NewOpt(t.Description)
+		}
+		toolParams = append(toolParams, tp)
+	}
+
+	// Build tool lookup map.
+	toolMap := make(map[string]Tool, len(tools))
+	for _, t := range tools {
+		toolMap[t.Name] = t
+	}
+
+	messages := []anthropic.MessageParam{
+		anthropic.NewUserMessage(anthropic.NewTextBlock(userMessage)),
+	}
+
+	params := anthropic.MessageNewParams{
+		Model:     anthropic.Model(c.model),
+		MaxTokens: int64(c.maxTokens),
+		Tools:     toolParams,
+	}
+	if systemPrompt != "" {
+		params.System = []anthropic.TextBlockParam{
+			{Text: systemPrompt},
+		}
+	}
+
+	for turn := 0; turn < c.maxTurns; turn++ {
+		params.Messages = messages
+
+		// Peek ahead: use non-streaming for tool-use turns, streaming for end_turn.
+		// We don't know the stop reason until we get the response, so we always
+		// attempt streaming. If the turn ends in tool_use, we collect the full
+		// streamed content and continue the loop. If it ends in end_turn, we
+		// stream with onChunk and return.
+		stream := sdkClient.Messages.NewStreaming(ctx, params)
+
+		var sb strings.Builder
+		var stopReason string
+		var contentBlocks []anthropic.ContentBlockParamUnion
+
+		// Collect streamed events, calling onChunk only for text_delta on the
+		// final end_turn turn. We don't know if it's end_turn until we see the
+		// message_delta event, so we buffer text and emit it after.
+		type textChunk struct{ text string }
+		var bufferedChunks []textChunk
+
+		// Track content blocks being built from the stream.
+		type streamBlock struct {
+			blockType string
+			text      string
+			toolID    string
+			toolName  string
+			toolInput strings.Builder
+		}
+		blockMap := make(map[int]*streamBlock)
+
+		for stream.Next() {
+			event := stream.Current()
+			switch event.Type {
+			case "content_block_start":
+				cbs := event.AsContentBlockStart()
+				idx := int(cbs.Index)
+				blk := &streamBlock{}
+				switch cbs.ContentBlock.Type {
+				case "text":
+					blk.blockType = "text"
+				case "tool_use":
+					tu := cbs.ContentBlock.AsToolUse()
+					blk.blockType = "tool_use"
+					blk.toolID = tu.ID
+					blk.toolName = tu.Name
+				}
+				blockMap[idx] = blk
+			case "content_block_delta":
+				cbd := event.AsContentBlockDelta()
+				idx := int(cbd.Index)
+				blk := blockMap[idx]
+				if blk == nil {
+					break
+				}
+				switch cbd.Delta.Type {
+				case "text_delta":
+					chunk := cbd.Delta.AsTextDelta().Text
+					blk.text += chunk
+					bufferedChunks = append(bufferedChunks, textChunk{chunk})
+				case "input_json_delta":
+					blk.toolInput.WriteString(cbd.Delta.AsInputJSONDelta().PartialJSON)
+				}
+			case "message_delta":
+				md := event.AsMessageDelta()
+				stopReason = string(md.Delta.StopReason)
+			}
+		}
+		if err := stream.Err(); err != nil {
+			return "", fmt.Errorf("anthropic streaming API error (turn %d): %w", turn, err)
+		}
+
+		// Reconstruct content blocks from stream.
+		// Build ordered list by index.
+		for i := 0; ; i++ {
+			blk, ok := blockMap[i]
+			if !ok {
+				break
+			}
+			switch blk.blockType {
+			case "text":
+				sb.WriteString(blk.text)
+				contentBlocks = append(contentBlocks, anthropic.NewTextBlock(blk.text))
+			case "tool_use":
+				inputJSON := []byte(blk.toolInput.String())
+				if len(inputJSON) == 0 {
+					inputJSON = []byte("{}")
+				}
+				contentBlocks = append(contentBlocks, anthropic.NewToolUseBlock(blk.toolID, inputJSON, blk.toolName))
+			}
+		}
+
+		if stopReason == string(anthropic.StopReasonEndTurn) {
+			// Emit buffered text chunks to onChunk.
+			for _, tc := range bufferedChunks {
+				onChunk(tc.text)
+			}
+			return sb.String(), nil
+		}
+
+		if stopReason != string(anthropic.StopReasonToolUse) {
+			return "", fmt.Errorf("unexpected stop reason: %s", stopReason)
+		}
+
+		// Append assistant message and execute tool calls.
+		messages = append(messages, anthropic.NewAssistantMessage(contentBlocks...))
+
+		toolResultBlocks := make([]anthropic.ContentBlockParamUnion, 0)
+		for i := 0; ; i++ {
+			blk, ok := blockMap[i]
+			if !ok {
+				break
+			}
+			if blk.blockType != "tool_use" {
+				continue
+			}
+
+			inputJSON := []byte(blk.toolInput.String())
+			if len(inputJSON) == 0 {
+				inputJSON = []byte("{}")
+			}
+
+			var inputMap map[string]interface{}
+			if err := json.Unmarshal(inputJSON, &inputMap); err != nil {
+				inputMap = map[string]interface{}{}
+			}
+
+			tool, found := toolMap[blk.toolName]
+			var result string
+			var isError bool
+			if !found {
+				result = fmt.Sprintf("error: unknown tool %q", blk.toolName)
+				isError = true
+			} else {
+				var execErr error
+				result, execErr = tool.Execute(inputMap, workDir)
+				if execErr != nil {
+					result = fmt.Sprintf("error: %v", execErr)
+					isError = true
+				}
+			}
+			toolResultBlocks = append(toolResultBlocks, anthropic.NewToolResultBlock(blk.toolID, result, isError))
+		}
+		messages = append(messages, anthropic.NewUserMessage(toolResultBlocks...))
+
+		// Reset for next turn.
+		contentBlocks = contentBlocks[:0]
+		bufferedChunks = bufferedChunks[:0]
+		for k := range blockMap {
+			delete(blockMap, k)
+		}
+	}
+
+	return "", fmt.Errorf("api: tool use loop exceeded maxTurns (%d)", c.maxTurns)
+}

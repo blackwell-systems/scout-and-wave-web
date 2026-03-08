@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/worktree"
 )
@@ -32,6 +33,13 @@ func (m *mockBackend) Run(_ context.Context, systemPrompt, userMessage, workDir 
 	m.lastWorkDir = workDir
 	return m.responseToSend, m.errToReturn
 }
+
+func (m *mockBackend) RunStreaming(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback) (string, error) {
+	return m.Run(ctx, systemPrompt, userMessage, workDir)
+}
+
+// compile-time assertion: *mockBackend implements backend.Backend.
+var _ backend.Backend = (*mockBackend)(nil)
 
 // TestNewRunner verifies that NewRunner returns a non-nil Runner correctly
 // wired with the provided Backend and Manager.

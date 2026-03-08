@@ -31,6 +31,13 @@ func New(claudePath string, cfg backend.Config) *Client {
 // --dangerously-skip-permissions -p "<systemPrompt>\n\n<userMessage>"
 // and streams stdout line-by-line until the process exits.
 func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir string) (string, error) {
+	return c.RunStreaming(ctx, systemPrompt, userMessage, workDir, nil)
+}
+
+// RunStreaming implements backend.Backend.
+// It behaves identically to Run but calls onChunk(line+"\n") for each line
+// of stdout as it arrives. If onChunk is nil, behaves identically to Run.
+func (c *Client) RunStreaming(ctx context.Context, systemPrompt, userMessage, workDir string, onChunk backend.ChunkCallback) (string, error) {
 	claudePath := c.claudePath
 	if claudePath == "" {
 		var err error
@@ -79,8 +86,11 @@ func (c *Client) Run(ctx context.Context, systemPrompt, userMessage, workDir str
 	var sb strings.Builder
 	scanner := bufio.NewScanner(stdoutPipe)
 	for scanner.Scan() {
-		sb.WriteString(scanner.Text())
-		sb.WriteString("\n")
+		line := scanner.Text() + "\n"
+		sb.WriteString(line)
+		if onChunk != nil {
+			onChunk(line)
+		}
 	}
 	if scanErr := scanner.Err(); scanErr != nil {
 		// If the context was cancelled, the scanner error is expected.
