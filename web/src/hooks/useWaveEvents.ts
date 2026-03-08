@@ -13,6 +13,7 @@ export interface AppWaveState {
   connected: boolean
   error?: string
   waves: WaveState[]
+  waveGate?: { wave: number; nextWave: number }
 }
 
 // useWaveEvents subscribes to the SSE stream for a given slug and returns
@@ -158,6 +159,17 @@ export function useWaveEvents(slug: string): AppWaveState {
     es.addEventListener('run_failed', (event: MessageEvent) => {
       const data = JSON.parse(event.data) as { error: string }
       setState(prev => ({ ...prev, runFailed: data.error }))
+    })
+
+    es.addEventListener('wave_gate_pending', (event: MessageEvent) => {
+      const data = JSON.parse(event.data) as { wave: number; next_wave: number; slug: string }
+      setState(s => ({ ...s, waveGate: { wave: data.wave, nextWave: data.next_wave } }))
+    })
+
+    es.addEventListener('wave_gate_resolved', (event: MessageEvent) => {
+      const data = JSON.parse(event.data) as { wave: number; action: string }
+      void data // consumed for side-effect only
+      setState(s => ({ ...s, waveGate: undefined }))
     })
 
     return () => {
