@@ -78,8 +78,10 @@ exit 0
 	}
 }
 
-// TestRun_EchoesArguments verifies that --print, --cwd, --allowedTools,
-// --dangerously-skip-permissions, and -p flags are all passed to the binary.
+// TestRun_EchoesArguments verifies that --print, --allowedTools,
+// --dangerously-skip-permissions, -p, and --max-turns flags are all passed to
+// the binary. Note: --cwd is NOT passed; the working directory is set via
+// cmd.Dir instead (--cwd was removed in claude v2.x).
 func TestRun_EchoesArguments(t *testing.T) {
 	tmpDir := t.TempDir()
 	// This script echoes all its arguments to stdout.
@@ -93,10 +95,13 @@ exit 0
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
-	for _, want := range []string{"--print", "--cwd", "--allowedTools", "--dangerously-skip-permissions", "-p", "--max-turns"} {
+	for _, want := range []string{"--print", "--allowedTools", "--dangerously-skip-permissions", "-p", "--max-turns"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("expected argument %q in output, got: %q", want, out)
 		}
+	}
+	if strings.Contains(out, "--cwd") {
+		t.Errorf("--cwd should not be passed as an arg (cmd.Dir is used instead), got: %q", out)
 	}
 }
 

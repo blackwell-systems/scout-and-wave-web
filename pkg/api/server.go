@@ -44,6 +44,10 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("POST /api/wave/{slug}/start", s.handleWaveStart)
 	s.mux.HandleFunc("POST /api/scout/run", s.handleScoutRun)
 	s.mux.HandleFunc("GET /api/scout/{runID}/events", s.handleScoutEvents)
+	s.mux.HandleFunc("POST /api/wave/{slug}/gate/proceed", s.handleWaveGateProceed)
+	s.mux.HandleFunc("POST /api/wave/{slug}/agent/{letter}/rerun", s.handleWaveAgentRerun)
+	s.mux.HandleFunc("GET /api/impl/{slug}/raw", s.handleGetImplRaw)
+	s.mux.HandleFunc("PUT /api/impl/{slug}/raw", s.handlePutImplRaw)
 	sub, err := fs.Sub(staticFiles, "dist")
 	if err != nil {
 		panic("saw: failed to sub embed.FS: " + err.Error())
