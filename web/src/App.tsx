@@ -7,8 +7,9 @@ import ImplList from './components/ImplList'
 import ThemePicker from './components/ThemePicker'
 import LiveRail from './components/LiveRail'
 import { LiveView } from './components/LiveRail'
+import SettingsScreen from './components/SettingsScreen'
 import { useResizableDivider } from './hooks/useResizableDivider'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Settings } from 'lucide-react'
 
 export default function App() {
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
@@ -21,6 +22,7 @@ export default function App() {
 
   const { leftWidthPx, dividerProps } = useResizableDivider({ initialWidthPx: 220, minWidthPx: 140, maxFraction: 0.10 })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
 
   const [rightWidthPx, setRightWidthPx] = useState(380)
   const rightDividerMouseDown = (e: React.MouseEvent) => {
@@ -155,6 +157,9 @@ export default function App() {
         <div className="flex items-center gap-2">
           <ThemePicker />
           <DarkModeToggle />
+          <button onClick={() => setShowSettings(true)} title="Settings" className="p-1 hover:opacity-70">
+            <Settings size={16} />
+          </button>
         </div>
       </header>
       <div className="flex flex-1 min-h-0">
@@ -197,16 +202,22 @@ export default function App() {
 
         {/* Center column */}
         <div className="flex-1 overflow-y-auto min-w-0">
-          {error && <p className="text-destructive text-sm p-4">{error}</p>}
-          {loading && <p className="text-muted-foreground text-sm p-4">Loading...</p>}
-          {rejected && <p className="text-orange-600 text-sm p-4">Plan rejected.</p>}
-          {!loading && impl !== null && selectedSlug !== null && (
-            <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onRefreshImpl={handleSelect} />
-          )}
-          {!loading && impl === null && !error && (
-            <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-              Select a plan from the list to review.
-            </div>
+          {showSettings ? (
+            <SettingsScreen onClose={() => setShowSettings(false)} />
+          ) : (
+            <>
+              {error && <p className="text-destructive text-sm p-4">{error}</p>}
+              {loading && <p className="text-muted-foreground text-sm p-4">Loading...</p>}
+              {rejected && <p className="text-orange-600 text-sm p-4">Plan rejected.</p>}
+              {!loading && impl !== null && selectedSlug !== null && (
+                <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onRefreshImpl={handleSelect} />
+              )}
+              {!loading && impl === null && !error && (
+                <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                  Select a plan from the list to review.
+                </div>
+              )}
+            </>
           )}
         </div>
 
