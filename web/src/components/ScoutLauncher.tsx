@@ -12,6 +12,7 @@ export default function ScoutLauncher({ onComplete }: ScoutLauncherProps): JSX.E
   const [running, setRunning] = useState(false)
   const [output, setOutput] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [completedSlug, setCompletedSlug] = useState<string | null>(null)
   const esRef = useRef<EventSource | null>(null)
   const outputRef = useRef<HTMLPreElement | null>(null)
 
@@ -47,7 +48,12 @@ export default function ScoutLauncher({ onComplete }: ScoutLauncherProps): JSX.E
     esRef.current = es
 
     es.addEventListener('scout_output', (e: MessageEvent) => {
-      setOutput(prev => prev + e.data)
+      try {
+        const payload = JSON.parse(e.data) as { chunk?: string }
+        setOutput(prev => prev + (payload.chunk ?? e.data))
+      } catch {
+        setOutput(prev => prev + e.data)
+      }
     })
 
     es.addEventListener('scout_complete', (e: MessageEvent) => {
@@ -57,9 +63,9 @@ export default function ScoutLauncher({ onComplete }: ScoutLauncherProps): JSX.E
       try {
         const payload = JSON.parse(e.data) as { slug?: string; impl_path?: string }
         const slug = payload.slug ?? payload.impl_path ?? ''
-        onComplete(slug)
+        setCompletedSlug(slug)
       } catch {
-        onComplete('')
+        setCompletedSlug('')
       }
     })
 
@@ -150,6 +156,19 @@ export default function ScoutLauncher({ onComplete }: ScoutLauncherProps): JSX.E
         {error && (
           <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg px-4 py-3 text-red-800 dark:text-red-400 text-sm">
             <span className="font-medium">Error:</span> {error}
+          </div>
+        )}
+
+        {/* Completion banner */}
+        {completedSlug !== null && (
+          <div className="flex items-center justify-between bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg px-4 py-3">
+            <span className="text-sm font-medium text-green-800 dark:text-green-400">Plan ready</span>
+            <button
+              onClick={() => onComplete(completedSlug)}
+              className="text-sm font-medium px-3 py-1 rounded-md bg-green-600 hover:bg-green-700 text-white transition-colors"
+            >
+              Review →
+            </button>
           </div>
         )}
 
