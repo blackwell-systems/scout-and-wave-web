@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { ScoutContext } from '../types'
+import { ScoutContext, RepoEntry } from '../types'
 
 const WORKING_MESSAGES = [
   'Reading codebase…',
@@ -14,14 +14,17 @@ import { runScout, subscribeScoutEvents, cancelScout } from '../api'
 interface ScoutLauncherProps {
   onComplete: (slug: string) => void
   onScoutReady?: () => void  // fires immediately when scout_complete fires (before user clicks Review)
+  repos?: RepoEntry[]         // registered repos for dropdown
+  activeRepo?: RepoEntry | null  // currently active repo (pre-select in dropdown)
 }
 
 const SESSION_KEY = 'saw-scout-context'
 
-export default function ScoutLauncher({ onComplete, onScoutReady }: ScoutLauncherProps): JSX.Element {
+export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeRepo }: ScoutLauncherProps): JSX.Element {
   const [feature, setFeature] = useState('')
-  const [repo, setRepo] = useState('')
+  const [repo, setRepo] = useState(() => activeRepo?.path ?? '')
   const [showRepo, setShowRepo] = useState(false)
+  const [dropdownValue, setDropdownValue] = useState<string>(() => activeRepo?.path ?? '')
   const [showContext, setShowContext] = useState(false)
   const [contextData, setContextData] = useState<ScoutContext>(() => {
     try {
@@ -192,24 +195,68 @@ export default function ScoutLauncher({ onComplete, onScoutReady }: ScoutLaunche
             disabled={running}
           />
 
-          {/* Repo path toggle */}
+          {/* Repo path — dropdown when registry is non-empty, freeform toggle otherwise */}
           <div>
-            <button
-              type="button"
-              className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-              onClick={() => setShowRepo(v => !v)}
-            >
-              {showRepo ? '- Hide repo path' : '+ Repo path (optional)'}
-            </button>
-            {showRepo && (
-              <input
-                type="text"
-                className="mt-2 w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:ring-1 focus:ring-blue-500"
-                placeholder="/path/to/repo"
-                value={repo}
-                onChange={e => setRepo(e.target.value)}
-                disabled={running}
-              />
+            {repos && repos.length > 0 ? (
+              <div className="space-y-2">
+                <select
+                  className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100 outline-none focus:ring-1 focus:ring-blue-500"
+                  value={dropdownValue}
+                  onChange={e => {
+                    const val = e.target.value
+                    setDropdownValue(val)
+                    if (val === '') {
+                      setRepo('')
+                      setShowRepo(false)
+                    } else if (val === '__custom__') {
+                      setRepo('')
+                      setShowRepo(true)
+                    } else {
+                      setRepo(val)
+                      setShowRepo(false)
+                    }
+                  }}
+                  disabled={running}
+                >
+                  <option value="">— select repo —</option>
+                  {repos.map(r => (
+                    <option key={r.path} value={r.path}>
+                      {r.name || r.path}
+                    </option>
+                  ))}
+                  <option value="__custom__">Custom path...</option>
+                </select>
+                {showRepo && (
+                  <input
+                    type="text"
+                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="/path/to/repo"
+                    value={repo}
+                    onChange={e => setRepo(e.target.value)}
+                    disabled={running}
+                  />
+                )}
+              </div>
+            ) : (
+              <>
+                <button
+                  type="button"
+                  className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  onClick={() => setShowRepo(v => !v)}
+                >
+                  {showRepo ? '- Hide repo path' : '+ Repo path (optional)'}
+                </button>
+                {showRepo && (
+                  <input
+                    type="text"
+                    className="mt-2 w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:ring-1 focus:ring-blue-500"
+                    placeholder="/path/to/repo"
+                    value={repo}
+                    onChange={e => setRepo(e.target.value)}
+                    disabled={running}
+                  />
+                )}
+              </>
             )}
           </div>
 
