@@ -183,8 +183,17 @@ export interface FileDiffResponse {
 }
 
 // Settings (v0.18.0-C)
+
+/** One registered repository in the SAWConfig repo registry. */
+export interface RepoEntry {
+  name: string   // human-readable label, e.g. "web", "go"
+  path: string   // absolute filesystem path
+}
+
+/** Updated SAWConfig — repos replaces the old repo.path singleton. */
 export interface SAWConfig {
-  repo: { path: string }
+  repos: RepoEntry[]                             // NEW: named repo registry
+  repo: { path: string }                         // KEPT for backward compat read
   agent: { scout_model: string; wave_model: string }
   quality: { require_tests: boolean; require_lint: boolean; block_on_failure: boolean }
   appearance: { theme: 'system' | 'light' | 'dark' }

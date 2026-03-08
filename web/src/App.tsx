@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
-import { listImpls, fetchImpl, approveImpl, rejectImpl, startWave, deleteImpl } from './api'
-import { IMPLDocResponse, IMPLListEntry } from './types'
+import { listImpls, fetchImpl, approveImpl, rejectImpl, startWave, deleteImpl, getConfig } from './api'
+import { IMPLDocResponse, IMPLListEntry, RepoEntry } from './types'
 import ReviewScreen from './components/ReviewScreen'
 import DarkModeToggle from './components/DarkModeToggle'
 import ImplList from './components/ImplList'
@@ -19,6 +19,17 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [rejected, setRejected] = useState(false)
+
+  const [repos, setRepos] = useState<RepoEntry[]>([])
+  const [activeRepoIndex, setActiveRepoIndex] = useState<number>(0)
+  const activeRepo: RepoEntry | null = repos[activeRepoIndex] ?? null
+
+  function handleReposChange(updated: RepoEntry[]): void {
+    setRepos(updated)
+  }
+  function handleRepoSwitch(index: number): void {
+    setActiveRepoIndex(index)
+  }
 
   const { leftWidthPx, dividerProps } = useResizableDivider({ initialWidthPx: 220, minWidthPx: 140, maxFraction: 0.10 })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -40,6 +51,13 @@ export default function App() {
 
   useEffect(() => {
     listImpls().then(setEntries).catch(() => {})
+    getConfig().then(config => {
+      if (config.repos && config.repos.length > 0) {
+        setRepos(config.repos)
+      } else if (config.repo?.path) {
+        setRepos([{ name: 'repo', path: config.repo.path }])
+      }
+    }).catch(() => {})
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       Notification.requestPermission()
     }
@@ -194,6 +212,7 @@ export default function App() {
                 onSelect={handleSelect}
                 onDelete={handleDelete}
                 loading={loading}
+                repos={repos}
               />
             </div>
             <div {...dividerProps} />
@@ -203,7 +222,7 @@ export default function App() {
         {/* Center column */}
         <div className="flex-1 overflow-y-auto min-w-0">
           {showSettings ? (
-            <SettingsScreen onClose={() => setShowSettings(false)} />
+            <SettingsScreen onClose={() => setShowSettings(false)} onReposChange={handleReposChange} />
           ) : (
             <>
               {error && <p className="text-destructive text-sm p-4">{error}</p>}
@@ -238,6 +257,9 @@ export default function App() {
               onScoutComplete={handleScoutComplete}
               onScoutReady={handleScoutReady}
               onClose={() => setLiveView(null)}
+              repos={repos}
+              activeRepo={activeRepo}
+              onRepoSwitch={handleRepoSwitch}
             />
           </div>
         )}

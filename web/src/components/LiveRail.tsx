@@ -16,6 +16,9 @@ export interface LiveRailProps {
   onScoutComplete: (slug: string) => void
   onScoutReady?: () => void
   onClose: () => void
+  repos?: import('../types').RepoEntry[]
+  activeRepo?: import('../types').RepoEntry | null
+  onRepoSwitch?: (index: number) => void
 }
 
 export default function LiveRail({ slug, liveView, onScoutComplete, onScoutReady, onClose }: LiveRailProps): JSX.Element {
