@@ -679,6 +679,45 @@ After Wave 1 completes:
 | 1 | D | Frontend component: `AgentCard` streaming output `<pre>` with auto-scroll | TO-DO |
 | — | Orch | Post-merge integration: Go build + tests, TypeScript compile, smoke test, final commit | TO-DO |
 
+## Wave 1 / Agent A Completion Report
+status: complete
+files_changed:
+  - pkg/agent/backend/backend.go (modified, +14/-0 lines)
+  - pkg/agent/backend/cli/client.go (modified, +16/-4 lines)
+  - pkg/agent/backend/api/client.go (modified, +198/-0 lines)
+  - pkg/agent/runner.go (modified, +27/-0 lines)
+  - pkg/agent/runner_test.go (modified, +9/-0 lines)
+  - pkg/agent/backend/cli/client_test.go (modified, +57/-0 lines)
+  - pkg/agent/backend/api/client_test.go (modified, +94/-0 lines)
+files_created: []
+interface_deviations: []
+downstream_action_required: false
+verification: PASS (go test -race -count=1 ./pkg/agent/... — 3/3 packages, all tests pass)
+notes: "CLI Run now delegates to RunStreaming(nil) to avoid code duplication. API RunStreaming uses NewStreaming for every turn; text chunks are buffered and only emitted to onChunk on end_turn to avoid flooding with tool-use turn fragments. Tool execution inside RunStreaming reads directly from blockMap (not ContentBlockParamUnion.Input typed as any) to avoid type assertion issues. runner_test.go mockBackend updated to implement RunStreaming with backend.ChunkCallback signature; compile-time assertions added to both backend test files."
+
+## Wave 1 / Agent B Completion Report
+status: complete
+files_changed:
+  - pkg/orchestrator/events.go (modified, +11/-0 lines)
+  - pkg/orchestrator/orchestrator.go (modified, +10/-2 lines)
+  - pkg/orchestrator/orchestrator_test.go (modified, +4/-0 lines)
+files_created: []
+interface_deviations: []
+downstream_action_required: false
+verification: PARTIAL (go vet ./pkg/orchestrator/... fails only on runner.ExecuteStreaming undefined — expected, awaiting Agent A merge; AgentOutputPayload struct compiles as part of package; all edits are syntactically correct and match interface contracts exactly)
+notes: "fakeBackend.RunStreaming stub added to orchestrator_test.go with signature matching Agent A's contract: (ctx, sys, user, workDir string, onChunk func(string)) (string, error). The stub delegates to f.Run so existing test behaviour is preserved."
+
+## Wave 1 / Agent C Completion Report
+status: complete
+files_changed:
+  - web/src/types.ts (modified, +8/-0 lines)
+  - web/src/hooks/useWaveEvents.ts (modified, +9/-1 lines)
+files_created: []
+interface_deviations: []
+downstream_action_required: false
+verification: PASS (npx tsc --noEmit — 0 errors)
+notes: ""
+
 ## Wave 1 / Agent D Completion Report
 status: complete
 files_changed:
