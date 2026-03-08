@@ -20,7 +20,7 @@ var completionStatusRe = regexp.MustCompile(`(?m)^status: (complete|partial|bloc
 // implListEntry is one item in the GET /api/impl response.
 type implListEntry struct {
 	Slug      string `json:"slug"`
-	DocStatus string `json:"doc_status"` // "ACTIVE" or "COMPLETE"
+	DocStatus string `json:"doc_status"` // "active" or "complete"
 }
 
 // handleListImpls serves GET /api/impl and returns a JSON array of impl entries.
@@ -36,14 +36,14 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 		name := e.Name()
 		if strings.HasPrefix(name, "IMPL-") && strings.HasSuffix(name, ".md") {
 			slug := strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".md")
-			status := "ACTIVE"
+			status := "active"
 			// Quick scan: explicit SAW:COMPLETE tag, or infer from completion reports.
 			if data, err := os.ReadFile(filepath.Join(s.cfg.IMPLDir, name)); err == nil {
 				text := string(data)
 				if strings.Contains(text, "SAW:COMPLETE") {
-					status = "COMPLETE"
+					status = "complete"
 				} else if inferComplete(text) {
-					status = "COMPLETE"
+					status = "complete"
 				}
 			}
 			result = append(result, implListEntry{Slug: slug, DocStatus: status})
@@ -75,9 +75,9 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Map types.IMPLDoc -> IMPLDocResponse
-	docStatus := "ACTIVE"
+	docStatus := "active"
 	if doc.DocStatus == "COMPLETE" {
-		docStatus = "COMPLETE"
+		docStatus = "complete"
 	}
 	// Detect scaffold files from file ownership table
 	scaffoldFiles := []string{}
@@ -103,6 +103,7 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 			Files:     scaffoldFiles,
 			Contracts: []ContractEntry{}, // Contracts not parsed yet - would need scaffolds section parsing
 		},
+		PreMortem: mapPreMortem(doc.PreMortem),
 		KnownIssues:            mapKnownIssues(doc.KnownIssues),
 		ScaffoldsDetail:        mapScaffoldsDetail(doc.ScaffoldsDetail),
 		InterfaceContractsText: doc.InterfaceContractsText,
@@ -267,4 +268,24 @@ func extractAgentPrompts(waves []types.Wave) []AgentPromptEntry {
 		return []AgentPromptEntry{}
 	}
 	return result
+}
+
+// mapPreMortem converts a *types.PreMortem to *PreMortemEntry for the API response.
+func mapPreMortem(pm *types.PreMortem) *PreMortemEntry {
+	if pm == nil {
+		return nil
+	}
+	rows := make([]PreMortemRowEntry, 0, len(pm.Rows))
+	for _, r := range pm.Rows {
+		rows = append(rows, PreMortemRowEntry{
+			Scenario:   r.Scenario,
+			Likelihood: r.Likelihood,
+			Impact:     r.Impact,
+			Mitigation: r.Mitigation,
+		})
+	}
+	return &PreMortemEntry{
+		OverallRisk: pm.OverallRisk,
+		Rows:        rows,
+	}
 }

@@ -340,6 +340,202 @@ Implement it.
 | pkg/foo/bar.go | A | 1 | — |
 `
 
+// ---------------------------------------------------------------------------
+// handleListImpls doc_status casing tests
+// ---------------------------------------------------------------------------
+
+// implListEntryRaw is used to decode the list response for casing checks.
+type implListEntryRaw struct {
+	Slug      string `json:"slug"`
+	DocStatus string `json:"doc_status"`
+}
+
+// TestHandleListImpls_DocStatusLowercase verifies that an active IMPL doc returns
+// doc_status "active" (lowercase), not "ACTIVE".
+func TestHandleListImpls_DocStatusLowercase(t *testing.T) {
+	s, dir := makeTestServer(t)
+	writeIMPLDoc(t, dir, "active-feature", minimalIMPL)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/impl", nil)
+	rr := httptest.NewRecorder()
+	s.handleListImpls(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var entries []implListEntryRaw
+	if err := json.NewDecoder(rr.Body).Decode(&entries); err != nil {
+		t.Fatalf("failed to decode JSON: %v", err)
+	}
+
+	if len(entries) == 0 {
+		t.Fatal("expected at least one entry, got none")
+	}
+	for _, e := range entries {
+		if e.Slug == "active-feature" {
+			if e.DocStatus != "active" {
+				t.Errorf("expected doc_status %q, got %q", "active", e.DocStatus)
+			}
+			return
+		}
+	}
+	t.Error("active-feature not found in list response")
+}
+
+// TestHandleListImpls_DocStatusComplete verifies that an IMPL doc with the
+// SAW:COMPLETE tag returns doc_status "complete" (lowercase), not "COMPLETE".
+func TestHandleListImpls_DocStatusComplete(t *testing.T) {
+	s, dir := makeTestServer(t)
+	completeIMPL := minimalIMPL + "\n<!-- SAW:COMPLETE 2024-01-15 -->\n"
+	writeIMPLDoc(t, dir, "done-feature", completeIMPL)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/impl", nil)
+	rr := httptest.NewRecorder()
+	s.handleListImpls(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var entries []implListEntryRaw
+	if err := json.NewDecoder(rr.Body).Decode(&entries); err != nil {
+		t.Fatalf("failed to decode JSON: %v", err)
+	}
+
+	for _, e := range entries {
+		if e.Slug == "done-feature" {
+			if e.DocStatus != "complete" {
+				t.Errorf("expected doc_status %q, got %q", "complete", e.DocStatus)
+			}
+			return
+		}
+	}
+	t.Error("done-feature not found in list response")
+}
+
+// ---------------------------------------------------------------------------
+// handleGetImpl pre_mortem and doc_status tests
+// ---------------------------------------------------------------------------
+
+const implWithPreMortem = `# IMPL: premortem-feature
+
+**Test Command:** go test ./...
+**Lint Command:** go vet ./...
+
+## Pre-Mortem
+
+**Overall risk:** medium
+
+| Scenario | Likelihood | Impact | Mitigation |
+|----------|-----------|--------|------------|
+| DB schema mismatch | high | high | Run migration tests |
+| Agent timeout | low | medium | Add deadline context |
+
+## Wave 1
+
+### Agent A: Do the thing
+
+Implement it.
+
+### File Ownership
+
+| File | Agent | Wave | Depends On |
+|------|-------|------|------------|
+| pkg/foo/bar.go | A | 1 | — |
+`
+
+// TestHandleGetImpl_PreMortem verifies that when a ## Pre-Mortem section exists
+// in the IMPL doc, the pre_mortem field is populated in the response, and that
+// it is absent (nil/omitted) when the section is not present.
+func TestHandleGetImpl_PreMortem(t *testing.T) {
+	s, dir := makeTestServer(t)
+
+	// Case 1: doc WITH pre-mortem section.
+	writeIMPLDoc(t, dir, "premortem-feature", implWithPreMortem)
+	req := httptest.NewRequest(http.MethodGet, "/api/impl/premortem-feature", nil)
+	req.SetPathValue("slug", "premortem-feature")
+	rr := httptest.NewRecorder()
+	s.handleGetImpl(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", rr.Code, rr.Body.String())
+	}
+
+	var resp IMPLDocResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode JSON response: %v", err)
+	}
+
+	if resp.PreMortem == nil {
+		t.Fatal("expected pre_mortem to be non-nil when section present")
+	}
+	if resp.PreMortem.OverallRisk != "medium" {
+		t.Errorf("expected OverallRisk %q, got %q", "medium", resp.PreMortem.OverallRisk)
+	}
+	if len(resp.PreMortem.Rows) != 2 {
+		t.Fatalf("expected 2 pre-mortem rows, got %d", len(resp.PreMortem.Rows))
+	}
+	if resp.PreMortem.Rows[0].Scenario != "DB schema mismatch" {
+		t.Errorf("expected Rows[0].Scenario %q, got %q", "DB schema mismatch", resp.PreMortem.Rows[0].Scenario)
+	}
+	if resp.PreMortem.Rows[1].Mitigation != "Add deadline context" {
+		t.Errorf("expected Rows[1].Mitigation %q, got %q", "Add deadline context", resp.PreMortem.Rows[1].Mitigation)
+	}
+
+	// Case 2: doc WITHOUT pre-mortem section.
+	writeIMPLDoc(t, dir, "no-premortem", minimalIMPL)
+	req2 := httptest.NewRequest(http.MethodGet, "/api/impl/no-premortem", nil)
+	req2.SetPathValue("slug", "no-premortem")
+	rr2 := httptest.NewRecorder()
+	s.handleGetImpl(rr2, req2)
+
+	var resp2 IMPLDocResponse
+	if err := json.NewDecoder(rr2.Body).Decode(&resp2); err != nil {
+		t.Fatalf("failed to decode JSON response (no pre-mortem): %v", err)
+	}
+	if resp2.PreMortem != nil {
+		t.Errorf("expected pre_mortem to be nil when section absent, got %+v", resp2.PreMortem)
+	}
+}
+
+// TestHandleGetImpl_DocStatus verifies that doc_status in the GET /api/impl/{slug}
+// response is lowercase ("active" or "complete"), not uppercase.
+func TestHandleGetImpl_DocStatus(t *testing.T) {
+	s, dir := makeTestServer(t)
+
+	// Active doc.
+	writeIMPLDoc(t, dir, "active-slug", minimalIMPL)
+	req := httptest.NewRequest(http.MethodGet, "/api/impl/active-slug", nil)
+	req.SetPathValue("slug", "active-slug")
+	rr := httptest.NewRecorder()
+	s.handleGetImpl(rr, req)
+
+	var resp IMPLDocResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode JSON: %v", err)
+	}
+	if resp.DocStatus != "active" {
+		t.Errorf("expected doc_status %q for active doc, got %q", "active", resp.DocStatus)
+	}
+
+	// Complete doc (has SAW:COMPLETE tag so DocStatus == "COMPLETE" after parsing).
+	completeIMPL := minimalIMPL + "\n<!-- SAW:COMPLETE 2024-01-15 -->\n"
+	writeIMPLDoc(t, dir, "complete-slug", completeIMPL)
+	req2 := httptest.NewRequest(http.MethodGet, "/api/impl/complete-slug", nil)
+	req2.SetPathValue("slug", "complete-slug")
+	rr2 := httptest.NewRecorder()
+	s.handleGetImpl(rr2, req2)
+
+	var resp2 IMPLDocResponse
+	if err := json.NewDecoder(rr2.Body).Decode(&resp2); err != nil {
+		t.Fatalf("failed to decode JSON: %v", err)
+	}
+	if resp2.DocStatus != "complete" {
+		t.Errorf("expected doc_status %q for complete doc, got %q", "complete", resp2.DocStatus)
+	}
+}
+
 // TestHandleGetImpl_Found verifies that a valid IMPL doc is returned as 200 JSON.
 func TestHandleGetImpl_Found(t *testing.T) {
 	s, dir := makeTestServer(t)
