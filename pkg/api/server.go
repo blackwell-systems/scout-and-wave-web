@@ -22,6 +22,7 @@ type Server struct {
 	mux        *http.ServeMux
 	broker     *sseBroker // unexported; used by wave.go handlers
 	activeRuns sync.Map   // slug -> struct{}; tracks in-progress wave runs
+	scoutRuns  sync.Map   // runID -> struct{}; tracks in-progress scout runs
 }
 
 // New creates a Server with the given Config and registers all routes.
@@ -41,6 +42,8 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("GET /api/wave/{slug}/events", s.handleWaveEvents)
 	s.mux.HandleFunc("GET /api/git/{slug}/activity", s.handleGitActivity)
 	s.mux.HandleFunc("POST /api/wave/{slug}/start", s.handleWaveStart)
+	s.mux.HandleFunc("POST /api/scout/run", s.handleScoutRun)
+	s.mux.HandleFunc("GET /api/scout/{runID}/events", s.handleScoutEvents)
 	sub, err := fs.Sub(staticFiles, "dist")
 	if err != nil {
 		panic("saw: failed to sub embed.FS: " + err.Error())
