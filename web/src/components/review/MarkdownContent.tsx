@@ -22,7 +22,7 @@ export default function MarkdownContent({ children, compact = true }: MarkdownCo
 
   const spacingClasses = compact
     ? 'prose-p:my-1 prose-li:my-0 prose-ul:my-1 prose-ol:my-1'
-    : 'prose-p:my-3 prose-li:my-1 prose-ul:my-2 prose-ol:my-2'
+    : 'prose-p:my-4 prose-p:block prose-li:my-1 prose-ul:my-3 prose-ol:my-3'
 
   return (
     <div className={`prose prose-sm dark:prose-invert max-w-none
