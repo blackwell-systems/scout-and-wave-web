@@ -57,7 +57,10 @@ export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileC
       ? e.depends_on && e.depends_on !== ''
       : e.action && e.action !== 'unknown'
   )
-  const hasRepo = fileOwnership.some(e => e.repo && e.repo !== "")
+  // Check if we have multiple repos
+  const repos = Array.from(new Set(fileOwnership.map(e => e.repo || '').filter(r => r !== '')))
+  const hasMultipleRepos = repos.length > 1
+  const hasRepo = hasMultipleRepos // Only show Repo column if multiple repos
 
   const sorted = [...fileOwnership].sort((a, b) => {
     const isAScaffold = a.agent.toLowerCase() === 'scaffold'
@@ -74,9 +77,6 @@ export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileC
     return 0
   })
 
-  // Check if we have multiple repos
-  const repos = Array.from(new Set(fileOwnership.map(e => e.repo || '').filter(r => r !== '')))
-  const hasMultipleRepos = repos.length > 1
 
   // Group by repo first (if multi-repo), then by wave
   const groupedByRepo: { repo: string; waveGroups: { wave: number; entries: FileOwnershipEntry[] }[] }[] = []
