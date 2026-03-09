@@ -34,12 +34,16 @@ export default function ModelPicker({ value, onChange, label, id }: ModelPickerP
 
   const [selectedProvider, setSelectedProvider] = useState(provider)
   const [selectedModel, setSelectedModel] = useState(modelName)
+  const [inputValue, setInputValue] = useState(modelName)
+  const [originalModel, setOriginalModel] = useState(modelName)
 
   // Update internal state when external value changes
   useEffect(() => {
     const [p, m] = value.includes(':') ? value.split(':', 2) : ['anthropic', value]
     setSelectedProvider(p)
     setSelectedModel(m)
+    setInputValue(m)
+    setOriginalModel(m)
   }, [value])
 
   function handleProviderChange(newProvider: string) {
@@ -52,12 +56,25 @@ export default function ModelPicker({ value, onChange, label, id }: ModelPickerP
   }
 
   function handleModelChange(newModel: string) {
+    setInputValue(newModel)
     setSelectedModel(newModel)
     // Update the full value with current provider
     const fullValue = selectedProvider === 'anthropic' && !newModel.includes(':')
       ? newModel
       : `${selectedProvider}:${newModel}`
     onChange(fullValue)
+  }
+
+  function handleInputFocus() {
+    // Clear input on focus to show suggestions
+    setInputValue('')
+  }
+
+  function handleInputBlur() {
+    // Restore original value if input is empty
+    if (inputValue === '') {
+      setInputValue(originalModel)
+    }
   }
 
   const suggestions = MODEL_SUGGESTIONS[selectedProvider] || []
@@ -91,8 +108,10 @@ export default function ModelPicker({ value, onChange, label, id }: ModelPickerP
           <input
             id={id}
             list={`${id}-suggestions`}
-            value={selectedModel}
+            value={inputValue}
             onChange={e => handleModelChange(e.target.value)}
+            onFocus={handleInputFocus}
+            onBlur={handleInputBlur}
             className="w-full text-sm px-3 py-1.5 rounded-md border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             placeholder="Model name"
           />
