@@ -79,7 +79,7 @@ export default function ChatPanel({ slug, onClose }: ChatPanelProps): JSX.Elemen
               ) : (
                 <div className="bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-2 max-w-[85%]">
                   {msg.content ? (
-                    <MarkdownContent>{msg.content}</MarkdownContent>
+                    <MarkdownContent compact={false}>{msg.content}</MarkdownContent>
                   ) : state.running ? (
                     <span className="animate-pulse text-gray-400 text-sm">thinking...</span>
                   ) : null}

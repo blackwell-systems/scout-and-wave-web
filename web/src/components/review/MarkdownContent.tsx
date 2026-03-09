@@ -5,9 +5,10 @@ import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
 interface MarkdownContentProps {
   children: string
+  compact?: boolean  // default true for review panels, false for chat
 }
 
-export default function MarkdownContent({ children }: MarkdownContentProps): JSX.Element {
+export default function MarkdownContent({ children, compact = true }: MarkdownContentProps): JSX.Element {
   const [isDark, setIsDark] = useState(false)
 
   useEffect(() => {
@@ -19,15 +20,19 @@ export default function MarkdownContent({ children }: MarkdownContentProps): JSX
     return () => observer.disconnect()
   }, [])
 
+  const spacingClasses = compact
+    ? 'prose-p:my-1 prose-li:my-0 prose-ul:my-1 prose-ol:my-1'
+    : 'prose-p:my-3 prose-li:my-1 prose-ul:my-2 prose-ol:my-2'
+
   return (
-    <div className="prose prose-sm dark:prose-invert max-w-none
+    <div className={`prose prose-sm dark:prose-invert max-w-none
       prose-headings:text-sm prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
-      prose-p:text-xs prose-p:leading-relaxed prose-p:my-1
-      prose-li:text-xs prose-li:my-0
-      prose-ul:my-1 prose-ol:my-1
+      prose-p:text-xs prose-p:leading-relaxed
+      prose-li:text-xs
       prose-strong:text-foreground
       prose-code:text-xs prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none
-    ">
+      ${spacingClasses}
+    `}>
       <ReactMarkdown
         components={{
           code({ className, children: codeChildren, ...props }) {
