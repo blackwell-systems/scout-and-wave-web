@@ -26,6 +26,9 @@ export default function App() {
   const [activeRepoIndex, setActiveRepoIndex] = useState<number>(0)
   const activeRepo: RepoEntry | null = repos[activeRepoIndex] ?? null
 
+  const [scoutModel, setScoutModel] = useState<string>('')
+  const [waveModel, setWaveModel] = useState<string>('')
+
   const [sseConnected, setSseConnected] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
 
@@ -75,6 +78,8 @@ export default function App() {
       } else if (config.repo?.path) {
         setRepos([{ name: 'repo', path: config.repo.path }])
       }
+      setScoutModel(config.agent?.scout_model ?? '')
+      setWaveModel(config.agent?.wave_model ?? '')
     }).catch(() => {})
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       Notification.requestPermission()
@@ -211,6 +216,29 @@ export default function App() {
           </button>
         </div>
         <div className="flex items-stretch">
+          {(scoutModel || waveModel) && (
+            scoutModel === waveModel ? (
+              <div title={`Scout + Wave model: ${scoutModel}`} className="flex items-center gap-2 px-4 border-r border-border text-muted-foreground">
+                <span className="text-xs text-muted-foreground/60">model</span>
+                <span className="text-sm font-mono truncate max-w-[180px]">{scoutModel}</span>
+              </div>
+            ) : (
+              <>
+                {scoutModel && (
+                  <div title={`Scout model: ${scoutModel}`} className="flex items-center gap-2 px-4 border-r border-border text-muted-foreground">
+                    <span className="text-xs text-muted-foreground/60">scout</span>
+                    <span className="text-sm font-mono truncate max-w-[140px]">{scoutModel}</span>
+                  </div>
+                )}
+                {waveModel && (
+                  <div title={`Wave model: ${waveModel}`} className="flex items-center gap-2 px-4 border-r border-border text-muted-foreground">
+                    <span className="text-xs text-muted-foreground/60">wave</span>
+                    <span className="text-sm font-mono truncate max-w-[140px]">{waveModel}</span>
+                  </div>
+                )}
+              </>
+            )
+          )}
           <ThemePicker />
           <DarkModeToggle />
           <button onClick={() => setShowSettings(s => !s)} title="Settings" className="flex items-center justify-center px-4 border-l border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
@@ -327,7 +355,16 @@ export default function App() {
         <div className="fixed inset-0 z-40 bg-black/20" onClick={() => setShowSettings(false)} />
         {/* Drawer */}
         <div className="fixed inset-y-0 right-0 z-50 w-[560px] max-w-[90vw] bg-white dark:bg-zinc-900 border-l border-zinc-200 dark:border-zinc-700 shadow-2xl overflow-y-auto">
-          <SettingsScreen onClose={() => setShowSettings(false)} onReposChange={handleReposChange} />
+          <SettingsScreen
+          onClose={() => {
+            setShowSettings(false)
+            getConfig().then(config => {
+              setScoutModel(config.agent?.scout_model ?? '')
+              setWaveModel(config.agent?.wave_model ?? '')
+            }).catch(() => {})
+          }}
+          onReposChange={handleReposChange}
+        />
         </div>
       </>,
       document.body

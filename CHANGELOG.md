@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.25.0] - 2026-03-09
+
+### Added
+
+- **Active model display in header** (`web/src/App.tsx`) — the header now shows the currently configured scout/wave models as flush header segments matching the existing button style. When both models are the same a single `model <name>` segment is shown; when they differ, separate `scout <name>` and `wave <name>` segments appear. Updates immediately when Settings is closed after a save.
+
+---
+
 ## [0.24.0] - 2026-03-09
 
 ### Added
