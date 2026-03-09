@@ -43,7 +43,7 @@ function parseDependencyGraph(text: string): ParsedWave[] {
       continue
     }
 
-    const agentMatch = line.match(/^\s*\[([A-Za-z]+)\]\s*(.+)/)
+    const agentMatch = line.match(/^\s*\[([A-Za-z]\d?)\]\s*(.+)/)
     if (agentMatch && currentWave) {
       if (currentAgent) {
         currentWave.agents.push(currentAgent)
@@ -58,7 +58,7 @@ function parseDependencyGraph(text: string): ParsedWave[] {
     }
 
     if (currentAgent && line.includes('depends on:')) {
-      const deps = [...line.matchAll(/\[([A-Za-z]+)\]/g)]
+      const deps = [...line.matchAll(/\[([A-Za-z]\d?)\]/g)]
       for (const dep of deps) {
         currentAgent.dependencies.push(dep[1])
       }
