@@ -186,3 +186,17 @@ type AgentContextResponse struct {
 	Wave        int    `json:"wave"`
 	ContextText string `json:"context_text"`
 }
+
+// AgentToolCallPayload is the SSE event data for "agent_tool_call" events.
+// Emitted once per tool invocation (is_result=false) and once per tool
+// result (is_result=true) for each wave agent.
+type AgentToolCallPayload struct {
+	Agent      string `json:"agent"`
+	Wave       int    `json:"wave"`
+	ToolID     string `json:"tool_id"`
+	ToolName   string `json:"tool_name"`
+	Input      string `json:"input"`
+	IsResult   bool   `json:"is_result"`
+	IsError    bool   `json:"is_error"`
+	DurationMs int64  `json:"duration_ms"`
+}
