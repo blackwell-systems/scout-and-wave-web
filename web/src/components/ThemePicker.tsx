@@ -130,13 +130,6 @@ export default function ThemePicker(): JSX.Element {
   return (
     <div className="relative flex items-stretch">
       <button
-        onClick={randomTheme}
-        className="flex items-center justify-center px-3 border-r border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-        title="Random theme"
-      >
-        <Dices size={15} />
-      </button>
-      <button
         ref={btnRef}
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-2 px-3 text-xs text-foreground hover:bg-muted transition-colors border-r border-border"
@@ -149,6 +142,14 @@ export default function ThemePicker(): JSX.Element {
           }} />
         )}
         {label}
+      </button>
+
+      <button
+        onClick={randomTheme}
+        className="flex items-center justify-center px-3 border-r border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+        title="Random theme"
+      >
+        <Dices size={15} />
       </button>
 
       {open && (
