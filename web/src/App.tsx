@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
-import { listImpls, fetchImpl, approveImpl, rejectImpl, startWave, deleteImpl, getConfig } from './api'
+import { listImpls, fetchImpl, approveImpl, rejectImpl, startWave, deleteImpl, getConfig, saveConfig } from './api'
 import { IMPLDocResponse, IMPLListEntry, RepoEntry } from './types'
 import ReviewScreen from './components/ReviewScreen'
 import DarkModeToggle from './components/DarkModeToggle'
@@ -11,7 +11,13 @@ import { LiveView } from './components/LiveRail'
 import SettingsScreen from './components/SettingsScreen'
 import CommandPalette from './components/CommandPalette'
 import { useResizableDivider } from './hooks/useResizableDivider'
-import { ChevronLeft, ChevronRight, Settings, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Settings, Search, Pencil } from 'lucide-react'
+
+const MODEL_OPTIONS = [
+  'claude-opus-4-6', 'claude-sonnet-4-6', 'claude-haiku-4-5-20251001',
+  'ollama:qwen2.5-coder:32b', 'ollama:qwen2.5-coder:14b', 'ollama:deepseek-coder-v2',
+  'ollama:llama3.1:70b', 'ollama:granite3.1-dense:8b', 'lmstudio:local-model',
+]
 
 export default function App() {
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
@@ -26,8 +32,13 @@ export default function App() {
   const [activeRepoIndex, setActiveRepoIndex] = useState<number>(0)
   const activeRepo: RepoEntry | null = repos[activeRepoIndex] ?? null
 
-  const [scoutModel, setScoutModel] = useState<string>('')
-  const [waveModel, setWaveModel] = useState<string>('')
+  const [scoutModel, setScoutModel] = useState<string>('claude-sonnet-4-6')
+  const [waveModel, setWaveModel] = useState<string>('claude-sonnet-4-6')
+  const [chatModel, setChatModel] = useState<string>('claude-sonnet-4-6')
+
+  const [pickerOpen, setPickerOpen] = useState<'scout' | 'wave' | 'chat' | 'all' | null>(null)
+  const [pickerValue, setPickerValue] = useState('')
+  const pickerOriginalRef = useRef('')
 
   const [sseConnected, setSseConnected] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
@@ -80,6 +91,7 @@ export default function App() {
       }
       setScoutModel(config.agent?.scout_model ?? '')
       setWaveModel(config.agent?.wave_model ?? '')
+      setChatModel(config.agent?.chat_model ?? '')
     }).catch(() => {})
     if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
       Notification.requestPermission()
@@ -163,6 +175,27 @@ export default function App() {
     }
   }
 
+  async function saveModel(field: 'scout' | 'wave' | 'chat' | 'all', value: string) {
+    try {
+      const cfg = await getConfig()
+      const updated = {
+        ...cfg,
+        agent: {
+          ...cfg.agent,
+          ...(field === 'scout' && { scout_model: value }),
+          ...(field === 'wave' && { wave_model: value }),
+          ...(field === 'chat' && { chat_model: value }),
+          ...(field === 'all' && { scout_model: value, wave_model: value, chat_model: value }),
+        }
+      }
+      await saveConfig(updated)
+      if (field === 'scout') setScoutModel(value)
+      if (field === 'wave') setWaveModel(value)
+      if (field === 'chat') setChatModel(value)
+      if (field === 'all') { setScoutModel(value); setWaveModel(value); setChatModel(value) }
+    } catch { /* ignore */ }
+  }
+
   async function handleScoutReady() {
     try {
       const updated = await listImpls()
@@ -216,29 +249,41 @@ export default function App() {
           </button>
         </div>
         <div className="flex items-stretch">
-          {(scoutModel || waveModel) && (
-            scoutModel === waveModel ? (
-              <div title={`Scout + Wave model: ${scoutModel}`} className="flex items-center gap-2 px-4 border-r border-border text-muted-foreground">
-                <span className="text-xs text-muted-foreground/60">model</span>
-                <span className="text-sm font-mono truncate max-w-[180px]">{scoutModel}</span>
+          {(['scout', 'wave', 'chat'] as const).map(field => {
+            const model = field === 'scout' ? scoutModel : field === 'wave' ? waveModel : chatModel
+            return (
+              <div key={field} className="relative flex items-stretch border-r border-border">
+                <button
+                  title={`${field} model: ${model}\nClick to change`}
+                  onClick={() => { pickerOriginalRef.current = model; setPickerOpen(field); setPickerValue('') }}
+                  className="flex items-center gap-2 px-4 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors group"
+                >
+                  <span className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground">{field}</span>
+                  <span className="text-sm font-mono truncate max-w-[140px]">{model}</span>
+                  <Pencil size={11} className="opacity-0 group-hover:opacity-50 transition-opacity shrink-0" />
+                </button>
+                {pickerOpen === field && (
+                  <div className="absolute top-full left-0 mt-1 z-50 bg-popover border border-border rounded-md shadow-lg p-2 w-64">
+                    <input
+                      autoFocus
+                      list="header-model-options"
+                      className="w-full text-sm px-2 py-1 bg-background border border-border rounded text-foreground outline-none focus:ring-1 focus:ring-ring font-mono"
+                      value={pickerValue}
+                      onChange={e => setPickerValue(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') { saveModel(field, pickerValue || pickerOriginalRef.current); setPickerOpen(null) }
+                        if (e.key === 'Escape') { setPickerValue(pickerOriginalRef.current); setPickerOpen(null) }
+                      }}
+                      onBlur={() => { saveModel(field, pickerValue || pickerOriginalRef.current); setPickerOpen(null) }}
+                    />
+                    <datalist id="header-model-options">
+                      {MODEL_OPTIONS.map(m => <option key={m} value={m} />)}
+                    </datalist>
+                  </div>
+                )}
               </div>
-            ) : (
-              <>
-                {scoutModel && (
-                  <div title={`Scout model: ${scoutModel}`} className="flex items-center gap-2 px-4 border-r border-border text-muted-foreground">
-                    <span className="text-xs text-muted-foreground/60">scout</span>
-                    <span className="text-sm font-mono truncate max-w-[140px]">{scoutModel}</span>
-                  </div>
-                )}
-                {waveModel && (
-                  <div title={`Wave model: ${waveModel}`} className="flex items-center gap-2 px-4 border-r border-border text-muted-foreground">
-                    <span className="text-xs text-muted-foreground/60">wave</span>
-                    <span className="text-sm font-mono truncate max-w-[140px]">{waveModel}</span>
-                  </div>
-                )}
-              </>
             )
-          )}
+          })}
           <ThemePicker />
           <DarkModeToggle />
           <button onClick={() => setShowSettings(s => !s)} title="Settings" className="flex items-center justify-center px-4 border-l border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
@@ -361,6 +406,7 @@ export default function App() {
             getConfig().then(config => {
               setScoutModel(config.agent?.scout_model ?? '')
               setWaveModel(config.agent?.wave_model ?? '')
+              setChatModel(config.agent?.chat_model ?? '')
             }).catch(() => {})
           }}
           onReposChange={handleReposChange}

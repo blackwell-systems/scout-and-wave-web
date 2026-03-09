@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.27.0] - 2026-03-09
+
+### Added
+
+- **Inline model picker in header** (`web/src/App.tsx`) — scout, wave, and chat model badges are now always visible in the header and clickable. Clicking clears the input so the full datalist shows; Enter or blur saves; Escape cancels and restores the previous value. Saves immediately to `saw.config.json` via `getConfig` + `saveConfig` without opening Settings. Refactored to a single `.map()` loop eliminating duplicated badge markup.
+
+### Fixed
+
+- **Model badges always visible** — previously hidden when `saw.config.json` was absent (all states empty string). Now initialized to `claude-sonnet-4-6` so badges render on first launch before any config is saved.
+
+---
+
 ## [0.26.0] - 2026-03-09
 
 ### Added
