@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
+import { Dices } from 'lucide-react'
 import { THEMES, ThemeDef, varToHsl } from '../lib/themes'
 
 const ALL_THEME_CLASSES = THEMES.map(t => `theme-${t.id}`)
@@ -120,8 +121,21 @@ export default function ThemePicker(): JSX.Element {
     setTheme(id)
   }
 
+  function randomTheme() {
+    const pool = THEMES.filter(t => t.mode === (dark ? 'dark' : 'light'))
+    const next = pool[Math.floor(Math.random() * pool.length)]
+    if (next) setTheme(next.id)
+  }
+
   return (
     <div className="relative flex items-stretch">
+      <button
+        onClick={randomTheme}
+        className="flex items-center justify-center px-3 border-r border-border hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+        title="Random theme"
+      >
+        <Dices size={15} />
+      </button>
       <button
         ref={btnRef}
         onClick={() => setOpen(v => !v)}
