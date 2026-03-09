@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.1] - 2026-03-08
+
+### Changed
+
+**Agent Context UX improvement**
+
+- **Nested "View Full Context" buttons** — Agent context toggle buttons now appear inside each agent's prompt card (below the prompt content, after a divider) instead of as a separate list below all prompts. Reduces visual clutter while keeping E23 per-agent context payloads accessible for debugging interface deviations and orchestrator prompt modifications.
+- **AgentPromptsPanel refactored** — Now accepts optional `slug` prop; when provided, renders `AgentContextToggle` nested inside each agent card's expanded state.
+- **AgentContextPanel simplified** — No longer renders separate button list; passes `slug` to `AgentPromptsPanel` for nested rendering.
+
+---
+
 ## [0.20.0] - 2026-03-08
 
 ### Added
