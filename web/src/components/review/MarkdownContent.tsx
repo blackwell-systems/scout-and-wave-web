@@ -20,19 +20,20 @@ export default function MarkdownContent({ children, compact = true }: MarkdownCo
     return () => observer.disconnect()
   }, [])
 
-  const spacingClasses = compact
-    ? 'prose-p:my-1 prose-li:my-0 prose-ul:my-1 prose-ol:my-1'
-    : 'prose-p:my-4 prose-p:block prose-li:my-1 prose-ul:my-3 prose-ol:my-3'
-
   return (
-    <div className={`prose prose-sm dark:prose-invert max-w-none
-      prose-headings:text-sm prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
-      prose-p:text-xs prose-p:leading-relaxed
-      prose-li:text-xs
-      prose-strong:text-foreground
-      prose-code:text-xs prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none
-      ${spacingClasses}
-    `}>
+    <div
+      className={`prose prose-sm dark:prose-invert max-w-none
+        prose-headings:text-sm prose-headings:font-semibold prose-headings:mt-4 prose-headings:mb-2
+        prose-p:text-xs prose-p:leading-relaxed
+        prose-li:text-xs
+        prose-strong:text-foreground
+        prose-code:text-xs prose-code:bg-muted prose-code:px-1 prose-code:py-0.5 prose-code:rounded prose-code:before:content-none prose-code:after:content-none
+        ${compact
+          ? 'prose-p:my-1 prose-li:my-0 prose-ul:my-1 prose-ol:my-1'
+          : '[&>*]:mb-4 [&_p]:mb-4 [&_p]:block'
+        }
+      `}
+    >
       <ReactMarkdown
         components={{
           code({ className, children: codeChildren, ...props }) {
