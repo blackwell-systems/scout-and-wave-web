@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { startImplChat, subscribeChatEvents } from '../api'
 
 export interface ChatMessage {
@@ -12,20 +12,34 @@ export interface ChatState {
   error?: string
 }
 
+// Global chat history storage (persists per IMPL across component unmount/remount)
+const chatHistoryMap = new Map<string, ChatState>()
+
 export function useChatWithClaude(slug: string): {
   state: ChatState
   sendMessage: (text: string) => Promise<void>
   clearHistory: () => void
 } {
-  const [state, setState] = useState<ChatState>({
-    messages: [],
-    running: false,
-  })
+  // Load existing history for this slug, or start fresh
+  const [state, setState] = useState<ChatState>(() =>
+    chatHistoryMap.get(slug) || { messages: [], running: false }
+  )
 
-  // Reset chat history when slug changes (switching to a different IMPL)
+  const prevSlugRef = useRef(slug)
+
+  // When slug changes, save current state and load the new slug's history
   useEffect(() => {
-    setState({ messages: [], running: false })
-  }, [slug])
+    if (prevSlugRef.current !== slug) {
+      // Save the previous slug's state before switching
+      chatHistoryMap.set(prevSlugRef.current, state)
+
+      // Load the new slug's history (or start fresh)
+      const newState = chatHistoryMap.get(slug) || { messages: [], running: false }
+      setState(newState)
+
+      prevSlugRef.current = slug
+    }
+  }, [slug, state])
 
   const sendMessage = useCallback(async (text: string) => {
     setState(prev => ({
