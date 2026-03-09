@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useChatWithClaude } from '../hooks/useChatWithClaude'
+import MarkdownContent from './review/MarkdownContent'
 
 interface ChatPanelProps {
   slug: string
@@ -71,17 +72,19 @@ export default function ChatPanel({ slug, onClose }: ChatPanelProps): JSX.Elemen
               key={idx}
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
-              <div
-                className={
-                  msg.role === 'user'
-                    ? 'bg-blue-600 text-white rounded-lg px-3 py-2 max-w-[75%] text-sm whitespace-pre-wrap'
-                    : 'bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-2 max-w-[85%] text-sm whitespace-pre-wrap'
-                }
-              >
-                {msg.content || (msg.role === 'assistant' && state.running ? (
-                  <span className="animate-pulse text-gray-400">thinking...</span>
-                ) : null)}
-              </div>
+              {msg.role === 'user' ? (
+                <div className="bg-blue-600 text-white rounded-lg px-3 py-2 max-w-[75%] text-sm whitespace-pre-wrap">
+                  {msg.content}
+                </div>
+              ) : (
+                <div className="bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-2 max-w-[85%]">
+                  {msg.content ? (
+                    <MarkdownContent>{msg.content}</MarkdownContent>
+                  ) : state.running ? (
+                    <span className="animate-pulse text-gray-400 text-sm">thinking...</span>
+                  ) : null}
+                </div>
+              )}
             </div>
           ))}
 
