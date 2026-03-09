@@ -115,7 +115,16 @@ func (s *Server) runImplChatAgent(ctx context.Context, runID, slug, message stri
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
 
-	log.Printf("[chat] Launching RunChat: runID=%s implPath=%s repoPath=%s historyLen=%d", runID, implPath, s.cfg.RepoPath, len(engineHistory))
+	// Read saw.config.json fresh so model changes in Settings take effect immediately.
+	chatModel := ""
+	if cfgData, err := os.ReadFile(filepath.Join(s.cfg.RepoPath, "saw.config.json")); err == nil {
+		var sawCfg SAWConfig
+		if json.Unmarshal(cfgData, &sawCfg) == nil {
+			chatModel = sawCfg.Agent.ChatModel
+		}
+	}
+
+	log.Printf("[chat] Launching RunChat: runID=%s implPath=%s repoPath=%s historyLen=%d chatModel=%q", runID, implPath, s.cfg.RepoPath, len(engineHistory), chatModel)
 
 	err := engine.RunChat(ctx, engine.RunChatOpts{
 		IMPLPath:    implPath,
@@ -123,6 +132,7 @@ func (s *Server) runImplChatAgent(ctx context.Context, runID, slug, message stri
 		SAWRepoPath: sawRepo,
 		History:     engineHistory,
 		Message:     message,
+		ChatModel:   chatModel,
 	}, onChunk)
 
 	if err != nil {

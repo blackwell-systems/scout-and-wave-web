@@ -26,7 +26,7 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
   const [config, setConfig] = useState<SAWConfig>({
     repos: [],
     repo: { path: '' },
-    agent: { scout_model: 'claude-sonnet-4-6', wave_model: 'claude-sonnet-4-6' },
+    agent: { scout_model: 'claude-sonnet-4-6', wave_model: 'claude-sonnet-4-6', chat_model: 'claude-sonnet-4-6' },
     quality: { require_tests: false, require_lint: false, block_on_failure: false },
     appearance: { theme: 'system' },
   })
@@ -208,6 +208,19 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
             list="model-options"
             value={config.agent.wave_model}
             onChange={e => setConfig(c => ({ ...c, agent: { ...c.agent, wave_model: e.target.value } }))}
+            className="text-sm px-3 py-1.5 rounded-md border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            placeholder="e.g. claude-sonnet-4-6 or ollama:qwen2.5-coder:32b"
+          />
+        </div>
+        <div className="flex flex-col gap-1.5">
+          <label className="text-xs text-muted-foreground" htmlFor="settings-chat-model">
+            Chat model
+          </label>
+          <input
+            id="settings-chat-model"
+            list="model-options"
+            value={config.agent.chat_model ?? ''}
+            onChange={e => setConfig(c => ({ ...c, agent: { ...c.agent, chat_model: e.target.value } }))}
             className="text-sm px-3 py-1.5 rounded-md border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
             placeholder="e.g. claude-sonnet-4-6 or ollama:qwen2.5-coder:32b"
           />

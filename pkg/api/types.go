@@ -149,6 +149,7 @@ type SAWConfig struct {
 type AgentConfig struct {
 	ScoutModel string `json:"scout_model"`
 	WaveModel  string `json:"wave_model"`
+	ChatModel  string `json:"chat_model"`
 }
 
 type QualityConfig struct {

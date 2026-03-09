@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.26.0] - 2026-03-09
+
+### Added
+
+- **Configurable chat model with live swap** (`pkg/api/types.go`, `pkg/api/chat_handler.go`, `web/src/components/SettingsScreen.tsx`, `web/src/types.ts`) — `agent.chat_model` added to `saw.config.json`. The chat handler reads it fresh on every request (same pattern as scout), so changing it in Settings takes effect on the next chat without a restart. Supports all provider prefixes: `ollama:`, `lmstudio:`, `openai:`, `anthropic:`, `cli:`, or a plain model name. Empty value falls back to `ANTHROPIC_API_KEY` → CLI heuristic.
+- **Chat model field in Settings UI** — new "Chat model" input below Wave model, with the same datalist autocomplete.
+
+---
+
 ## [0.25.0] - 2026-03-09
 
 ### Added
