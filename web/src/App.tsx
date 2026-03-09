@@ -32,7 +32,7 @@ export default function App() {
     setActiveRepoIndex(index)
   }
 
-  const { leftWidthPx, dividerProps } = useResizableDivider({ initialWidthPx: Math.round(window.innerWidth * 0.15), minWidthPx: 140, maxFraction: 0.15 })
+  const { leftWidthPx, dividerProps } = useResizableDivider({ initialWidthPx: Math.round(window.innerWidth * 0.15) - 20, minWidthPx: 140, maxFraction: 0.15 })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
@@ -186,7 +186,7 @@ export default function App() {
         <div className="flex items-stretch">
           <ThemePicker />
           <DarkModeToggle />
-          <button onClick={() => setShowSettings(s => !s)} title="Settings" className="flex items-center justify-center w-12 border-l hover:opacity-70">
+          <button onClick={() => setShowSettings(s => !s)} title="Settings" className="flex items-center justify-center px-4 border-l border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
             <Settings size={16} />
           </button>
         </div>
@@ -194,17 +194,13 @@ export default function App() {
       <div className="flex flex-1 min-h-0">
         {/* Left sidebar */}
         {sidebarCollapsed ? (
-          <div
-            className="flex flex-col items-center shrink-0 border-r w-9 bg-muted cursor-pointer"
-            onDoubleClick={() => setSidebarCollapsed(false)}
-            title="Double-click to expand"
-          >
+          <div className="relative shrink-0 border-r w-0 bg-muted">
             <button
               onClick={() => setSidebarCollapsed(false)}
               title="Expand sidebar"
-              className="mt-2 p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+              className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 flex items-center justify-center w-5 h-8 rounded-full border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shadow-sm"
             >
-              <ChevronRight size={16} />
+              <ChevronRight size={12} />
             </button>
           </div>
         ) : (
@@ -213,9 +209,9 @@ export default function App() {
               <button
                 onClick={() => setSidebarCollapsed(true)}
                 title="Collapse sidebar"
-                className="absolute top-2 right-2 z-10 p-0.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 flex items-center justify-center w-5 h-8 rounded-full border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shadow-sm"
               >
-                <ChevronLeft size={14} />
+                <ChevronLeft size={12} />
               </button>
               <ImplList
                 entries={entries}

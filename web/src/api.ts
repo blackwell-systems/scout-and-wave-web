@@ -181,6 +181,18 @@ export async function browse(path?: string): Promise<BrowseResult> {
   return r.json()
 }
 
+/** Opens the OS-native folder picker dialog (macOS only).
+ *  Returns the selected path, null if cancelled, or throws if unsupported. */
+export async function browseNative(prompt?: string): Promise<string | null> {
+  const url = prompt ? `/api/browse/native?prompt=${encodeURIComponent(prompt)}` : `/api/browse/native`
+  const r = await fetch(url)
+  if (r.status === 204) return null        // user cancelled
+  if (r.status === 501) throw new Error('unsupported')  // non-macOS
+  if (!r.ok) throw new Error(await r.text())
+  const data = await r.json() as { path: string }
+  return data.path
+}
+
 export async function saveConfig(config: SAWConfig): Promise<void> {
   const r = await fetch(`/api/config`, {
     method: 'POST',

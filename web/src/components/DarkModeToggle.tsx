@@ -7,7 +7,7 @@ export default function DarkModeToggle(): JSX.Element {
     <button
       onClick={toggle}
       aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-      className="p-2 rounded-lg text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+      className="flex items-center justify-center px-4 border-l border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
     >
       {isDark ? (
         /* Sun icon — shown in dark mode to switch to light */

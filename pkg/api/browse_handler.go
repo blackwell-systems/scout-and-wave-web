@@ -18,7 +18,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 )
@@ -32,6 +34,30 @@ type browseResponse struct {
 	Path    string        `json:"path"`
 	Parent  string        `json:"parent"`
 	Entries []browseEntry `json:"entries"`
+}
+
+// handleBrowseNative opens the OS-native folder picker dialog and returns the
+// selected path as JSON {"path": "/abs/path"}. macOS only (uses osascript).
+// Returns 204 No Content if the user cancels or the platform is unsupported.
+func (s *Server) handleBrowseNative(w http.ResponseWriter, r *http.Request) {
+	if runtime.GOOS != "darwin" {
+		http.Error(w, "native picker not supported on this platform", http.StatusNotImplemented)
+		return
+	}
+	prompt := r.URL.Query().Get("prompt")
+	if prompt == "" {
+		prompt = "Select a repository folder"
+	}
+	script := `tell application "Finder" to POSIX path of (choose folder with prompt "` + prompt + `")`
+	out, err := exec.Command("osascript", "-e", script).Output()
+	if err != nil {
+		// User cancelled — osascript exits non-zero on cancel
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	path := filepath.Clean(strings.TrimSpace(string(out)))
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"path": path})
 }
 
 func (s *Server) handleBrowse(w http.ResponseWriter, r *http.Request) {

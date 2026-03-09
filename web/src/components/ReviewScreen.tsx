@@ -2,7 +2,6 @@ import { useState, useEffect, useRef } from 'react'
 import { IMPLDocResponse } from '../types'
 import ActionButtons from './ActionButtons'
 import RevisePanel from './RevisePanel'
-import { Button } from './ui/button'
 import OverviewPanel from './review/OverviewPanel'
 import FileOwnershipPanel from './review/FileOwnershipPanel'
 import WaveStructurePanel from './review/WaveStructurePanel'
@@ -132,8 +131,8 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
 
   return (
     <div className="h-full bg-background flex overflow-hidden">
-      <div className={`${showChat ? 'flex-1' : 'w-full'} overflow-y-auto pb-24`}>
-      <div className="max-w-[1600px] mx-auto px-4 py-8 pb-4">
+      <div className={`${showChat ? 'flex-1' : 'w-full'} overflow-y-auto`}>
+      <div className="max-w-[1800px] mx-auto px-4 py-8 pb-4">
         {/* Header */}
         <div className="mb-6">
           <h1 className="text-2xl font-bold">
@@ -161,19 +160,17 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
               >
                 <div className="flex flex-wrap gap-2">
                   {panels.map(panel => (
-                    <Button
+                    <button
                       key={panel.key}
                       onClick={() => togglePanel(panel.key)}
-                      variant="outline"
-                      size="sm"
-                      className={`text-xs ${
+                      className={`flex items-center justify-center text-sm font-medium px-4 h-10 transition-colors border ${
                         activePanels.includes(panel.key)
-                          ? 'bg-primary/10 border-primary/30 hover:bg-primary/15'
-                          : 'hover:bg-accent'
+                          ? 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/15'
+                          : 'border-border bg-background text-foreground hover:bg-muted'
                       }`}
                     >
                       {panel.label}
-                    </Button>
+                    </button>
                   ))}
                 </div>
               </div>
@@ -237,6 +234,13 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
           </>
         )}
       </div>
+
+      {/* Sticky footer — inside scroll container so it respects center column width */}
+      {!isNotSuitable && (
+        <div className="sticky bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur-sm flex justify-center">
+          <ActionButtons onApprove={onApprove} onReject={onReject} onRequestChanges={() => setShowRevise(true)} onAskClaude={() => setShowChat(v => !v)} />
+        </div>
+      )}
       </div>
 
       {/* Chat Panel — right sidebar */}
@@ -260,14 +264,6 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
         </div>
       )}
 
-      {/* Sticky footer with action buttons */}
-      {!isNotSuitable && (
-        <div className="fixed bottom-0 left-0 z-50 border-t border-border" style={{ right: showChat ? `${chatWidthPx}px` : 0 }}>
-          <div className="bg-background/95 backdrop-blur-sm flex justify-center">
-            <ActionButtons onApprove={onApprove} onReject={onReject} onRequestChanges={() => setShowRevise(true)} onAskClaude={() => setShowChat(v => !v)} />
-          </div>
-        </div>
-      )}
     </div>
   )
 }

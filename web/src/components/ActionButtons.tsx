@@ -9,7 +9,7 @@ const btnBase = "flex items-center justify-center text-sm font-medium px-6 trans
 
 export default function ActionButtons({ onApprove, onReject, onRequestChanges, onAskClaude }: ActionButtonsProps): JSX.Element {
   return (
-    <div className="flex items-stretch h-14">
+    <div className="flex items-stretch h-14 border-l border-border">
       <button onClick={onApprove} className={`${btnBase} bg-green-50/60 hover:bg-green-100/80 text-green-700 border-green-200 dark:bg-green-950/40 dark:hover:bg-green-900/60 dark:text-green-400 dark:border-green-800`}>
         Approve
       </button>
@@ -20,7 +20,7 @@ export default function ActionButtons({ onApprove, onReject, onRequestChanges, o
         Reject
       </button>
       {onAskClaude && (
-        <button onClick={onAskClaude} className={`${btnBase} ml-auto bg-violet-50/60 hover:bg-violet-100/80 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:hover:bg-violet-900/60 dark:text-violet-400 dark:border-violet-800`}>
+        <button onClick={onAskClaude} className={`${btnBase} bg-violet-50/60 hover:bg-violet-100/80 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:hover:bg-violet-900/60 dark:text-violet-400 dark:border-violet-800`}>
           Ask Claude
         </button>
       )}

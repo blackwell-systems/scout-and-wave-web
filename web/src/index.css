@@ -4,41 +4,63 @@
 
 @layer base {
   :root {
+    /* Default light theme: Selenized White */
     --background: 0 0% 100%;
-    --foreground: 0 0% 3.9%;
-    --muted: 0 0% 96.1%;
-    --muted-foreground: 0 0% 45.1%;
-    --border: 0 0% 89.8%;
-    --input: 0 0% 89.8%;
-    --ring: 0 0% 3.9%;
-    --primary: 0 0% 9%;
-    --primary-foreground: 0 0% 98%;
-    --secondary: 0 0% 96.1%;
-    --secondary-foreground: 0 0% 9%;
-    --accent: 0 0% 96.1%;
-    --accent-foreground: 0 0% 9%;
+    --foreground: 0 0% 28%;
+    --muted: 0 0% 92%;
+    --muted-foreground: 0 0% 53%;
+    --border: 0 0% 80%;
+    --input: 0 0% 92%;
+    --ring: 216 100% 41%;
+    --primary: 216 100% 41%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 80%;
+    --secondary-foreground: 0 0% 28%;
+    --accent: 0 0% 80%;
+    --accent-foreground: 0 0% 28%;
+    --destructive: 0 100% 37%;
+    --destructive-foreground: 0 0% 100%;
+    --card: 0 0% 92%;
+    --card-foreground: 0 0% 28%;
+    --popover: 0 0% 92%;
+    --popover-foreground: 0 0% 28%;
     --radius: 0.5rem;
   }
 
   .dark {
-    --background: 0 0% 3.9%;
-    --foreground: 0 0% 98%;
-    --muted: 0 0% 14.9%;
-    --muted-foreground: 0 0% 63.9%;
-    --border: 0 0% 14.9%;
-    --input: 0 0% 14.9%;
-    --ring: 0 0% 83.1%;
-    --primary: 0 0% 98%;
-    --primary-foreground: 0 0% 9%;
-    --secondary: 0 0% 14.9%;
-    --secondary-foreground: 0 0% 98%;
-    --accent: 0 0% 14.9%;
-    --accent-foreground: 0 0% 98%;
+    /* Default dark theme: Da One Gray */
+    --background: 0 0% 9%;
+    --foreground: 0 0% 100%;
+    --muted: 0 0% 16%;
+    --muted-foreground: 0 0% 78%;
+    --border: 0 0% 35%;
+    --input: 0 0% 16%;
+    --ring: 209 100% 71%;
+    --primary: 209 100% 71%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 35%;
+    --secondary-foreground: 0 0% 100%;
+    --accent: 0 0% 35%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 355 93% 73%;
+    --destructive-foreground: 0 0% 100%;
+    --card: 0 0% 16%;
+    --card-foreground: 0 0% 100%;
+    --popover: 0 0% 16%;
+    --popover-foreground: 0 0% 100%;
   }
 
 }
 
 /* Theme vars are injected at runtime from src/lib/themes.ts via injectThemeStyles() in main.tsx */
+
+/* Subtle dot-grid texture — light: dark dots at 3% opacity; dark: white dots at 4% opacity */
+body {
+  background-image: url("data:image/svg+xml,%3Csvg width='20' height='20' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='1' cy='1' r='1' fill='black' fill-opacity='0.03'/%3E%3C/svg%3E");
+}
+.dark body {
+  background-image: url("data:image/svg+xml,%3Csvg width='20' height='20' xmlns='http://www.w3.org/2000/svg'%3E%3Ccircle cx='1' cy='1' r='1' fill='white' fill-opacity='0.04'/%3E%3C/svg%3E");
+}
 
 @layer base {
   * {
