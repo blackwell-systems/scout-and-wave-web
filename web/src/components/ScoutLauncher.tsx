@@ -40,10 +40,23 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
   })
   const [running, setRunning] = useState(false)
   const [output, setOutput] = useState('')
+  const [displayed, setDisplayed] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [completedSlug, setCompletedSlug] = useState<string | null>(null)
   const [msgIdx, setMsgIdx] = useState(0)
   const runIdRef = useRef<string | null>(null)
+
+  // Typewriter effect: advance `displayed` toward `output` one rAF at a time.
+  // Step size scales with backlog so it catches up fast but feels smooth at low lag.
+  useEffect(() => {
+    if (displayed.length >= output.length) return
+    const id = requestAnimationFrame(() => {
+      const backlog = output.length - displayed.length
+      const step = Math.min(backlog, Math.max(4, Math.floor(backlog / 6)))
+      setDisplayed(output.slice(0, displayed.length + step))
+    })
+    return () => cancelAnimationFrame(id)
+  }, [output, displayed])
 
   // Persist contextData to sessionStorage whenever it changes
   useEffect(() => {
@@ -72,7 +85,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight
     }
-  }, [output])
+  }, [displayed])
 
   async function handleRun() {
     if (!feature.trim() || running) return
@@ -82,6 +95,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
     }
     setRunning(true)
     setOutput('')
+    setDisplayed('')
     setError(null)
 
     let runId: string
@@ -384,7 +398,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
               ref={outputRef as React.RefObject<HTMLDivElement>}
               className="p-4 overflow-y-auto max-h-[50vh] scout-output"
             >
-              {output ? (
+              {displayed ? (
                 <ReactMarkdown
                   components={{
                     h1: ({ children }) => <h1 className="text-base font-bold text-zinc-100 mt-4 mb-2 first:mt-0">{children}</h1>,
@@ -411,7 +425,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
                     blockquote: ({ children }) => <blockquote className="border-l-2 border-zinc-600 pl-3 text-zinc-400 italic my-2">{children}</blockquote>,
                   }}
                 >
-                  {output}
+                  {displayed}
                 </ReactMarkdown>
               ) : (
                 <p className="text-xs text-zinc-500 italic animate-pulse">{WORKING_MESSAGES[msgIdx]}</p>
