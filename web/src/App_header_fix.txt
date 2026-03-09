@@ -1,0 +1,36 @@
+        <div className="flex items-stretch">
+          {(['scout', 'wave', 'chat'] as const).map(field => {
+            const model = field === 'scout' ? scoutModel : field === 'wave' ? waveModel : chatModel
+            const label = field.charAt(0).toUpperCase() + field.slice(1)
+            return (
+              <div key={field} className="relative flex items-stretch border-r border-border">
+                <button
+                  title={`${label} model: ${model}\nClick to configure`}
+                  onClick={() => setPickerOpen(field)}
+                  className="flex items-center gap-2 px-4 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors group"
+                >
+                  <span className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground uppercase tracking-wider">{field}</span>
+                  <span className="text-sm font-mono truncate max-w-[140px]">{model}</span>
+                </button>
+                {pickerOpen === field && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setPickerOpen(null)}
+                    />
+                    <div className="absolute top-full left-0 mt-2 z-50 bg-popover/95 backdrop-blur-xl border border-border rounded-lg shadow-2xl p-4 w-[480px] animate-in fade-in slide-in-from-top-2 duration-200">
+                      <ModelPicker
+                        id={`header-${field}-model`}
+                        label={`${label} Model`}
+                        value={model}
+                        onChange={value => {
+                          saveModel(field, value)
+                          setPickerOpen(null)
+                        }}
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+            )
+          })}
