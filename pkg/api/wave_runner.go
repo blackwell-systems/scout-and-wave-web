@@ -2,8 +2,11 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -65,6 +68,15 @@ func runWaveLoop(
 ) {
 	publish("run_started", map[string]string{"slug": slug, "impl_path": implPath})
 
+	// Read saw.config.json to pick up the configured wave model.
+	waveModel := ""
+	if cfgData, err := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); err == nil {
+		var sawCfg SAWConfig
+		if json.Unmarshal(cfgData, &sawCfg) == nil {
+			waveModel = sawCfg.Agent.WaveModel
+		}
+	}
+
 	// Parse the IMPL doc via the engine to get wave structure.
 	doc, err := engine.ParseIMPLDoc(implPath)
 	if err != nil {
@@ -100,9 +112,10 @@ func runWaveLoop(
 		waveNum := wave.Number
 
 		opts := engine.RunWaveOpts{
-			IMPLPath: implPath,
-			RepoPath: repoPath,
-			Slug:     slug,
+			IMPLPath:  implPath,
+			RepoPath:  repoPath,
+			Slug:      slug,
+			WaveModel: waveModel,
 		}
 
 		enginePublisher := func(ev engine.Event) {

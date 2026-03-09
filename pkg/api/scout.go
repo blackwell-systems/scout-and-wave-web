@@ -147,6 +147,15 @@ func (s *Server) runScoutAgent(ctx context.Context, runID, feature, repoOverride
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
 
+	// Read saw.config.json to pick up the configured scout model.
+	scoutModel := ""
+	if cfgData, err := os.ReadFile(filepath.Join(repoRoot, "saw.config.json")); err == nil {
+		var sawCfg SAWConfig
+		if json.Unmarshal(cfgData, &sawCfg) == nil {
+			scoutModel = sawCfg.Agent.ScoutModel
+		}
+	}
+
 	onChunk := func(chunk string) {
 		publish("scout_output", map[string]string{
 			"run_id": runID,
@@ -159,6 +168,7 @@ func (s *Server) runScoutAgent(ctx context.Context, runID, feature, repoOverride
 		RepoPath:    repoRoot,
 		SAWRepoPath: sawRepo,
 		IMPLOutPath: implOut,
+		ScoutModel:  scoutModel,
 	}, onChunk)
 
 	if execErr != nil {
