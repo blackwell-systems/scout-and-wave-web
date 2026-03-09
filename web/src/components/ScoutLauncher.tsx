@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { ScoutContext, RepoEntry } from '../types'
 
 const WORKING_MESSAGES = [
@@ -370,7 +371,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
           </div>
         )}
 
-        {/* Live output — terminal-style, intentionally dark regardless of theme */}
+        {/* Live output — rendered markdown, intentionally dark regardless of theme */}
         {(output || running) && (
           <div className="bg-zinc-950 border border-zinc-800 rounded-lg shadow-sm">
             <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800">
@@ -379,12 +380,43 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
                 <span className="text-xs text-blue-400 animate-pulse">running</span>
               )}
             </div>
-            <pre
-              ref={outputRef}
-              className="p-4 text-xs text-zinc-200 font-mono whitespace-pre-wrap overflow-y-auto max-h-[50vh] leading-relaxed"
+            <div
+              ref={outputRef as React.RefObject<HTMLDivElement>}
+              className="p-4 overflow-y-auto max-h-[50vh] scout-output"
             >
-              {output || (running ? WORKING_MESSAGES[msgIdx] : ' ')}
-            </pre>
+              {output ? (
+                <ReactMarkdown
+                  components={{
+                    h1: ({ children }) => <h1 className="text-base font-bold text-zinc-100 mt-4 mb-2 first:mt-0">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-sm font-bold text-blue-400 mt-4 mb-1.5 first:mt-0">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-xs font-semibold text-zinc-300 mt-3 mb-1 first:mt-0">{children}</h3>,
+                    p: ({ children }) => <p className="text-xs text-zinc-300 leading-relaxed mb-2">{children}</p>,
+                    pre: ({ children }) => <div className="my-2">{children}</div>,
+                    code: ({ className, children, ...props }) => {
+                      const isBlock = Boolean(className?.startsWith('language-'))
+                      return isBlock
+                        ? <code className="block text-xs font-mono text-green-300 bg-zinc-900 rounded p-3 overflow-x-auto whitespace-pre" {...props}>{children}</code>
+                        : <code className="text-xs font-mono text-amber-300 bg-zinc-800 px-1 rounded" {...props}>{children}</code>
+                    },
+                    ul: ({ children }) => <ul className="text-xs text-zinc-300 list-disc list-inside mb-2 space-y-0.5">{children}</ul>,
+                    ol: ({ children }) => <ol className="text-xs text-zinc-300 list-decimal list-inside mb-2 space-y-0.5">{children}</ol>,
+                    li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                    strong: ({ children }) => <strong className="font-semibold text-zinc-100">{children}</strong>,
+                    em: ({ children }) => <em className="text-zinc-400 italic">{children}</em>,
+                    hr: () => <hr className="border-zinc-700 my-3" />,
+                    table: ({ children }) => <div className="overflow-x-auto mb-3"><table className="text-xs text-zinc-300 border-collapse w-full">{children}</table></div>,
+                    thead: ({ children }) => <thead className="text-zinc-400 border-b border-zinc-700">{children}</thead>,
+                    th: ({ children }) => <th className="text-left px-2 py-1 font-medium">{children}</th>,
+                    td: ({ children }) => <td className="px-2 py-1 border-t border-zinc-800">{children}</td>,
+                    blockquote: ({ children }) => <blockquote className="border-l-2 border-zinc-600 pl-3 text-zinc-400 italic my-2">{children}</blockquote>,
+                  }}
+                >
+                  {output}
+                </ReactMarkdown>
+              ) : (
+                <p className="text-xs text-zinc-500 italic animate-pulse">{WORKING_MESSAGES[msgIdx]}</p>
+              )}
+            </div>
           </div>
         )}
       </div>
