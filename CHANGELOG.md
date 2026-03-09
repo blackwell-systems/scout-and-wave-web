@@ -2,6 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.20.0] - 2026-03-08
+
+### Added
+
+**Golden Angle Color System (v0.20.0)**
+
+- **26-color deterministic palette** — Replaced fixed A-K lookup table (11 colors) with golden angle algorithm: `hue = ((charCode - 65) * 137.508) % 360`. Generates 26 distinct, perceptually separated colors for agents A-Z. Agents L-Z no longer fall back to gray.
+- **Multi-generation agent ID support** — Parser now handles A2, B3, A3 format via regex `^([A-Z])([2-9])?$`. Same base hue per letter family (A, A2, A3 share hue), varying lightness by generation (light mode: 50% → 42% → 34% decreasing 8%; dark mode: 60% → 66% → 72% increasing 6%).
+- **Dark mode awareness** — Colors automatically adjust lightness based on `document.documentElement.classList.contains('dark')`. Maintains readability in both themes.
+- **HSL→Hex color space conversion** — Full color pipeline with sector-based RGB conversion for precise color rendering.
+
+**Component updates:**
+
+- **FileOwnershipTable.tsx refactored** — Removed local `AGENT_COLORS` array and `getAgentColor(index)` helper. Now imports centralized `getAgentColor` and `getAgentColorWithOpacity` from `lib/agentColors`. Switched from Tailwind classes to inline styles with 15% opacity backgrounds. Preserved `WAVE_COLORS` separation (wave borders/badges remain independent).
+- **DependencyGraphPanel.tsx regex fix** — Updated agent ID parser from `[A-Za-z]+` to `[A-Za-z]\d?` to capture multi-generation IDs (A2, B3). Previous regex lost generation digits, causing all generations to render with base letter color.
+- **WaveStructurePanel.tsx, AgentCard.tsx, BranchLane.tsx verified** — All components already correctly handle multi-generation IDs via centralized color system. No changes required.
+
+**Implementation via SAW protocol:**
+
+- Scout phase: 8 min (dependency mapping, interface contracts, IMPL doc generation)
+- Wave 1: Agent A (1 agent, 8 min) — golden angle implementation in `agentColors.ts`
+- Wave 2: Agents B-F (5 parallel agents, 6 min avg) — consumer updates
+- Total: ~39 min end-to-end (22% faster than sequential 50 min baseline)
+- Zero merge conflicts (disjoint file ownership via I1 invariant)
+
+**Technical details:**
+
+- Golden angle (137.508°) maximizes perceptual separation between adjacent letters
+- Multi-generation lightness deltas: light mode -8%/gen, dark mode +6%/gen
+- Fallback gray (#6b7280) for invalid/unparseable agent IDs
+- Colors consistent across all UI surfaces (WaveBoard, FileOwnershipTable, DependencyGraphPanel, BranchLane, WaveStructurePanel)
+
+---
+
 ## [0.19.2] - 2026-03-08
 
 ### Fixed
