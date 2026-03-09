@@ -20,6 +20,8 @@ interface ScoutLauncherProps {
 
 const SESSION_KEY = 'saw-scout-context'
 
+const inputCls = "w-full bg-muted border border-border rounded px-3 py-1.5 text-sm text-foreground placeholder:text-muted-foreground outline-none focus:ring-1 focus:ring-ring disabled:opacity-50"
+
 export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeRepo }: ScoutLauncherProps): JSX.Element {
   const [feature, setFeature] = useState('')
   const [repo, setRepo] = useState(() => activeRepo?.path ?? '')
@@ -173,21 +175,21 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
   }
 
   return (
-    <div className="bg-gray-50 dark:bg-gray-950 p-4 flex flex-col">
+    <div className="bg-background p-4 flex flex-col">
       <div className="w-full space-y-4">
 
         {/* Header */}
         <div>
-          <h1 className="text-xl font-bold text-gray-800 dark:text-gray-100">New Plan</h1>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+          <h1 className="text-xl font-bold text-foreground">New Plan</h1>
+          <p className="text-sm text-muted-foreground mt-1">
             Describe the feature and Scout will produce an implementation plan.
           </p>
         </div>
 
         {/* Feature input */}
-        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm space-y-3">
+        <div className="bg-card border border-border rounded-lg p-4 shadow-sm space-y-3">
           <textarea
-            className="w-full bg-transparent text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 resize-none outline-none min-h-[80px]"
+            className="w-full bg-transparent text-sm text-foreground placeholder:text-muted-foreground resize-none outline-none min-h-[80px] disabled:opacity-50"
             placeholder="Describe the feature to build..."
             value={feature}
             onChange={e => setFeature(e.target.value)}
@@ -200,7 +202,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
             {repos && repos.length > 0 ? (
               <div className="space-y-2">
                 <select
-                  className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100 outline-none focus:ring-1 focus:ring-blue-500"
+                  className={inputCls}
                   value={dropdownValue}
                   onChange={e => {
                     const val = e.target.value
@@ -229,7 +231,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
                 {showRepo && (
                   <input
                     type="text"
-                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:ring-1 focus:ring-blue-500"
+                    className={inputCls}
                     placeholder="/path/to/repo"
                     value={repo}
                     onChange={e => setRepo(e.target.value)}
@@ -241,7 +243,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
               <>
                 <button
                   type="button"
-                  className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
                   onClick={() => setShowRepo(v => !v)}
                 >
                   {showRepo ? '- Hide repo path' : '+ Repo path (optional)'}
@@ -249,7 +251,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
                 {showRepo && (
                   <input
                     type="text"
-                    className="mt-2 w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:ring-1 focus:ring-blue-500"
+                    className={`mt-2 ${inputCls}`}
                     placeholder="/path/to/repo"
                     value={repo}
                     onChange={e => setRepo(e.target.value)}
@@ -264,7 +266,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
           <div>
             <button
               type="button"
-              className="text-xs text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors"
               onClick={() => setShowContext(v => !v)}
             >
               {showContext ? '- Hide context' : '+ Add context (optional)'}
@@ -273,11 +275,11 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
               <div className="mt-2 space-y-3">
                 {/* File paths */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">
                     Relevant file paths
                   </label>
                   <textarea
-                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:ring-1 focus:ring-blue-500 resize-none min-h-[60px]"
+                    className={`${inputCls} resize-none min-h-[60px]`}
                     placeholder="Paste file paths, one per line"
                     defaultValue={contextData.files.join('\n')}
                     onBlur={e =>
@@ -292,11 +294,11 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
 
                 {/* Notes */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">
                     Notes
                   </label>
                   <textarea
-                    className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5 text-sm text-gray-800 dark:text-gray-100 placeholder-gray-400 dark:placeholder-gray-500 outline-none focus:ring-1 focus:ring-blue-500 resize-none min-h-[60px]"
+                    className={`${inputCls} resize-none min-h-[60px]`}
                     placeholder="Additional notes or constraints for the Scout agent"
                     value={contextData.notes}
                     onChange={e => setContextData(d => ({ ...d, notes: e.target.value }))}
@@ -306,7 +308,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
 
                 {/* Constraint checkboxes */}
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 dark:text-gray-400 mb-1">
+                  <label className="block text-xs font-medium text-muted-foreground mb-1">
                     Constraints
                   </label>
                   <div className="space-y-1">
@@ -314,12 +316,12 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
                       <label key={label} className="flex items-center gap-2 cursor-pointer">
                         <input
                           type="checkbox"
-                          className="rounded border-gray-300 dark:border-gray-600 text-blue-600 focus:ring-blue-500"
+                          className="rounded border-border text-primary focus:ring-ring"
                           checked={contextData.constraints.includes(label)}
                           onChange={() => toggleConstraint(label)}
                           disabled={running}
                         />
-                        <span className="text-xs text-gray-700 dark:text-gray-300">{label}</span>
+                        <span className="text-xs text-foreground">{label}</span>
                       </label>
                     ))}
                   </div>
@@ -329,11 +331,11 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
           </div>
 
           {/* Run / Cancel buttons */}
-          <div className="flex justify-end gap-2">
+          <div className="flex items-stretch h-10 justify-end border-t border-border -mx-4 -mb-4 mt-2">
             {running && (
               <button
-                onClick={() => { if (runIdRef.current) cancelScout(runIdRef.current); }}
-                className="px-4 py-1.5 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                onClick={() => { if (runIdRef.current) cancelScout(runIdRef.current) }}
+                className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-l bg-muted/60 hover:bg-muted text-muted-foreground border-border"
               >
                 Cancel
               </button>
@@ -341,16 +343,16 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
             <button
               onClick={handleRun}
               disabled={running || feature.trim().length < 15}
-              className="px-4 py-1.5 text-sm font-medium rounded-md bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 dark:disabled:bg-blue-800 text-white transition-colors disabled:cursor-not-allowed"
+              className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-l bg-blue-50/60 hover:bg-blue-100/80 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-400 dark:border-blue-800 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              {running ? 'Running...' : 'Run Scout'}
+              {running ? 'Running…' : 'Run Scout'}
             </button>
           </div>
         </div>
 
         {/* Error banner */}
         {error && (
-          <div className="bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg px-4 py-3 text-red-800 dark:text-red-400 text-sm">
+          <div className="bg-destructive/10 border border-destructive/30 rounded-lg px-4 py-3 text-destructive text-sm">
             <span className="font-medium">Error:</span> {error}
           </div>
         )}
@@ -368,18 +370,18 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
           </div>
         )}
 
-        {/* Live output */}
+        {/* Live output — terminal-style, intentionally dark regardless of theme */}
         {(output || running) && (
-          <div className="bg-gray-900 dark:bg-gray-950 border border-gray-700 dark:border-gray-800 rounded-lg shadow-sm">
-            <div className="flex items-center gap-2 px-4 py-2 border-b border-gray-700 dark:border-gray-800">
-              <span className="text-xs font-medium text-gray-400">Scout output</span>
+          <div className="bg-zinc-950 border border-zinc-800 rounded-lg shadow-sm">
+            <div className="flex items-center gap-2 px-4 py-2 border-b border-zinc-800">
+              <span className="text-xs font-medium text-zinc-400">Scout output</span>
               {running && (
                 <span className="text-xs text-blue-400 animate-pulse">running</span>
               )}
             </div>
             <pre
               ref={outputRef}
-              className="p-4 text-xs text-gray-200 font-mono whitespace-pre-wrap overflow-y-auto max-h-[50vh] leading-relaxed"
+              className="p-4 text-xs text-zinc-200 font-mono whitespace-pre-wrap overflow-y-auto max-h-[50vh] leading-relaxed"
             >
               {output || (running ? WORKING_MESSAGES[msgIdx] : ' ')}
             </pre>

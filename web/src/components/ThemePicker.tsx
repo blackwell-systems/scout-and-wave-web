@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 
-export type ThemeId = 'default' | 'gruvbox-dark' | 'darcula' | 'catppuccin-mocha' | 'nord'
+export type ThemeId = 'default' | 'gruvbox-dark' | 'darcula' | 'catppuccin-mocha' | 'nord' | 'tokyo-night' | 'dracula' | 'solarized-dark' | 'one-dark'
 
 const THEMES: { id: ThemeId; label: string }[] = [
   { id: 'default', label: 'Default' },
@@ -8,10 +8,14 @@ const THEMES: { id: ThemeId; label: string }[] = [
   { id: 'darcula', label: 'Darcula' },
   { id: 'catppuccin-mocha', label: 'Catppuccin' },
   { id: 'nord', label: 'Nord' },
+  { id: 'tokyo-night', label: 'Tokyo Night' },
+  { id: 'dracula', label: 'Dracula' },
+  { id: 'solarized-dark', label: 'Solarized' },
+  { id: 'one-dark', label: 'One Dark' },
 ]
 
 const STORAGE_KEY = 'saw-theme'
-const THEME_CLASSES: ThemeId[] = ['gruvbox-dark', 'darcula', 'catppuccin-mocha', 'nord']
+const THEME_CLASSES: ThemeId[] = ['gruvbox-dark', 'darcula', 'catppuccin-mocha', 'nord', 'tokyo-night', 'dracula', 'solarized-dark', 'one-dark']
 
 function applyTheme(id: ThemeId) {
   const html = document.documentElement

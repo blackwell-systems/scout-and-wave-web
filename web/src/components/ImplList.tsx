@@ -79,8 +79,8 @@ function EntryRow({ e, selectedSlug, loading, onSelect, onRequestDelete }: Entry
         size="sm"
         className={cn(
           'flex-1 justify-start font-mono text-xs pr-6',
-          isSelected && 'bg-accent border-l-2 border-primary rounded-none',
-          isComplete && !isSelected && 'opacity-60 hover:opacity-100'
+          isSelected && 'bg-primary/10 border-l-2 border-primary rounded-none',
+          isComplete && !isSelected && 'opacity-40 text-muted-foreground line-through hover:opacity-80 hover:no-underline'
         )}
         disabled={loading}
         onClick={() => onSelect(e.slug)}
@@ -146,7 +146,8 @@ export default function ImplList(props: ImplListProps): JSX.Element {
             ))}
             {completedEntries.length > 0 && (
               <>
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground pt-2">
+                <div className="h-px bg-border my-2" />
+                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground px-2 pb-1">
                   Completed
                 </p>
                 {completedEntries.map((e) => (

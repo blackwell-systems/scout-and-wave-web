@@ -26,19 +26,30 @@ export function useChatWithClaude(slug: string): {
   )
 
   const prevSlugRef = useRef(slug)
+  const stateRef = useRef(state)
 
-  // When slug changes, save current state and load the new slug's history
+  // Keep stateRef in sync
+  useEffect(() => {
+    stateRef.current = state
+  }, [state])
+
+  // When slug changes, save old state and load new state
   useEffect(() => {
     if (prevSlugRef.current !== slug) {
-      // Save the previous slug's state before switching
-      chatHistoryMap.set(prevSlugRef.current, state)
+      // Save the previous slug's state from the ref
+      chatHistoryMap.set(prevSlugRef.current, stateRef.current)
 
-      // Load the new slug's history (or start fresh)
+      // Load the new slug's history
       const newState = chatHistoryMap.get(slug) || { messages: [], running: false }
       setState(newState)
 
       prevSlugRef.current = slug
     }
+  }, [slug])
+
+  // Also save to Map whenever state changes (so refreshes don't lose data)
+  useEffect(() => {
+    chatHistoryMap.set(slug, state)
   }, [slug, state])
 
   const sendMessage = useCallback(async (text: string) => {

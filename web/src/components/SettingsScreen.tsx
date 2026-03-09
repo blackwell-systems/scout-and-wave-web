@@ -3,6 +3,7 @@ import { X } from 'lucide-react'
 import { getConfig, saveConfig } from '../api'
 import { SAWConfig, RepoEntry } from '../types'
 import DirPicker from './DirPicker'
+import { Button } from './ui/button'
 
 const MODEL_OPTIONS = [
   { value: 'claude-opus-4-5', label: 'Claude Opus 4.5' },
@@ -166,13 +167,9 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
           <p className="text-xs text-destructive">{repoErrors}</p>
         )}
 
-        <button
-          type="button"
-          onClick={addRepo}
-          className="self-start text-xs px-3 py-1.5 rounded-md border border-border bg-background text-foreground hover:bg-muted transition-colors"
-        >
+        <Button type="button" onClick={addRepo} variant="outline" size="sm" className="self-start">
           + Add repo
-        </button>
+        </Button>
       </div>
 
       {/* Agent section */}
@@ -267,20 +264,12 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
         {savedMsg && (
           <span className="text-xs text-green-600 dark:text-green-400">Saved!</span>
         )}
-        <button
-          onClick={onClose}
-          className="text-sm px-3 py-1.5 rounded-md border border-border bg-background text-foreground hover:bg-muted transition-colors"
-          disabled={saving}
-        >
+        <Button onClick={onClose} variant="outline" disabled={saving}>
           Cancel
-        </button>
-        <button
-          onClick={handleSave}
-          disabled={saving}
-          className="text-sm px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors disabled:opacity-50"
-        >
+        </Button>
+        <Button onClick={handleSave} disabled={saving}>
           {saving ? 'Saving...' : 'Save'}
-        </button>
+        </Button>
       </div>
     </div>
   )

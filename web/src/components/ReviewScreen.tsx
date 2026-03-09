@@ -136,8 +136,9 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
       <div className="max-w-[1600px] mx-auto px-4 py-8 pb-4">
         {/* Header */}
         <div className="mb-6">
-          <h1 className="text-2xl font-bold">Plan Review</h1>
-          <p className="text-sm text-muted-foreground mt-1 font-mono">{slug}</p>
+          <h1 className="text-2xl font-bold">
+            Plan Review: <span className="font-mono text-primary">{slug}</span>
+          </h1>
         </div>
 
         {/* Overview - always visible */}
@@ -261,11 +262,9 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
 
       {/* Sticky footer with action buttons */}
       {!isNotSuitable && (
-        <div className="fixed bottom-0 left-0 z-50" style={{ right: showChat ? `${chatWidthPx}px` : 0 }}>
-          <div className="bg-background/95 backdrop-blur-sm">
-            <div className="max-w-[1600px] mx-auto px-4 py-3 flex justify-center">
-              <ActionButtons onApprove={onApprove} onReject={onReject} onRequestChanges={() => setShowRevise(true)} onAskClaude={() => setShowChat(v => !v)} />
-            </div>
+        <div className="fixed bottom-0 left-0 z-50 border-t border-border" style={{ right: showChat ? `${chatWidthPx}px` : 0 }}>
+          <div className="bg-background/95 backdrop-blur-sm flex justify-center">
+            <ActionButtons onApprove={onApprove} onReject={onReject} onRequestChanges={() => setShowRevise(true)} onAskClaude={() => setShowChat(v => !v)} />
           </div>
         </div>
       )}

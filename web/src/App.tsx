@@ -174,20 +174,19 @@ export default function App() {
   return (
     <>
     <div className="h-screen flex flex-col bg-background overflow-hidden">
-      <header className="flex items-center justify-between px-4 py-2 border-b shrink-0">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-semibold tracking-tight">Scout and Wave</span>
+      <header className="flex items-stretch justify-between h-12 border-b shrink-0">
+        <div className="flex items-stretch">
           <button
             onClick={() => setLiveView(v => v === 'scout' ? null : 'scout')}
-            className="text-xs px-2.5 py-1 rounded-md bg-blue-600 hover:bg-blue-700 text-white font-medium transition-colors"
+            className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-r bg-blue-50/60 hover:bg-blue-100/80 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-400 dark:border-blue-800"
           >
-            New plan
+            New Plan
           </button>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-stretch">
           <ThemePicker />
           <DarkModeToggle />
-          <button onClick={() => setShowSettings(s => !s)} title="Settings" className="p-1 hover:opacity-70">
+          <button onClick={() => setShowSettings(s => !s)} title="Settings" className="flex items-center justify-center w-12 border-l hover:opacity-70">
             <Settings size={16} />
           </button>
         </div>
@@ -196,7 +195,7 @@ export default function App() {
         {/* Left sidebar */}
         {sidebarCollapsed ? (
           <div
-            className="flex flex-col items-center shrink-0 border-r w-9 bg-background dark:bg-[#191919] cursor-pointer"
+            className="flex flex-col items-center shrink-0 border-r w-9 bg-muted cursor-pointer"
             onDoubleClick={() => setSidebarCollapsed(false)}
             title="Double-click to expand"
           >
@@ -210,7 +209,7 @@ export default function App() {
           </div>
         ) : (
           <>
-            <div className="flex flex-col overflow-y-auto shrink-0 border-r relative dark:bg-[#191919]" style={{ width: leftWidthPx }}>
+            <div className="flex flex-col overflow-y-auto shrink-0 border-r relative bg-muted" style={{ width: leftWidthPx }}>
               <button
                 onClick={() => setSidebarCollapsed(true)}
                 title="Collapse sidebar"

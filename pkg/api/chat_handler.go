@@ -4,10 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
@@ -31,6 +31,7 @@ func (s *Server) handleImplChat(w http.ResponseWriter, r *http.Request) {
 	}
 
 	runID := fmt.Sprintf("%d", time.Now().UnixNano())
+	log.Printf("[chat] Starting chat session: slug=%s runID=%s message=%q historyLen=%d", slug, runID, req.Message, len(req.History))
 	ctx, cancel := context.WithCancel(context.Background())
 
 	go func() {
@@ -48,6 +49,7 @@ func (s *Server) handleImplChat(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleImplChatEvents(w http.ResponseWriter, r *http.Request) {
 	runID := r.PathValue("runID")
 	brokerKey := "chat-" + runID
+	log.Printf("[chat] Client subscribed to events: runID=%s", runID)
 
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -72,6 +74,7 @@ func (s *Server) handleImplChatEvents(w http.ResponseWriter, r *http.Request) {
 			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Event, data)
 			flusher.Flush()
 		case <-r.Context().Done():
+			log.Printf("[chat] Client disconnected from events: runID=%s", runID)
 			return
 		}
 	}
@@ -81,44 +84,27 @@ func (s *Server) handleImplChatEvents(w http.ResponseWriter, r *http.Request) {
 // Publishes chat_output, chat_complete, and chat_failed SSE events.
 func (s *Server) runImplChatAgent(ctx context.Context, runID, slug, message string, history []ChatMessage) {
 	brokerKey := "chat-" + runID
+	chunkCount := 0
 	publish := func(event string, data interface{}) {
 		s.broker.Publish(brokerKey, SSEEvent{Event: event, Data: data})
 	}
 
+	log.Printf("[chat] Agent starting: runID=%s slug=%s", runID, slug)
+
 	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
 
-	// Format history for the system prompt
-	var historyLines []string
+	// Convert history to engine.ChatMessage format
+	var engineHistory []engine.ChatMessage
 	for _, msg := range history {
-		historyLines = append(historyLines, fmt.Sprintf("%s: %s", msg.Role, msg.Content))
-	}
-	formattedHistory := strings.Join(historyLines, "\n")
-
-	basePrompt := fmt.Sprintf(`You are an expert software architect answering questions about a Scout-and-Wave IMPL doc.
-Read the IMPL doc at: %s
-Use the Read tool to read it, then answer the user's question concisely.
-You MUST NOT modify the IMPL doc or any source files. Read-only.
-Previous conversation:
-%s
-User question: %s`, implPath, formattedHistory, message)
-
-	// If using CLI backend (no API key), enable explanatory output mode for educational insights
-	systemPrompt := basePrompt
-	if os.Getenv("ANTHROPIC_API_KEY") == "" {
-		systemPrompt += `
-
-# Output Style: Explanatory
-
-You are in explanatory mode. Before and after answering questions, provide brief educational insights about the IMPL doc structure, SAW protocol concepts, or implementation patterns using:
-
-` + "`★ Insight ─────────────────────────────────────`" + `
-[2-3 key educational points about what you observed]
-` + "`─────────────────────────────────────────────────`" + `
-
-Focus on interesting insights specific to this IMPL doc rather than general programming concepts. Help the user learn about SAW protocol patterns, wave structure decisions, interface contract design, and agent coordination strategies.`
+		engineHistory = append(engineHistory, engine.ChatMessage{
+			Role:    msg.Role,
+			Content: msg.Content,
+		})
 	}
 
 	onChunk := func(chunk string) {
+		chunkCount++
+		log.Printf("[chat] Streaming chunk #%d: runID=%s len=%d", chunkCount, runID, len(chunk))
 		publish("chat_output", map[string]string{"run_id": runID, "chunk": chunk})
 	}
 
@@ -129,21 +115,27 @@ Focus on interesting insights specific to this IMPL doc rather than general prog
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
 
-	err := engine.RunScout(ctx, engine.RunScoutOpts{
-		Feature:     systemPrompt,
+	log.Printf("[chat] Launching RunChat: runID=%s implPath=%s repoPath=%s historyLen=%d", runID, implPath, s.cfg.RepoPath, len(engineHistory))
+
+	err := engine.RunChat(ctx, engine.RunChatOpts{
+		IMPLPath:    implPath,
 		RepoPath:    s.cfg.RepoPath,
 		SAWRepoPath: sawRepo,
-		IMPLOutPath: implPath,
+		History:     engineHistory,
+		Message:     message,
 	}, onChunk)
 
 	if err != nil {
 		if ctx.Err() != nil {
+			log.Printf("[chat] Agent cancelled: runID=%s", runID)
 			publish("chat_failed", map[string]string{"run_id": runID, "error": "cancelled"})
 		} else {
+			log.Printf("[chat] Agent failed: runID=%s error=%v", runID, err)
 			publish("chat_failed", map[string]string{"run_id": runID, "error": err.Error()})
 		}
 		return
 	}
 
+	log.Printf("[chat] Agent completed successfully: runID=%s totalChunks=%d", runID, chunkCount)
 	publish("chat_complete", map[string]string{"run_id": runID, "slug": slug})
 }

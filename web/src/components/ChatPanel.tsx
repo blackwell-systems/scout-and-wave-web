@@ -48,13 +48,13 @@ export default function ChatPanel({ slug, onClose }: ChatPanelProps): JSX.Elemen
   }
 
   return (
-    <div className="flex flex-col h-full bg-white dark:bg-gray-900 overflow-hidden">
+    <div className="flex flex-col h-full bg-background overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-          <h2 className="text-sm font-semibold">Ask Claude about this IMPL</h2>
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+          <h2 className="text-sm font-semibold text-foreground">Ask Claude about this IMPL</h2>
           <button
             onClick={onClose}
-            className="text-sm text-gray-500 hover:text-gray-800 dark:hover:text-gray-200"
+            className="text-sm text-muted-foreground hover:text-foreground"
           >
             &times; Close
           </button>
@@ -73,15 +73,15 @@ export default function ChatPanel({ slug, onClose }: ChatPanelProps): JSX.Elemen
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               {msg.role === 'user' ? (
-                <div className="bg-blue-600 text-white rounded-lg px-3 py-2 max-w-[75%] text-sm whitespace-pre-wrap">
+                <div className="bg-primary text-primary-foreground rounded-lg px-3 py-2 max-w-[75%] text-sm whitespace-pre-wrap">
                   {msg.content}
                 </div>
               ) : (
-                <div className="bg-gray-100 dark:bg-gray-800 rounded-lg px-3 py-2 max-w-[85%]">
+                <div className="bg-secondary text-secondary-foreground rounded-lg px-3 py-2 max-w-[85%]">
                   {msg.content ? (
                     <MarkdownContent compact={false}>{msg.content}</MarkdownContent>
                   ) : state.running ? (
-                    <span className="animate-pulse text-gray-400 text-sm">thinking...</span>
+                    <span className="animate-pulse text-muted-foreground text-sm">thinking...</span>
                   ) : null}
                 </div>
               )}
@@ -93,7 +93,7 @@ export default function ChatPanel({ slug, onClose }: ChatPanelProps): JSX.Elemen
             <div className="flex justify-start pl-1">
               <button
                 onClick={handleCopy}
-                className="text-xs text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                className="text-xs text-muted-foreground hover:text-foreground"
               >
                 {copied ? 'Copied!' : 'Copy'}
               </button>
@@ -108,7 +108,7 @@ export default function ChatPanel({ slug, onClose }: ChatPanelProps): JSX.Elemen
         </div>
 
         {/* Input area */}
-        <div className="px-4 py-3 border-t border-gray-200 dark:border-gray-700 flex gap-2">
+        <div className="flex items-stretch h-12 border-t border-border">
           <input
             type="text"
             value={input}
@@ -116,12 +116,12 @@ export default function ChatPanel({ slug, onClose }: ChatPanelProps): JSX.Elemen
             onKeyDown={handleKeyDown}
             disabled={state.running}
             placeholder="Ask something about this plan..."
-            className="flex-1 text-sm border border-gray-300 dark:border-gray-600 rounded px-3 py-1.5 bg-background focus:outline-none focus:ring-1 focus:ring-blue-400 disabled:opacity-50"
+            className="flex-1 text-sm px-4 bg-background text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
           />
           <button
             onClick={handleSend}
             disabled={state.running || !input.trim()}
-            className="text-sm px-3 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-l bg-violet-50/60 hover:bg-violet-100/80 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:hover:bg-violet-900/60 dark:text-violet-400 dark:border-violet-800 disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Send
           </button>

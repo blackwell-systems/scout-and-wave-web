@@ -5,11 +5,11 @@ interface ActionButtonsProps {
   onAskClaude?: () => void
 }
 
-const btnBase = "inline-flex items-center justify-center rounded-md text-sm font-medium h-9 px-4 py-2 transition-colors border"
+const btnBase = "flex items-center justify-center text-sm font-medium px-6 transition-colors border-r"
 
 export default function ActionButtons({ onApprove, onReject, onRequestChanges, onAskClaude }: ActionButtonsProps): JSX.Element {
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex items-stretch h-12">
       <button onClick={onApprove} className={`${btnBase} bg-green-50/60 hover:bg-green-100/80 text-green-700 border-green-200 dark:bg-green-950/40 dark:hover:bg-green-900/60 dark:text-green-400 dark:border-green-800`}>
         Approve
       </button>
