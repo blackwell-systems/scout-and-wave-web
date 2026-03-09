@@ -239,8 +239,8 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
 
       {/* Sticky footer with action buttons */}
       {!isNotSuitable && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-background/95 backdrop-blur-sm">
-          <div className={`max-w-[1600px] mx-auto px-4 py-3 transition-colors duration-200 ${showChat ? 'mr-[420px]' : ''}`}>
+        <div className={`fixed bottom-0 left-0 z-50 bg-background/95 backdrop-blur-sm ${showChat ? 'right-[420px]' : 'right-0'}`}>
+          <div className="max-w-[1600px] mx-auto px-4 py-3 transition-colors duration-200">
             <ActionButtons onApprove={onApprove} onReject={onReject} onRequestChanges={() => setShowRevise(true)} onAskClaude={() => setShowChat(v => !v)} />
           </div>
         </div>
