@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AgentOutputData, AgentStatus, WaveState } from '../types'
+import { AgentOutputData, AgentStatus, AgentToolCallData, ToolCallEntry, WaveState } from '../types'
 
 export interface WaveMergeState {
   status: 'idle' | 'merging' | 'success' | 'failed'
@@ -166,6 +166,36 @@ export function useWaveEvents(slug: string): AppWaveState {
         const existing = prev.agents.find(a => a.agent === data.agent && a.wave === data.wave)
         const prevOutput = existing?.output ?? ''
         return upsertAgent(prev, data.agent, data.wave, { output: prevOutput + data.chunk })
+      })
+    })
+
+    es.addEventListener('agent_tool_call', (event: MessageEvent) => {
+      const data = JSON.parse(event.data) as AgentToolCallData
+      setState(prev => {
+        const existing = prev.agents.find(a => a.agent === data.agent && a.wave === data.wave)
+        const prevCalls: ToolCallEntry[] = existing?.toolCalls ?? []
+
+        let updatedCalls: ToolCallEntry[]
+        if (data.is_result) {
+          // Update the matching tool_use entry with duration + status
+          updatedCalls = prevCalls.map(tc =>
+            tc.tool_id === data.tool_id
+              ? { ...tc, duration_ms: data.duration_ms, is_error: data.is_error, status: data.is_error ? 'error' : 'done' }
+              : tc
+          )
+        } else {
+          // New tool_use — prepend (newest first), cap at 50
+          const entry: ToolCallEntry = {
+            tool_id: data.tool_id,
+            tool_name: data.tool_name,
+            input: data.input,
+            started_at: Date.now(),
+            status: 'running',
+          }
+          updatedCalls = [entry, ...prevCalls].slice(0, 50)
+        }
+
+        return upsertAgent(prev, data.agent, data.wave, { toolCalls: updatedCalls })
       })
     })
 

@@ -156,6 +156,7 @@ export interface AgentStatus {
   message?: string
   output?: string
   startedAt?: number  // ms timestamp when agent_started fired
+  toolCalls?: ToolCallEntry[]
 }
 
 export interface WaveState {
@@ -228,4 +229,26 @@ export interface AgentContextResponse {
   agent: string
   wave: number
   context_text: string
+}
+
+// Agent tool call data (Agent Observatory v0.19.0-E)
+export interface AgentToolCallData {
+  agent: string
+  wave: number
+  tool_id: string
+  tool_name: string
+  input: string
+  is_result: boolean
+  is_error: boolean
+  duration_ms: number
+}
+
+export interface ToolCallEntry {
+  tool_id: string
+  tool_name: string
+  input: string
+  started_at: number     // Date.now() when tool_use arrived
+  duration_ms?: number   // populated when tool_result arrives
+  is_error?: boolean
+  status: 'running' | 'done' | 'error'
 }

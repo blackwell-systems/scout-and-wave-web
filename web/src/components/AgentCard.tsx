@@ -1,6 +1,7 @@
 import { useRef, useEffect, useState } from 'react'
 import { AgentStatus } from '../types'
 import { getAgentColor } from '../lib/agentColors'
+import ToolFeed from './ToolFeed'
 
 interface AgentCardProps {
   agent: AgentStatus
@@ -64,6 +65,7 @@ export default function AgentCard({ agent }: AgentCardProps) {
 
   const agentOutput: string | undefined = agent.output
   const showOutput = (agent.status === 'running' || agent.status === 'complete') && agentOutput && agentOutput.length > 0
+  const showToolFeed = (agent.status === 'running' || agent.status === 'complete') && (agent.toolCalls?.length ?? 0) > 0
 
   const agentColor = getAgentColor(agent.agent)
   const branchName = agent.branch || `wave${agent.wave}-agent-${agent.agent.toLowerCase()}`
@@ -127,6 +129,9 @@ export default function AgentCard({ agent }: AgentCardProps) {
           </pre>
         </div>
       )}
+
+      {/* Tool feed */}
+      {showToolFeed && <ToolFeed calls={agent.toolCalls!} />}
 
       {/* Files and errors */}
       {(agent.files.length > 0 || agent.status === 'failed') && (
