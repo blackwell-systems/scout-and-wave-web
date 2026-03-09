@@ -1,5 +1,20 @@
 # IMPL: demo-complex
 
+<!-- ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+     ⚠️  DEMO FIXTURE — NOT INTENDED FOR EXECUTION
+
+     This IMPL doc is a demonstration artifact designed to showcase the visual
+     components and UI capabilities of the Scout-and-Wave web application. It
+     contains a complex 3-wave structure with 11 agents, intricate dependency
+     graphs, rich metadata, and comprehensive coverage of all IMPL doc sections.
+
+     This is NOT a real implementation plan. The code files, directory paths,
+     and agent prompts are synthetic. Do not attempt to execute this plan via
+     `saw wave` — it will fail. Use this doc for UI testing, screenshots, and
+     visual regression testing only.
+     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ -->
+
+
 ### Suitability Assessment
 
 Verdict: SUITABLE
