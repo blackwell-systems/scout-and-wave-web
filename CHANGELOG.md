@@ -2,6 +2,22 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.30.0] - 2026-03-09
+
+### Added
+
+- **Provider icons in ModelPicker** (`web/src/components/ModelPicker.tsx`) — color-coded Lucide icons for each provider (Terminal for CLI, Cloud for Bedrock, Sparkles for Anthropic, Bot for OpenAI, Server for Ollama, MonitorPlay for LM Studio). Icons display on left side of provider dropdown with custom colors.
+- **Header uses ModelPicker component** (`web/src/App.tsx`) — replaced plain text input with full ModelPicker component. Header model selection now mirrors Settings screen structure with provider dropdown + model input. Wider dropdown (480px), backdrop blur, slide-in animation.
+
+### Changed
+
+- **Model input clears on focus** (`web/src/components/ModelPicker.tsx`) — clicking model input now clears value to reveal datalist suggestions. Restores original value on blur if empty. Makes it easier to browse available model options.
+- **Visual consistency improvements** (`web/src/components/ModelPicker.tsx`) — provider select and model input now have matching height (34px), same border/padding/focus styles. Added custom chevron icon to provider select. Both inputs align properly.
+
+### Fixed
+
+- **Removed manual prefix typing** — users no longer type `bedrock:`, `cli:`, etc. Provider dropdown handles prefix construction internally.
+
 ## [0.29.0] - 2026-03-09
 
 ### Added
