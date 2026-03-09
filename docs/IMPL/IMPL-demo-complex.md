@@ -305,46 +305,46 @@ type EventTracker interface {
 
 ### File Ownership
 
-| File | Agent | Wave | Action | Depends On |
-|------|-------|------|--------|------------|
-| `pkg/types/entities.go` | Scaffold | 0 | new | - |
-| `pkg/api/contracts.go` | Scaffold | 0 | new | - |
-| `web/src/types/api.ts` | Scaffold | 0 | new | - |
-| `pkg/db/schema.go` | A | 1 | new | - |
-| `migrations/001_create_users.sql` | A | 1 | new | - |
-| `migrations/002_create_payments.sql` | A | 1 | new | - |
-| `migrations/003_create_notifications.sql` | A | 1 | new | - |
-| `pkg/api/server.go` | B | 1 | new | - |
-| `pkg/api/routes.go` | B | 1 | new | - |
-| `pkg/api/errors.go` | B | 1 | new | - |
-| `pkg/auth/middleware.go` | C | 1 | new | - |
-| `pkg/auth/jwt.go` | C | 1 | new | - |
-| `pkg/auth/rbac.go` | C | 1 | new | - |
-| `pkg/cache/redis.go` | D | 1 | new | - |
-| `pkg/cache/circuit.go` | D | 1 | new | - |
-| `pkg/users/profiles.go` | E | 2 | new | A |
-| `pkg/users/handlers.go` | E | 2 | new | A |
-| `web/src/pages/ProfilePage.tsx` | E | 2 | new | A |
-| `web/src/components/ProfileForm.tsx` | E | 2 | new | A |
-| `pkg/payments/stripe.go` | F | 2 | new | A, B |
-| `pkg/payments/webhooks.go` | F | 2 | new | A, B |
-| `pkg/payments/handlers.go` | F | 2 | new | A, B |
-| `pkg/notify/email.go` | G | 2 | new | B |
-| `pkg/notify/push.go` | G | 2 | new | B |
-| `pkg/notify/handlers.go` | G | 2 | new | B |
-| `pkg/analytics/events.go` | H | 2 | new | C |
-| `pkg/analytics/mixpanel.go` | H | 2 | new | C |
-| `pkg/analytics/handlers.go` | H | 2 | new | C |
-| `web/src/pages/AdminDashboard.tsx` | I | 3 | new | E, F, G |
-| `web/src/components/UserList.tsx` | I | 3 | new | E, F, G |
-| `web/src/components/PaymentReports.tsx` | I | 3 | new | E, F, G |
-| `web/src/components/NotificationLogs.tsx` | I | 3 | new | E, F, G |
-| `pkg/api/mobile/v1/profiles.go` | J | 3 | new | E, H |
-| `pkg/api/mobile/v1/sync.go` | J | 3 | new | E, H |
-| `pkg/api/mobile/v1/compress.go` | J | 3 | new | E, H |
-| `pkg/webhooks/incoming.go` | K | 3 | new | F, G, H |
-| `pkg/webhooks/outgoing.go` | K | 3 | new | F, G, H |
-| `pkg/webhooks/handlers.go` | K | 3 | new | F, G, H |
+| File | Agent | Wave | Depends On |
+|------|-------|------|------------|
+| `pkg/types/entities.go` | Scaffold | 0 | - |
+| `pkg/api/contracts.go` | Scaffold | 0 | - |
+| `web/src/types/api.ts` | Scaffold | 0 | - |
+| `pkg/db/schema.go` | A | 1 | - |
+| `migrations/001_create_users.sql` | A | 1 | - |
+| `migrations/002_create_payments.sql` | A | 1 | - |
+| `migrations/003_create_notifications.sql` | A | 1 | - |
+| `pkg/api/server.go` | B | 1 | - |
+| `pkg/api/routes.go` | B | 1 | - |
+| `pkg/api/errors.go` | B | 1 | - |
+| `pkg/auth/middleware.go` | C | 1 | - |
+| `pkg/auth/jwt.go` | C | 1 | - |
+| `pkg/auth/rbac.go` | C | 1 | - |
+| `pkg/cache/redis.go` | D | 1 | - |
+| `pkg/cache/circuit.go` | D | 1 | - |
+| `pkg/users/profiles.go` | E | 2 | A |
+| `pkg/users/handlers.go` | E | 2 | A |
+| `web/src/pages/ProfilePage.tsx` | E | 2 | A |
+| `web/src/components/ProfileForm.tsx` | E | 2 | A |
+| `pkg/payments/stripe.go` | F | 2 | A, B |
+| `pkg/payments/webhooks.go` | F | 2 | A, B |
+| `pkg/payments/handlers.go` | F | 2 | A, B |
+| `pkg/notify/email.go` | G | 2 | B |
+| `pkg/notify/push.go` | G | 2 | B |
+| `pkg/notify/handlers.go` | G | 2 | B |
+| `pkg/analytics/events.go` | H | 2 | C |
+| `pkg/analytics/mixpanel.go` | H | 2 | C |
+| `pkg/analytics/handlers.go` | H | 2 | C |
+| `web/src/pages/AdminDashboard.tsx` | I | 3 | E, F, G |
+| `web/src/components/UserList.tsx` | I | 3 | E, F, G |
+| `web/src/components/PaymentReports.tsx` | I | 3 | E, F, G |
+| `web/src/components/NotificationLogs.tsx` | I | 3 | E, F, G |
+| `pkg/api/mobile/v1/profiles.go` | J | 3 | E, H |
+| `pkg/api/mobile/v1/sync.go` | J | 3 | E, H |
+| `pkg/api/mobile/v1/compress.go` | J | 3 | E, H |
+| `pkg/webhooks/incoming.go` | K | 3 | F, G, H |
+| `pkg/webhooks/outgoing.go` | K | 3 | F, G, H |
+| `pkg/webhooks/handlers.go` | K | 3 | F, G, H |
 
 ---
 
