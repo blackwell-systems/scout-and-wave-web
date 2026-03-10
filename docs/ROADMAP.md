@@ -30,7 +30,7 @@ scout-and-wave-app/      Wails desktop app (future)
 
 ---
 
-## Current Status (v0.35.0)
+## Current Status (v0.35.0+)
 
 **Protocol & engine** — Core protocol (I1–I6 invariants, E1–E23 execution rules), Go orchestration engine, E16 validator, scaffold build verification (E22), per-agent context extraction (E23), engine extraction complete (`scout-and-wave-go` standalone module), cross-repo wave support, single-agent rerun (`RunSingleAgent`), unified tool system (`pkg/tools` Workshop — 7 tools, backend adapters, middleware support).
 
@@ -115,19 +115,9 @@ See CHANGELOG.md for full version history.
 
 ---
 
-### v0.18.0-G — CONTEXT.md Viewer
+### v0.18.0-G — CONTEXT.md Viewer *(shipped v0.35.0)*
 
-**Why:** Protocol E17/E18 (v0.12.0) define `docs/CONTEXT.md` — persistent project memory that Scouts read before every run and Orchestrators update after each feature. Making it visible and editable in the UI closes the loop for users who want to understand or correct what the Scout knows about their project.
-
-**Scope:**
-- Sidebar item: "Project Memory" — reads `docs/CONTEXT.md` from the project root
-- Read view: display structured YAML fields (architecture, decisions, conventions, established_interfaces, features_completed) in a human-readable format
-- Edit view: inline YAML editor with save (PUT to file via API)
-- API: `GET|PUT /api/context` — reads/writes `docs/CONTEXT.md` in configured project root
-- If `docs/CONTEXT.md` doesn't exist, show "No project memory yet — completes automatically after your first feature"
-
-**Success criteria:**
-- Users can read and correct project memory without opening a text editor
+**Shipped.** "Project Memory" panel in ReviewScreen reads/writes `docs/CONTEXT.md` via `GET|PUT /api/context`. View mode renders markdown content; edit mode provides inline textarea with atomic save. Handles missing file gracefully (empty state). Per-agent context viewer (`AgentContextToggle`) extracts agent prompts + interface contracts + file ownership from IMPL docs.
 
 ---
 

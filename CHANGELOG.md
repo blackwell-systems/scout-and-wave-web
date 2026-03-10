@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.35.0] - 2026-03-10
+
+### Fixed
+
+- **CONTEXT.md viewer** (`web/src/components/review/ContextViewerPanel.tsx`) — Replaced leftover inline stub functions with proper imports from `api.ts`. The stubs threw on HTTP 404 (when no `docs/CONTEXT.md` exists), causing the "Project Memory" panel to show an error instead of an empty state. The `api.ts` implementations handle 404 gracefully by returning an empty string. v0.18.0-G now works correctly.
+
+---
+
 ## [0.34.0] - 2026-03-10
 
 ### Fixed

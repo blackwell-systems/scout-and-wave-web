@@ -1,21 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
-
-// TEMP stubs — remove after Wave 1 merge (Agent B adds these to api.ts)
-async function getContext(): Promise<string> {
-  const r = await fetch('/api/context')
-  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
-  return r.text()
-}
-
-async function putContext(content: string): Promise<void> {
-  const r = await fetch('/api/context', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'text/plain' },
-    body: content,
-  })
-  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
-}
+import { getContext, putContext } from '../../api'
 
 export default function ContextViewerPanel({ onClose }: { onClose: () => void }): JSX.Element {
   const [content, setContent] = useState<string | null>(null)
