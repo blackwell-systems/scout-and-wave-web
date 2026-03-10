@@ -27,6 +27,7 @@ type Server struct {
 	reviseCancels sync.Map      // runID -> context.CancelFunc; tracks in-progress revise runs
 	mergingRuns   sync.Map      // slug -> struct{}; tracks in-progress merge operations
 	testingRuns   sync.Map      // slug -> struct{}; tracks in-progress test runs
+	scaffoldRuns  sync.Map      // runID -> context.CancelFunc; tracks in-progress scaffold reruns
 	stages        *stageManager // per-slug stage state persistence
 }
 

@@ -306,7 +306,7 @@ scout-and-wave-app/      Wails desktop app (future)
 
 ---
 
-### v0.18.0-I — Scaffold Build Failure Detail
+### v0.18.0-I — Scaffold Build Failure Detail *(API done v0.33.0; UI pending)*
 
 **Why:** Protocol E22 (v0.13.0) requires the Scaffold Agent to run `go build ./...` (or equivalent) and report `status: FAILED` with build error output if it fails. Currently this surfaces as a generic BLOCKED state with no detail. The wave won't launch and the user doesn't know why or what to fix.
 
@@ -497,7 +497,8 @@ generation 4+: cycle with saturation variation
 - ✅ v0.18.0-A — Scout context panel (attach files, add constraints)
 - ✅ v0.18.0-B — Chat with Claude (Q&A about IMPL doc before approval)
 - ✅ v0.18.0-C — Settings screen (repo, agent models, quality gates, appearance)
-
+- ✅ v0.33.0 — Scaffold rerun API (`POST /api/impl/{slug}/scaffold/rerun`) — 501 stub replaced with full `engine.RunScaffold` integration; events stream via existing wave SSE broker
+- ✅ v0.32.0 — Structured Scout output (schema-validated JSON → YAML); ManifestValidation panel; manifest routes wired
 
 **Next:** Finish Phase 1 — close the remaining GUI loop gaps
 - v0.17.0-D — **Worktree manager** (clean up stale branches in GUI)

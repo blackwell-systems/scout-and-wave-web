@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.33.0] - 2026-03-10
+
+### Added
+
+- **Scaffold rerun API** (`pkg/api/scaffold_handler.go`) — `POST /api/impl/{slug}/scaffold/rerun` launches `engine.RunScaffold` in a background goroutine and returns 202 `{"run_id": "..."}`. Events (`scaffold_started`, `scaffold_output`, `scaffold_complete`, `scaffold_failed`, `scaffold_cancelled`) publish to the existing wave SSE broker for the slug so WaveBoard picks them up with no new client-side wiring. Returns 404 for unknown slugs. Replaces the 501 stub.
+
+### Changed
+
+- **`Server` struct** (`pkg/api/server.go`) — added `scaffoldRuns sync.Map` for tracking in-progress scaffold reruns
+- **`pkg/api/stubs.go`** — `handleScaffoldRerun` stub removed; file is now a bare package declaration
+
+---
+
 ## [0.32.0] - 2026-03-10
 
 ### Added
