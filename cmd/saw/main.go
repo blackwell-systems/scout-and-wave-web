@@ -45,6 +45,11 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "validate":
+		if err := runValidate(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	case "--version", "-version":
 		fmt.Printf("saw %s\n", version)
 	case "--help", "-help", "help":
@@ -67,6 +72,7 @@ Commands:
   scaffold  Run a Scaffold agent to set up worktrees from an IMPL doc
   merge     Merge agent worktrees for a completed wave
   serve     Start a local HTTP server for reviewing IMPL docs
+  validate  Validate a YAML IMPL manifest against protocol invariants
 
 Global flags:
   --version   Print version and exit
