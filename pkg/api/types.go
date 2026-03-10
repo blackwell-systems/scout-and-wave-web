@@ -101,10 +101,31 @@ type SSEEvent struct {
 
 // WorktreeEntry describes one SAW-managed git worktree.
 type WorktreeEntry struct {
-	Branch     string `json:"branch"`
-	Path       string `json:"path"`
-	Status     string `json:"status"` // "merged", "unmerged", "stale"
-	HasUnsaved bool   `json:"has_unsaved"`
+	Branch        string `json:"branch"`
+	Path          string `json:"path"`
+	Status        string `json:"status"` // "merged", "unmerged", "stale"
+	HasUnsaved    bool   `json:"has_unsaved"`
+	LastCommitAge string `json:"last_commit_age,omitempty"`
+}
+
+// WorktreeBatchDeleteRequest is the JSON body for POST /api/impl/{slug}/worktrees/cleanup.
+type WorktreeBatchDeleteRequest struct {
+	Branches []string `json:"branches"`
+	Force    bool     `json:"force"`
+}
+
+// WorktreeBatchDeleteResult describes the outcome of deleting a single branch.
+type WorktreeBatchDeleteResult struct {
+	Branch  string `json:"branch"`
+	Deleted bool   `json:"deleted"`
+	Error   string `json:"error,omitempty"`
+}
+
+// WorktreeBatchDeleteResponse is the JSON body returned by batch-delete.
+type WorktreeBatchDeleteResponse struct {
+	Results      []WorktreeBatchDeleteResult `json:"results"`
+	DeletedCount int                         `json:"deleted_count"`
+	FailedCount  int                         `json:"failed_count"`
 }
 
 // WorktreeListResponse is the JSON body for GET /api/impl/{slug}/worktrees.
