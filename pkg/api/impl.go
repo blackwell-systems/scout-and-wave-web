@@ -2,10 +2,12 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
@@ -366,6 +368,60 @@ func implDocResponseFromManifest(slug string, m *protocol.IMPLManifest) IMPLDocR
 		}
 	}
 
+	// Synthesize dependency graph text from waves + file ownership for the
+	// DependencyGraphPanel SVG renderer. Format matches the markdown typed block
+	// parser output: "Wave N (...)\n  [ID] description\n    depends on: [X] [Y]"
+	var depGraphBuf strings.Builder
+	// Build agent->dependencies map from file ownership depends_on fields.
+	agentDeps := make(map[string]map[string]bool)
+	for _, fo := range m.FileOwnership {
+		if len(fo.DependsOn) > 0 {
+			if agentDeps[fo.Agent] == nil {
+				agentDeps[fo.Agent] = make(map[string]bool)
+			}
+			for _, d := range fo.DependsOn {
+				agentDeps[fo.Agent][d] = true
+			}
+		}
+	}
+	depGraphBuf.WriteString("```\n")
+	for _, w := range m.Waves {
+		if w.Number == 1 {
+			depGraphBuf.WriteString(fmt.Sprintf("Wave %d (parallel)\n", w.Number))
+		} else {
+			depGraphBuf.WriteString(fmt.Sprintf("Wave %d (depends on Wave %d)\n", w.Number, w.Number-1))
+		}
+		for _, a := range w.Agents {
+			desc := a.ID
+			if len(a.Files) > 0 {
+				desc = a.Files[0]
+			}
+			depGraphBuf.WriteString(fmt.Sprintf("  [%s] %s\n", a.ID, desc))
+			// Collect deps from both agent-level dependencies and file ownership.
+			deps := make(map[string]bool)
+			for _, d := range a.Dependencies {
+				deps[d] = true
+			}
+			for d := range agentDeps[a.ID] {
+				deps[d] = true
+			}
+			if len(deps) > 0 {
+				depGraphBuf.WriteString("    depends on:")
+				// Sort for determinism.
+				sortedDeps := make([]string, 0, len(deps))
+				for d := range deps {
+					sortedDeps = append(sortedDeps, d)
+				}
+				sort.Strings(sortedDeps)
+				for _, d := range sortedDeps {
+					depGraphBuf.WriteString(" [" + d + "]")
+				}
+				depGraphBuf.WriteString("\n")
+			}
+		}
+	}
+	depGraphBuf.WriteString("```\n")
+
 	return IMPLDocResponse{
 		Slug:        slug,
 		DocStatus:   docStatus,
@@ -385,6 +441,7 @@ func implDocResponseFromManifest(slug string, m *protocol.IMPLManifest) IMPLDocR
 		KnownIssues:            knownIssues,
 		ScaffoldsDetail:        scaffoldDetail,
 		InterfaceContractsText: contractsBuf.String(),
+		DependencyGraphText:    depGraphBuf.String(),
 		AgentPrompts:           agentPrompts,
 	}
 }

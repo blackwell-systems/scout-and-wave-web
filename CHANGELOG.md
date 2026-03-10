@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.36.0] - 2026-03-10
+
+### Fixed
+
+- **Dependency graph for YAML IMPL docs** (`pkg/api/impl.go`) — `implDocResponseFromManifest` was not populating `DependencyGraphText`, leaving the dep graph panel blank for all YAML manifests. Now synthesizes the text from `waves[].agents[].dependencies` and `file_ownership[].depends_on` in the format the SVG renderer expects.
+- **Multi-char agent IDs in dep graph** (`web/src/components/review/DependencyGraphPanel.tsx`) — Agent ID regex widened from `[A-Za-z]\d?` to `[A-Za-z][A-Za-z0-9]*` so IDs like `orchestrator` or `A2` render correctly in the SVG graph.
+
+---
+
 ## [0.35.0] - 2026-03-10
 
 ### Fixed
