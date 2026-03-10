@@ -1,0 +1,517 @@
+completion_date: "2026-03-10"
+completion_reports:
+    A:
+        branch: wave1-agent-A
+        commit: 4e801b8
+        files_changed:
+            - pkg/api/worktree_handler.go
+            - pkg/api/worktree_handler_test.go
+            - pkg/api/types.go
+        status: complete
+        verification: 'PASS: go build ./... go test ./... go vet ./... npm run build all passed'
+    B:
+        branch: wave1-agent-B
+        commit: 42ee67d
+        files_changed:
+            - web/src/types.ts
+            - web/src/api.ts
+            - web/src/hooks/useWorktrees.ts
+            - web/src/components/WorktreePanel.tsx
+        status: complete
+        verification: PASS (tsc + vite build succeeded)
+    C:
+        branch: develop
+        commit: c06cec7
+        files_changed:
+            - pkg/api/server.go
+            - pkg/api/wave_runner.go
+            - pkg/api/worktree_handler.go
+            - web/src/components/ReviewScreen.tsx
+            - web/src/components/WaveBoard.tsx
+            - web/src/hooks/useWaveEvents.ts
+            - web/src/components/ReviewScreen.test.tsx
+        status: complete
+        verification: PASS — go build, go test, go vet, npm run build all pass. npm run lint script not configured (non-blocking).
+feature_slug: worktree-manager
+file_ownership:
+    - action: modify
+      agent: A
+      file: pkg/api/worktree_handler.go
+      wave: 1
+    - action: new
+      agent: A
+      file: pkg/api/worktree_handler_test.go
+      wave: 1
+    - action: modify
+      agent: A
+      file: pkg/api/types.go
+      wave: 1
+    - action: new
+      agent: B
+      file: web/src/components/WorktreePanel.tsx
+      wave: 1
+    - action: modify
+      agent: B
+      file: web/src/types.ts
+      wave: 1
+    - action: modify
+      agent: B
+      file: web/src/api.ts
+      wave: 1
+    - action: new
+      agent: B
+      file: web/src/hooks/useWorktrees.ts
+      wave: 1
+    - action: modify
+      agent: C
+      file: pkg/api/wave_runner.go
+      wave: 2
+    - action: modify
+      agent: C
+      file: web/src/components/ReviewScreen.tsx
+      wave: 2
+    - action: modify
+      agent: C
+      file: web/src/components/WaveBoard.tsx
+      wave: 2
+    - action: modify
+      agent: C
+      file: pkg/api/server.go
+      wave: 2
+interface_contracts:
+    - definition: |
+        Request body (JSON):
+          { "branches": ["wave1-agent-A", "wave1-agent-B"], "force": false }
+
+        Response 200 (JSON):
+          {
+            "results": [
+              { "branch": "wave1-agent-A", "deleted": true, "error": "" },
+              { "branch": "wave1-agent-B", "deleted": false, "error": "branch is unmerged" }
+            ],
+            "deleted_count": 1,
+            "failed_count": 1
+          }
+
+        Response 409 (JSON) — when force=false and any branch is unmerged:
+          {
+            "error": "unmerged branches exist",
+            "unmerged": ["wave1-agent-B"]
+          }
+      description: Batch-delete multiple worktree branches. Returns results per branch.
+      location: pkg/api/worktree_handler.go
+      name: POST /api/impl/{slug}/worktrees/cleanup
+    - definition: |
+        // Already defined in types.go — no type change needed.
+        // Agent A must populate HasUnsaved by running:
+        //   git -C <worktree-path> status --porcelain
+        // If output is non-empty, HasUnsaved = true.
+
+        // Also add a LastCommitAge field to WorktreeEntry:
+        type WorktreeEntry struct {
+            Branch        string `json:"branch"`
+            Path          string `json:"path"`
+            Status        string `json:"status"`       // "merged", "unmerged", "stale"
+            HasUnsaved    bool   `json:"has_unsaved"`
+            LastCommitAge string `json:"last_commit_age,omitempty"` // e.g. "3 hours ago", "2 days ago"
+        }
+
+        // A branch is "stale" when: status == "unmerged" AND last commit is > 24 hours old.
+      description: Populate the existing has_unsaved field by checking git status in worktree path
+      location: pkg/api/types.go
+      name: WorktreeEntry.HasUnsaved enhancement
+    - definition: |
+        export interface WorktreeEntry {
+          branch: string
+          path: string
+          status: 'merged' | 'unmerged' | 'stale'
+          has_unsaved: boolean
+          last_commit_age?: string  // NEW — e.g. "3 hours ago"
+        }
+      description: Mirror the Go type addition in TypeScript
+      location: web/src/types.ts
+      name: WorktreeEntry TypeScript update
+    - definition: |
+        export interface WorktreeBatchDeleteRequest {
+          branches: string[]
+          force: boolean
+        }
+
+        export interface WorktreeBatchDeleteResult {
+          branch: string
+          deleted: boolean
+          error: string
+        }
+
+        export interface WorktreeBatchDeleteResponse {
+          results: WorktreeBatchDeleteResult[]
+          deleted_count: number
+          failed_count: number
+        }
+
+        export async function batchDeleteWorktrees(
+          slug: string,
+          req: WorktreeBatchDeleteRequest
+        ): Promise<WorktreeBatchDeleteResponse>
+      description: TypeScript function for the batch-delete endpoint
+      location: web/src/api.ts
+      name: batchDeleteWorktrees API client
+    - definition: |
+        Event name: "stale_branches_detected"
+        Data shape:
+          {
+            "slug": "my-feature",
+            "branches": ["wave1-agent-A", "wave2-agent-B3"],
+            "count": 2
+          }
+
+        Emitted by wave_runner.go after run_started and before scaffold stage,
+        only when stale SAW branches exist for the repo.
+      description: SSE event emitted before wave start when stale branches exist
+      location: pkg/api/wave_runner.go
+      name: stale_branches_detected SSE event
+lint_command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./... && cd web && command npm run lint
+pre_mortem:
+    overall_risk: low
+    rows:
+        - impact: low
+          likelihood: low
+          mitigation: |
+            This is safe because Wave 1 is fully merged before Wave 2 starts. Agent C adds a new function (detectStaleBranches) to the file — no conflict with Agent A's changes. The function is additive and does not modify existing code.
+          scenario: Agent C modifies worktree_handler.go which Agent A also owns in Wave 1
+        - impact: medium
+          likelihood: medium
+          mitigation: |
+            The list endpoint already runs git worktree list and git branch --merged. Adding git status per worktree is O(N) where N is typically 2-10 SAW branches. For large repos, each git status takes ~100ms. Total overhead: <1s for typical usage. If needed, the HasUnsaved check can be made optional via a query param.
+          scenario: git status --porcelain is slow in large worktrees, blocking list endpoint
+        - impact: low
+          likelihood: medium
+          mitigation: |
+            The batch-delete response returns per-branch results with success/failure status. The frontend displays which deletions succeeded and which failed, then auto-refreshes the list. No rollback needed — branch deletion is idempotent (deleting an already-deleted branch is a no-op error).
+          scenario: Batch delete partially succeeds — some branches deleted, some fail
+        - impact: low
+          likelihood: low
+          mitigation: |
+            Standard React cleanup pattern — the useWaveEvents hook already handles EventSource cleanup on unmount. If the event arrives after unmount, it is silently dropped. No state leak.
+          scenario: stale_branches_detected SSE event fires but WaveBoard component unmounted
+        - impact: low
+          likelihood: low
+          mitigation: |
+            SAW branches always have at least one commit (the branch creation commit). If git log fails for any reason, LastCommitAge is set to empty string (omitempty ensures it is omitted from JSON). No crash path.
+          scenario: WorktreeEntry.LastCommitAge relies on git log which fails on empty branches
+quality_gates:
+    gates:
+        - command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./...
+          required: true
+          type: build
+        - command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./...
+          required: true
+          type: lint
+        - command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./...
+          required: true
+          type: test
+        - command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && command npm run build
+          required: true
+          type: build
+    level: standard
+state: REVIEWED
+test_command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./... && cd web && command npm test -- --run
+title: v0.17.0-D — Worktree Manager GUI Panel
+verdict: SUITABLE
+waves:
+    - agents:
+        - files:
+            - pkg/api/worktree_handler.go
+            - pkg/api/worktree_handler_test.go
+            - pkg/api/types.go
+          id: A
+          task: |
+            ## What to Implement
+
+            Enhance the existing worktree backend in `pkg/api/worktree_handler.go` with:
+
+            1. **Populate HasUnsaved field** in `parseWorktreePorcelain`: After parsing each
+               worktree entry, run `git -C <path> status --porcelain` and set `HasUnsaved = true`
+               if the output is non-empty. Refactor so the function receives `repoPath` or runs
+               git externally (the current signature only takes `data []byte` — you will need to
+               either add a second pass or restructure the list handler).
+
+            2. **Add LastCommitAge field**: After parsing each worktree entry, run
+               `git -C <path> log -1 --format=%cr` to get the relative date of the last commit.
+               Store it in a new `LastCommitAge` field on `WorktreeEntry`.
+
+            3. **Stale detection**: Mark a branch as `"stale"` when it is unmerged AND its last
+               commit is older than 24 hours. Use `git -C <path> log -1 --format=%ct` to get the
+               Unix timestamp and compare to `time.Now().Unix()`.
+
+            4. **Batch-delete endpoint**: Add `handleBatchDeleteWorktrees` for
+               `POST /api/impl/{slug}/worktrees/cleanup`. It accepts:
+               ```json
+               { "branches": ["wave1-agent-A", ...], "force": false }
+               ```
+               When `force=false` and any branch is unmerged, return 409 with the list of
+               unmerged branches. When `force=true` (or all are merged), delete each
+               worktree + branch (reuse existing `findWorktreePath` and delete logic from
+               `handleDeleteWorktree`). Return a per-branch result summary.
+
+            5. **Add types** to `pkg/api/types.go`:
+               - Add `LastCommitAge string` field to `WorktreeEntry`
+               - Add `WorktreeBatchDeleteRequest`, `WorktreeBatchDeleteResult`,
+                 `WorktreeBatchDeleteResponse` types
+
+            6. **Write tests** in `pkg/api/worktree_handler_test.go`:
+               - Test `parseWorktreePorcelain` with merged/unmerged branches
+               - Test batch-delete request validation (empty branches, missing force)
+
+            ## Interfaces to Implement
+
+            ```go
+            // New endpoint handler
+            func (s *Server) handleBatchDeleteWorktrees(w http.ResponseWriter, r *http.Request)
+
+            // New types in types.go
+            type WorktreeBatchDeleteRequest struct {
+                Branches []string `json:"branches"`
+                Force    bool     `json:"force"`
+            }
+
+            type WorktreeBatchDeleteResult struct {
+                Branch  string `json:"branch"`
+                Deleted bool   `json:"deleted"`
+                Error   string `json:"error,omitempty"`
+            }
+
+            type WorktreeBatchDeleteResponse struct {
+                Results      []WorktreeBatchDeleteResult `json:"results"`
+                DeletedCount int                         `json:"deleted_count"`
+                FailedCount  int                         `json:"failed_count"`
+            }
+            ```
+
+            ## Interfaces to Call
+
+            ```go
+            // Existing functions in worktree_handler.go (same file):
+            func getMergedBranches(repoPath string) map[string]bool
+            func findWorktreePath(repoPath, branch string) string
+            ```
+
+            ## Tests to Write
+
+            - `TestParseWorktreePorcelain` — existing function, add cases for stale detection
+            - `TestHandleBatchDeleteWorktrees_EmptyBranches` — returns 400
+            - `TestHandleBatchDeleteWorktrees_UnmergedConflict` — returns 409 when force=false
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./... && go test ./... && go vet ./...
+            ```
+
+            ## Constraints
+
+            - Do NOT register the new route in server.go — that is Agent C's job (Wave 2)
+            - Do NOT modify any frontend files
+            - The `LastCommitAge` field must use `json:"last_commit_age,omitempty"` tag
+            - The `handleBatchDeleteWorktrees` handler must be an exported-receiver method
+              on `*Server` so Agent C can register it in server.go
+            - Keep the existing `handleListWorktrees` and `handleDeleteWorktree` working
+        - files:
+            - web/src/components/WorktreePanel.tsx
+            - web/src/types.ts
+            - web/src/api.ts
+            - web/src/hooks/useWorktrees.ts
+          id: B
+          task: |
+            ## What to Implement
+
+            Build the Worktree Manager frontend panel and supporting infrastructure:
+
+            1. **Update TypeScript types** in `web/src/types.ts`:
+               - Add `last_commit_age?: string` to the existing `WorktreeEntry` interface
+               - Add `WorktreeBatchDeleteRequest`, `WorktreeBatchDeleteResult`,
+                 `WorktreeBatchDeleteResponse` interfaces
+
+            2. **Add API client function** in `web/src/api.ts`:
+               - Add `batchDeleteWorktrees(slug, req)` function calling
+                 `POST /api/impl/{slug}/worktrees/cleanup`
+
+            3. **Create `useWorktrees` hook** in `web/src/hooks/useWorktrees.ts`:
+               - Calls `listWorktrees(slug)` on mount and exposes `worktrees`, `loading`,
+                 `error`, and `refresh()` function
+               - Exposes `deleteBranches(branches: string[], force: boolean)` that calls
+                 `batchDeleteWorktrees` then auto-refreshes the list
+               - Exposes `deleteSingle(branch: string)` that calls existing `deleteWorktree`
+                 then refreshes
+
+            4. **Create `WorktreePanel` component** in `web/src/components/WorktreePanel.tsx`:
+               - Uses shadcn/ui `Card`, `Table`, `Button`, `Badge` components
+               - Table columns: checkbox, Branch, Status (badge: green=merged, yellow=unmerged,
+                 red=stale), Has Unsaved (warning icon), Last Commit, Actions (delete button)
+               - Select-all checkbox in header
+               - "Delete Selected" button in card header — disabled when nothing selected
+               - Confirmation dialog before deleting unmerged branches:
+                 "N branches are unmerged. Delete anyway?" with Cancel / Force Delete buttons
+               - Empty state: "No SAW branches found" message
+               - Props: `slug: string`
+               - Uses the `useWorktrees` hook internally
+
+            ## Interfaces to Implement
+
+            ```typescript
+            // useWorktrees hook
+            export function useWorktrees(slug: string): {
+              worktrees: WorktreeEntry[]
+              loading: boolean
+              error: string | null
+              refresh: () => void
+              deleteBranches: (branches: string[], force: boolean) => Promise<void>
+              deleteSingle: (branch: string) => Promise<void>
+            }
+
+            // WorktreePanel component
+            export default function WorktreePanel(props: { slug: string }): JSX.Element
+            ```
+
+            ## Interfaces to Call
+
+            ```typescript
+            // Existing (api.ts):
+            listWorktrees(slug: string): Promise<WorktreeListResponse>
+            deleteWorktree(slug: string, branch: string): Promise<void>
+
+            // New (added by you in api.ts):
+            batchDeleteWorktrees(slug: string, req: WorktreeBatchDeleteRequest): Promise<WorktreeBatchDeleteResponse>
+            ```
+
+            ## Tests to Write
+
+            No tests required for this wave. The hook and component are UI-only.
+            Integration testing happens via the quality gate build.
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && command npm run build && command npm run lint
+            ```
+
+            ## Constraints
+
+            - Do NOT modify any Go files
+            - Do NOT modify ReviewScreen.tsx or WaveBoard.tsx — that is Agent C's job
+            - Do NOT register any routes
+            - Use shadcn/ui components (`@/components/ui/button`, etc.) — import paths
+              use the `@/` alias (e.g., `import { Button } from '@/components/ui/button'`)
+              BUT check existing components first — the project may use relative imports
+              like `'./ui/button'`. Match the existing pattern in the codebase.
+            - The confirmation dialog for unmerged branches can be a simple inline
+              state toggle (show/hide confirm bar) — no need for a modal library
+            - Export WorktreePanel as default export
+      number: 1
+    - agents:
+        - files:
+            - pkg/api/wave_runner.go
+            - pkg/api/server.go
+            - pkg/api/worktree_handler.go
+            - web/src/components/ReviewScreen.tsx
+            - web/src/components/WaveBoard.tsx
+          id: C
+          task: |
+            ## What to Implement
+
+            Wire the Worktree Manager into the app — route registration, ReviewScreen
+            panel integration, WaveBoard pre-run stale-branch warning, and the
+            wave_runner stale-branch detection SSE event.
+
+            1. **Register batch-delete route** in `pkg/api/server.go`:
+               Add under the existing `// v0.17.0-D — Worktree manager` comment block:
+               ```go
+               s.mux.HandleFunc("POST /api/impl/{slug}/worktrees/cleanup", s.handleBatchDeleteWorktrees)
+               ```
+
+            2. **Add stale-branch check to wave_runner.go**: In `runWaveLoop`, after the
+               `publish("run_started", ...)` call and before the scaffold stage, add a
+               stale-branch detection step:
+               - Call `handleListWorktrees`-style logic (reuse `parseWorktreePorcelain`
+                 and `getMergedBranches`) to check for stale SAW branches
+               - If any stale branches exist, emit an SSE event:
+                 ```go
+                 publish("stale_branches_detected", map[string]interface{}{
+                     "slug":     slug,
+                     "branches": staleBranchNames,
+                     "count":    len(staleBranchNames),
+                 })
+                 ```
+               - Do NOT block — this is advisory only. The wave continues regardless.
+               - Extract a helper function `detectStaleBranches(repoPath string) []string`
+                 in worktree_handler.go (Agent A's file is merged by now, but Agent C
+                 adds the helper since wave_runner.go needs to call it).
+
+               NOTE: Since `worktree_handler.go` is Agent A's file (Wave 1), add the
+               `detectStaleBranches` helper there. This is safe because Wave 1 is already
+               merged before Wave 2 runs. The function signature:
+               ```go
+               func detectStaleBranches(repoPath string) []string
+               ```
+
+            3. **Add WorktreePanel to ReviewScreen.tsx**: Add a new panel entry:
+               - Import `WorktreePanel` from `'./WorktreePanel'`
+               - Add `'worktrees'` to the `PanelKey` union type
+               - Add `{ key: 'worktrees', label: 'Worktrees' }` to the `panels` array
+               - Render `<WorktreePanel slug={slug} />` when the worktrees panel is active
+
+            4. **Add stale-branch banner to WaveBoard.tsx**: Listen for the
+               `stale_branches_detected` SSE event in the existing wave event stream.
+               When received, show a yellow warning banner at the top of WaveBoard:
+               "⚠ N stale branches detected from previous runs. Open Worktrees panel to clean up."
+               The banner should be dismissible (X button).
+
+            ## Interfaces to Implement
+
+            ```go
+            // Helper in worktree_handler.go
+            func detectStaleBranches(repoPath string) []string
+            ```
+
+            ## Interfaces to Call
+
+            ```go
+            // Existing in worktree_handler.go (from Agent A, Wave 1):
+            func getMergedBranches(repoPath string) map[string]bool
+            func parseWorktreePorcelain(data []byte, mergedBranches map[string]bool) []WorktreeEntry
+
+            // Existing in wave_runner.go:
+            func publish(event string, data interface{})  // closure parameter
+            ```
+
+            ```typescript
+            // From Agent B, Wave 1:
+            import WorktreePanel from './WorktreePanel'
+            ```
+
+            ## Tests to Write
+
+            No additional tests required. The stale-branch detection is advisory-only
+            and tested implicitly via the existing `parseWorktreePorcelain` tests from
+            Agent A. The wave_runner integration is tested via the existing wave_runner
+            test infrastructure.
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./... && go test ./... && go vet ./...
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && command npm run build && command npm run lint
+            ```
+
+            ## Constraints
+
+            - Agent C runs in Wave 2 — Agents A and B are already merged
+            - The `detectStaleBranches` function goes in `worktree_handler.go` (same
+              package as wave_runner.go, so it's directly callable)
+            - The stale-branch SSE event must NOT block wave execution — it is advisory
+            - The WaveBoard banner must be dismissible and only appears when the SSE
+              event fires (not persisted across page reloads)
+            - When adding to ReviewScreen.tsx panels array, place 'worktrees' after
+              'quality-gates' and before 'context-viewer'
+            - Use the emoji warning icon sparingly — match existing WaveBoard styling
+      number: 2
