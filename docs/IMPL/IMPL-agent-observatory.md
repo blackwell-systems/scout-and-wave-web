@@ -1,4 +1,5 @@
 # IMPL: Agent Observatory — Real-time Tool Call Stream per Wave Agent
+<!-- SAW:COMPLETE 2026-03-09 -->
 
 ## Suitability Assessment
 
@@ -860,12 +861,12 @@ After Wave 2 completes:
 
 | Wave | Agent | Description | Status |
 |------|-------|-------------|--------|
-| 1 | A | ToolCallEvent type + CLI RunStreamingWithTools + backend stubs (engine repo) | TO-DO |
-| 1 | B | Runner.ExecuteStreamingWithTools (engine repo) | TO-DO |
-| 1 | C | AgentToolCallPayload SSE type in web api/types.go (web repo) | TO-DO |
-| 2 | D | Orchestrator launchAgent wiring — fires agent_tool_call events (engine repo) | TO-DO |
-| 2 | E | ToolFeed component + useWaveEvents listener + AgentCard integration (web repo) | TO-DO |
-| — | Orch | Post-merge integration, binary rebuild, smoke test | TO-DO |
+| 1 | A | ToolCallEvent type + CLI RunStreamingWithTools + backend stubs (engine repo) | DONE  |
+| 1 | B | Runner.ExecuteStreamingWithTools (engine repo) | DONE  |
+| 1 | C | AgentToolCallPayload SSE type in web api/types.go (web repo) | DONE  |
+| 2 | D | Orchestrator launchAgent wiring — fires agent_tool_call events (engine repo) | DONE  |
+| 2 | E | ToolFeed component + useWaveEvents listener + AgentCard integration (web repo) | DONE  |
+| — | Orch | Post-merge integration, binary rebuild, smoke test | DONE  |
 
 ---
 
