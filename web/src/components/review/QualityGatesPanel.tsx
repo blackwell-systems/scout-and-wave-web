@@ -1,41 +1,29 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
+import * as yaml from 'js-yaml'
 
-interface Gate {
-  command: string
-  required: boolean
-  description: string
+interface QualityGates {
+  level: string
+  gates: QualityGate[]
 }
 
-function parseGates(text: string): Gate[] {
-  const gates: Gate[] = []
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed.startsWith('- ') && !trimmed.startsWith('* ')) continue
-    const content = trimmed.slice(2).trim()
-    if (!content) continue
+interface QualityGate {
+  type: string
+  command: string
+  required: boolean
+  description?: string
+}
 
-    const requiredTag = /\[required\]/i.test(content)
-    const optionalTag = /\[optional\]/i.test(content)
-    const required = requiredTag || !optionalTag
+function parseQualityGates(text: string): QualityGates | null {
+  // Strip fence markers
+  const stripped = text.replace(/^```yaml.*\n|```$/gm, '')
 
-    // Strip tags from content to get the raw gate line
-    const stripped = content.replace(/\[(required|optional)\]/gi, '').trim()
-
-    // Split on first ' — ' or ' - ' to get command vs description
-    const dashIdx = stripped.search(/ [—–-] /)
-    let command: string
-    let description: string
-    if (dashIdx !== -1) {
-      command = stripped.slice(0, dashIdx).trim()
-      description = stripped.slice(dashIdx).replace(/^ [—–-] /, '').trim()
-    } else {
-      command = stripped
-      description = ''
-    }
-
-    gates.push({ command, required, description })
+  try {
+    const parsed = yaml.load(stripped) as QualityGates
+    return parsed
+  } catch (e) {
+    console.error('Failed to parse quality gates YAML:', e)
+    return null
   }
-  return gates
 }
 
 export default function QualityGatesPanel({ gatesText }: { gatesText?: string }): JSX.Element {
@@ -52,21 +40,22 @@ export default function QualityGatesPanel({ gatesText }: { gatesText?: string })
     )
   }
 
-  const gates = parseGates(gatesText)
+  const parsed = parseQualityGates(gatesText)
 
-  if (gates.length === 0) {
+  if (!parsed || !parsed.gates || parsed.gates.length === 0) {
     return (
       <Card>
         <CardHeader>
           <CardTitle>Quality Gates</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-sm text-muted-foreground">No quality gates defined</p>
+          <p className="text-sm text-muted-foreground">Invalid quality gates format</p>
         </CardContent>
       </Card>
     )
   }
 
+  const gates = parsed.gates
   const requiredCount = gates.filter(g => g.required).length
   const optionalCount = gates.length - requiredCount
 
