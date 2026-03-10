@@ -175,6 +175,24 @@ export interface WorktreeEntry {
   path: string
   status: 'merged' | 'unmerged' | 'stale'
   has_unsaved: boolean
+  last_commit_age?: string  // e.g. "3 hours ago"
+}
+
+export interface WorktreeBatchDeleteRequest {
+  branches: string[]
+  force: boolean
+}
+
+export interface WorktreeBatchDeleteResult {
+  branch: string
+  deleted: boolean
+  error: string
+}
+
+export interface WorktreeBatchDeleteResponse {
+  results: WorktreeBatchDeleteResult[]
+  deleted_count: number
+  failed_count: number
 }
 
 export interface WorktreeListResponse {
