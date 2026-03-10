@@ -30,21 +30,21 @@ scout-and-wave-app/      Wails desktop app (future)
 
 ---
 
-## Current Status (v0.35.0+)
+## Current Status (v0.42.0+)
 
 **Protocol & engine** — Core protocol (I1–I6 invariants, E1–E23 execution rules), Go orchestration engine, E16 validator, scaffold build verification (E22), per-agent context extraction (E23), engine extraction complete (`scout-and-wave-go` standalone module), cross-repo wave support, single-agent rerun (`RunSingleAgent`), unified tool system (`pkg/tools` Workshop — 7 tools, backend adapters, middleware support).
 
-**Web UI** — 3-column layout, Scout launcher, ReviewScreen (15+ panels), WaveBoard (failure-type action buttons, notes callout, scope-hint reruns), RevisePanel, GitActivity, CommandPalette, Settings, ThemePicker, SVG dep graph, wave gate, cancellation, desktop notifications, ManifestValidation panel.
+**Web UI** — 3-column layout, Scout launcher, ReviewScreen (15+ panels), WaveBoard (failure-type action buttons, notes callout, scope-hint reruns), RevisePanel, GitActivity, CommandPalette, Settings, ThemePicker, SVG dep graph, wave gate, cancellation, desktop notifications, ManifestValidation panel, WorktreePanel (modal overlay with batch delete).
 
 **Streaming** — PTY + `--output-format stream-json` pipeline, JSON fragment reassembly, SSE broker (2048-channel).
 
-**API** — 30 routes covering scout (+ rerun), wave, single-agent rerun, merge, test, diff, worktree, chat, config, context, scaffold rerun, manifest validate/load/wave/completion.
+**API** — 30+ routes covering scout (+ rerun), wave, single-agent rerun, merge, test, diff, worktree (+ cleanup), chat, config, context, scaffold rerun, manifest validate/load/wave/completion.
 
 See CHANGELOG.md for full version history.
 
 ---
 
-## Phase 1: Close the GUI Loop (v0.17.0)
+## Phase 1: Close the GUI Loop ✅ *COMPLETE (v0.40.0)*
 
 **Goal:** You should never need a terminal. Everything from feature description to merged, tested code happens in the SAW GUI.
 
@@ -52,25 +52,17 @@ See CHANGELOG.md for full version history.
 
 | Trigger | Current workaround | Fix |
 |---|---|---|
-| Want to see changes | Open IDE | File diff viewer |
-| Old worktrees pile up | `git branch -D` in terminal | Worktree manager |
+| Want to see changes | Open IDE | File diff viewer *(roadmapped for Phase 2)* |
 
 ---
 
-### v0.17.0-D — Worktree Manager
+### v0.17.0-D — Worktree Manager *(shipped v0.40.0)*
 
-**Why:** Failed or aborted waves leave `wave{N}-agent-{X}` branches on disk indefinitely. They pile up silently and cause "branch already exists" errors on re-runs.
+**Shipped.** WorktreePanel renders as modal overlay (v0.42.0) with table view, checkbox selection, status badges (merged/unmerged/stale), batch delete with force-delete option, stale detection (24h unmerged), dismissible warning banner in WaveBoard. Backend: `GET /api/impl/{slug}/worktrees`, `POST /api/impl/{slug}/worktrees/cleanup` with per-branch results. No terminal needed for branch cleanup.
 
-**Scope:**
-- Worktree panel in sidebar (or WaveBoard footer): lists all SAW-created branches for the current slug
-- `GET /api/impl/{slug}/worktrees` — returns branch list with status (merged, unmerged, stale)
-- One-click cleanup: delete selected branches + worktree directories
-- Warning before deleting unmerged branches with uncommitted changes
-- Auto-suggest cleanup when a new wave run is about to start and stale branches exist
-
-**Success criteria:**
-- No need to run `git branch -D` manually
-- Re-running a wave after failure works without "branch exists" errors
+**Success criteria met:**
+- ✅ No need to run `git branch -D` manually
+- ✅ Re-running a wave after failure works without "branch exists" errors
 
 ---
 
@@ -283,16 +275,17 @@ GitHub App that posts IMPL doc reviews as PR comments. Approval workflow in GitH
 
 ## Current Focus
 
-**Next:** Finish Phase 1
-- v0.17.0-D — **Worktree manager** (clean up stale branches in GUI)
+**Phase 1 Complete (v0.40.0)** ✅
+- v0.17.0-D — Worktree manager shipped, no terminal needed for branch cleanup
 
-**Then:** Phase 2 intelligence features
-- v0.18.0-E — Stub Report Panel
-- v0.18.0-E2 — Animated dep graph during execution
-- v0.18.0-F — Quality Gates Panel
-- v0.18.0-H — NOT SUITABLE full research view
+**Now:** Phase 2 intelligence features
+- v0.18.0-E — Stub Report Panel (surface TODO/FIXME before approval)
+- v0.18.0-E2 — Animated dep graph during execution (pulsing nodes, live status)
+- v0.18.0-F — Quality Gates Panel (test results inline)
+- v0.18.0-H — NOT SUITABLE full research view (show why + what would fix it)
 - v0.18.0-I — Scaffold build failure detail (UI only — API shipped v0.33.0)
-- v0.18.0-K — Large IMPL doc scalability
+- v0.18.0-J — Pre-wave quality gates preview (edit gates before approval)
+- v0.18.0-K — Large IMPL doc scalability (per-agent context trimming)
 
 **Then:** v0.19.5 — Wails desktop app. Engine extraction complete — import `scout-and-wave-go`, replace HTTP/SSE with Wails bindings, React frontend unchanged. Ships as native cross-platform app.
 

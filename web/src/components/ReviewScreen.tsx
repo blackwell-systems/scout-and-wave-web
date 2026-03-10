@@ -267,16 +267,6 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
             Worktrees
           </button>
           <button
-            onClick={() => setShowChat(v => !v)}
-            className={`flex items-center justify-center text-sm font-medium px-6 h-14 transition-all duration-150 border-t-2 ${
-              showChat
-                ? 'border-t-violet-500 text-violet-700 dark:text-violet-400 bg-violet-500/10'
-                : 'border-t-violet-500/40 text-muted-foreground hover:bg-violet-500/10 hover:text-foreground'
-            }`}
-          >
-            Ask Claude
-          </button>
-          <button
             onClick={() => togglePanel('context-viewer')}
             className={`flex items-center justify-center text-sm font-medium px-6 h-14 transition-all duration-150 border-t-2 ${
               activePanels.includes('context-viewer')
@@ -285,6 +275,16 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
             }`}
           >
             Project Memory
+          </button>
+          <button
+            onClick={() => setShowChat(v => !v)}
+            className={`flex items-center justify-center text-sm font-semibold px-8 h-14 transition-all duration-150 border-t-2 ${
+              showChat
+                ? 'border-t-violet-500 text-violet-700 dark:text-violet-400 bg-violet-500/20'
+                : 'border-t-violet-500/40 text-violet-600 dark:text-violet-400 bg-violet-500/5 hover:bg-violet-500/10 hover:text-violet-700 dark:hover:text-violet-300'
+            }`}
+          >
+            Ask Claude
           </button>
         </div>
       )}
