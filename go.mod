@@ -41,4 +41,4 @@ require (
 	github.com/tidwall/sjson v1.2.5 // indirect
 )
 
-replace github.com/blackwell-systems/scout-and-wave-go => /Users/dayna.blackwell/code/scout-and-wave-go/.claude/worktrees/wave2-agent-I
+replace github.com/blackwell-systems/scout-and-wave-go => /Users/dayna.blackwell/code/scout-and-wave-go
