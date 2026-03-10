@@ -32,7 +32,7 @@ scout-and-wave-app/      Wails desktop app (future)
 
 ## Current Status (v0.35.0)
 
-**Protocol & engine** — Core protocol (I1–I6 invariants, E1–E23 execution rules), Go orchestration engine, E16 validator, scaffold build verification (E22), per-agent context extraction (E23), engine extraction complete (`scout-and-wave-go` standalone module), cross-repo wave support, single-agent rerun (`RunSingleAgent`).
+**Protocol & engine** — Core protocol (I1–I6 invariants, E1–E23 execution rules), Go orchestration engine, E16 validator, scaffold build verification (E22), per-agent context extraction (E23), engine extraction complete (`scout-and-wave-go` standalone module), cross-repo wave support, single-agent rerun (`RunSingleAgent`), unified tool system (`pkg/tools` Workshop — 7 tools, backend adapters, middleware support).
 
 **Web UI** — 3-column layout, Scout launcher, ReviewScreen (15+ panels), WaveBoard (failure-type action buttons, notes callout, scope-hint reruns), RevisePanel, GitActivity, CommandPalette, Settings, ThemePicker, SVG dep graph, wave gate, cancellation, desktop notifications, ManifestValidation panel.
 
