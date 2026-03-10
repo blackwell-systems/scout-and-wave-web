@@ -30,49 +30,17 @@ scout-and-wave-app/      Wails desktop app (future)
 
 ---
 
-## Current Status (v0.20.3)
+## Current Status (v0.33.0)
 
-### ✅ Shipped
+**Protocol & engine** — Core protocol (I1–I6 invariants, E1–E23 execution rules), Go orchestration engine, E16 validator, scaffold build verification (E22), per-agent context extraction (E23), engine extraction complete (`scout-and-wave-go` standalone module), cross-repo wave support.
 
-**Protocol & engine**
-- Core protocol (I1–I6 invariants, E1–E16 execution rules)
-- Go orchestration engine (worktrees, merge, state machine)
-- E16 IMPL doc validator (required blocks, typed-block dispatch, dep graph detection)
-- Scaffold Agent gap detection in wave runner (`runScaffoldIfNeeded`)
-- **Engine extraction complete** — `scout-and-wave-go` is a standalone Go module; `scout-and-wave-web` imports it via `replace` directive. All wave runner, parser, git, worktree, and agent packages live in the engine repo.
-- Cross-repo wave support (protocol v0.11.0): multi-repo worktree coordination, `Repo` column in file ownership, updated isolation layers
+**Web UI** — 3-column layout, Scout launcher, ReviewScreen (15+ panels), WaveBoard, RevisePanel, GitActivity, CommandPalette, Settings, ThemePicker, SVG dep graph, wave gate, cancellation, desktop notifications, ManifestValidation panel.
 
-**Web UI**
-- 3-column persistent layout: sidebar | review | LiveRail
-- Scout launcher: description input, 15-char minimum, live output streaming, completion banner
-- ReviewScreen: toggleable panels, sticky toolbar, pre-mortem, wave structure, dep graph, file ownership, interface contracts, scaffolds, known issues, post-merge checklist, stub report
-- WaveBoard: live agent cards, status badges, agent color coding (A–K), output toggle, re-run button
-- Request Changes: RevisePanel with manual markdown editor + Claude revision via SSE
-- Plan approval / rejection / request changes actions
-- ThemePicker: Gruvbox Dark, Darcula, Catppuccin Mocha, Nord (persisted to localStorage)
-- Dark mode toggle, scrollbar follows active theme
-- SVG dependency graph with bezier edges, agent color nodes, hover tooltips
-- Git activity sidebar: branch lanes, commit dots, animated merge lines
-- Wave gate: pause-between-waves banner with inline IMPL editor
-- Cancel button: Scout and Revise cancellation with silent reset (`scout_cancelled` / `revise_cancelled` SSE events)
-- Desktop notifications: browser Notification API, fires on scout/wave/revise complete
-- Auto-refresh sidebar: IMPL list refreshes immediately on scout complete
-- Delete IMPL: hover ✕ button with confirm dialog, removes IMPL doc from disk
-- StubReportPanel: E20 stub scan output with "clean" or "stubs detected" badges
-- QualityGatesPanel: E21 gate definitions with command/required/optional/description table
+**Streaming** — PTY + `--output-format stream-json` pipeline, JSON fragment reassembly, SSE broker (2048-channel).
 
-**Streaming**
-- PTY + `--output-format stream-json` pipeline: per-event real-time streaming
-- JSON fragment reassembly for PTY-wrapped lines
-- Rich event formatting: `→ ToolName(arg)`, indented tool results, `✓ complete`
-- SSE broker (2048-channel capacity) for scout, wave, and revise events
+**API** — 28 routes covering scout, wave, merge, test, diff, worktree, chat, config, context, scaffold rerun, manifest validate/load/wave/completion.
 
-**API**
-- `POST /api/scout/run` + `GET /api/scout/{runID}/events`
-- `POST /api/impl/{slug}/revise` + `GET /api/impl/{slug}/revise/{runID}/events`
-- `GET|PUT /api/impl/{slug}/raw`
-- `POST /api/wave/{slug}/start|gate/proceed|agent/{letter}/rerun`
-- `GET /api/git/{slug}/activity`
+See CHANGELOG.md for full version history.
 
 ---
 
@@ -80,70 +48,12 @@ scout-and-wave-app/      Wails desktop app (future)
 
 **Goal:** You should never need a terminal. Everything from feature description to merged, tested code happens in the SAW GUI.
 
-### What forces you out of the GUI today
+### Remaining gaps
 
-| Trigger | Current workaround | Fix | Status |
-|---|---|---|---|
-| Wave completes | `saw merge` in terminal | Merge button in WaveBoard | ✅ Shipped (v0.17.0-A) |
-| Merge succeeds | `go test` / `npm test` in terminal | Inline test runner | ✅ Shipped (v0.17.0-B) |
-| Want to see changes | Open IDE | File diff viewer | Pending |
-| Scout/revise hung | Kill process in terminal | Cancel button | ✅ Shipped |
-| Old worktrees pile up | `git branch -D` in terminal | Worktree manager | Pending |
-| Want to configure SAW | Edit JSON | Settings screen | ✅ Shipped (v0.18.0-C) |
-
----
-
-### v0.17.0-A — Merge Button
-
-**Why:** Wave completion is completely invisible from the GUI. You finish reviewing completion reports and then... go to terminal. This is the single biggest workflow break.
-
-**Scope:**
-- "Merge Wave" button appears in WaveBoard after all agents in current wave report `status: complete`
-- Click triggers `POST /api/wave/{slug}/merge` — runs the merge procedure server-side
-  - `git merge --no-ff wave{N}-agent-{X}` for each agent in merge order
-  - Conflict detection: if merge fails, surface conflict details in UI
-  - Cleanup: delete merged worktree branches
-- SSE stream shows merge output line-by-line as it runs
-- On success: wave card turns green, "Proceed to Wave N+1" or "Complete" banner appears
-- On conflict: red banner with conflicting files listed, link to manual resolution guide
-
-**Success criteria:**
-- Full wave → merge → next wave cycle happens entirely in browser
-- Merge conflicts surfaced with enough detail to resolve without terminal
-
----
-
-### v0.17.0-B — Post-Merge Test Runner
-
-**Why:** After merging you need to verify nothing broke. Currently requires terminal.
-
-**Scope:**
-- "Run Tests" button appears after successful merge
-- Reads test command from IMPL doc (`test_command` field); falls back to auto-detection (`go test ./...`, `npm test`, `cargo test`)
-- Streams test output via SSE
-- Pass: green banner. Fail: red banner with failed test output highlighted
-- Results saved to IMPL doc as a post-merge note
-
-**Success criteria:**
-- Test results visible in GUI within seconds of merge completing
-- Failed tests show enough context to understand what broke
-
----
-
-### v0.17.0-C — File Diff Viewer
-
-**Why:** Agents write code you can't see from the GUI. You're approving work you can't inspect.
-
-**Scope:**
-- Clicking any file in the File Ownership panel opens a diff panel
-- `GET /api/impl/{slug}/diff/{agent}` — runs `git diff main...wave{N}-agent-{X} -- {file}` and returns unified diff
-- Syntax-highlighted diff (added lines green, removed red, unchanged gray)
-- For completed waves: shows merged diff against main
-- "← Back" returns to review
-
-**Success criteria:**
-- You can read every file an agent touched without leaving SAW
-- Diff loads in under 1 second for files under 500 lines
+| Trigger | Current workaround | Fix |
+|---|---|---|
+| Want to see changes | Open IDE | File diff viewer |
+| Old worktrees pile up | `git branch -D` in terminal | Worktree manager |
 
 ---
 
@@ -165,56 +75,6 @@ scout-and-wave-app/      Wails desktop app (future)
 ---
 
 ## Phase 2: Deepen the Intelligence (v0.18.0)
-
-### v0.18.0-A — Scout Context Panel
-
-**Why:** Scout often misses context that's obvious to the developer — an existing pattern to follow, a file to avoid, an architectural constraint. Currently you can only add it by editing the IMPL doc after the fact.
-
-**Scope:**
-- Expandable "Add context" section in ScoutLauncher (below feature description)
-  - File attachments: paste file paths, SAW reads them and includes content in scout prompt
-  - Free-text notes: "follow the pattern in pkg/api/scout.go", "don't touch the parser"
-  - Constraint checkboxes: "keep backward compatible", "no new dependencies", "tests required"
-- Context is appended to the scout system prompt before launch
-- Context persists in browser session so you can reuse it across scout runs
-
-**Success criteria:**
-- Scout incorporates attached file content in its analysis
-- Common constraints can be set in one click
-
----
-
-### v0.18.0-B — Chat with Claude About the Plan
-
-**Why:** Before approving an IMPL doc you often have questions — "why did you put this in wave 2?", "can this be done in one wave?", "what happens if agent B fails?" Currently you either approve blind or do a full revision.
-
-**Scope:**
-- "Ask Claude" chat panel in ReviewScreen (separate from Request Changes)
-- Lightweight Q&A: user asks a question, Claude answers in context of the IMPL doc
-- Does NOT modify the IMPL doc — read-only consultation
-- Full conversation history visible in the panel
-- "Apply this suggestion" button converts a chat answer into a revision request
-
-**Success criteria:**
-- You can ask architectural questions and get answers in under 30 seconds
-- Chat context includes the full IMPL doc so Claude's answers are grounded
-
----
-
-### v0.18.0-C — Settings Screen
-
-**Why:** Configuring SAW requires editing JSON files. Non-technical users can't do it.
-
-**Scope:**
-- Settings route in sidebar (gear icon)
-- **Repo section:** default repo path, docs/IMPL dir override
-- **Agent section:** per-phase model selection (scout/wave/scaffold/revise), max turns
-- **Quality gates:** test command, lint command, required vs. warning
-- **Appearance:** theme (already in header, expose here too), font size, compact mode
-- API: `GET|POST /api/config` — load/save `saw.config.json`
-- Hot reload: config changes apply without server restart
-
----
 
 ### v0.18.0-D — Failure Type Action Buttons
 
@@ -263,7 +123,7 @@ scout-and-wave-app/      Wails desktop app (future)
 - After wave completes: show gate results alongside the wave card (pass/fail badge per gate, command + exit code)
 - Gates configured `required: true` show as blocking (red); `required: false` as advisory (yellow)
 - API: `GET|PUT /api/impl/{slug}/raw` + client-side parse, or new `GET /api/impl/{slug}/gates` endpoint
-- Settings screen (v0.18.0-C) exposes default gate config; per-IMPL gates override
+- Settings screen exposes default gate config; per-IMPL gates override
 
 **Success criteria:**
 - Quality gate results visible in UI without reading IMPL doc raw markdown
@@ -298,7 +158,7 @@ scout-and-wave-app/      Wails desktop app (future)
 - "Approve" and "Reject" buttons replaced with "Archive" (moves IMPL doc to `docs/IMPL/archived/`)
 - API: `GET /api/impl/{slug}/raw` already sufficient — client-side parse
 
-**Dependency:** Requires the protocol "Full Research Output on NOT SUITABLE Verdicts" change to Scout to be useful. UI can be built now as a no-op fallback (just renders the existing minimal NOT SUITABLE doc without breaking).
+**Dependency:** Requires the protocol "Full Research Output on NOT SUITABLE Verdicts" change to Scout to be useful. UI can be built now as a no-op fallback.
 
 **Success criteria:**
 - NOT SUITABLE is not a dead end — it's a map of why and what to do next
@@ -308,14 +168,13 @@ scout-and-wave-app/      Wails desktop app (future)
 
 ### v0.18.0-I — Scaffold Build Failure Detail *(API done v0.33.0; UI pending)*
 
-**Why:** Protocol E22 (v0.13.0) requires the Scaffold Agent to run `go build ./...` (or equivalent) and report `status: FAILED` with build error output if it fails. Currently this surfaces as a generic BLOCKED state with no detail. The wave won't launch and the user doesn't know why or what to fix.
+**Why:** Protocol E22 (v0.13.0) requires the Scaffold Agent to run `go build ./...` (or equivalent) and report `status: FAILED` with build error output if it fails. Currently this surfaces as a generic BLOCKED state with no detail.
 
-**Scope:**
+**Scope (remaining — UI only):**
 - ReviewScreen/WaveBoard: detect SCAFFOLD_PENDING → BLOCKED transition from scaffold status field in IMPL doc Scaffolds section
 - When scaffold status contains `FAILED:`, show build error output in a syntax-highlighted code block (streaming via existing SSE if build is still running; static if already failed)
 - "Revise Interface Contracts" button opens the IMPL doc editor (RevisePanel) pre-focused on the Interface Contracts section
 - Clear "why this failed" explanation: "The Scaffold Agent could not compile the interface definitions. Fix the contracts above and re-run."
-- API: `GET /api/impl/{slug}/raw` for current scaffold status; re-run scaffold via new `POST /api/impl/{slug}/scaffold/rerun`
 
 **Success criteria:**
 - Build failure output visible in UI within 2 seconds of scaffold reporting FAILED
@@ -323,28 +182,12 @@ scout-and-wave-app/      Wails desktop app (future)
 
 ---
 
-### v0.18.0-K — Large IMPL Doc Scalability
-
-**Why:** Phase 1+2 together produce 14-agent IMPL docs. The ReviewScreen already panels the doc into structured views so human readability isn't the problem. The problem is engine-side: every Wave agent launched receives the full doc as context — token waste that scales O(N²) with agent count. Agent A gets all 13 other agents' full prompts even though it only needs its own section and the shared contracts.
-
-**Scope:**
-- `GET /api/impl/{slug}/agent/{letter}/context` — serve the trimmed per-agent context payload: that agent's prompt section + interface contracts + file ownership table + scaffolds + quality gates. Used by the orchestrator at launch time.
-- Wave launch path: pass per-agent context payload instead of full IMPL doc when invoking Wave agents via `/api/wave/{slug}/start`
-- ReviewScreen: "Agent Context" toggle on each agent card — shows the trimmed payload that agent received at launch (debugging: "why did agent B miss the contract?")
-- Lazy-load IMPL doc sections in ReviewScreen: fetch and parse only the active panel, not the full doc on every view switch
-
-**Success criteria:**
-- 14-agent IMPL doc launches with the same per-agent context size as a 5-agent one
-- ReviewScreen initial load stays under 1 second regardless of IMPL doc length
-
----
-
 ### v0.18.0-J — Pre-Wave Quality Gates Preview
 
-**Why:** v0.18.0-F shows quality gate *results* after wave completion. But Scout writes the `## Quality Gates` section at planning time — the gates are configured before any agent launches. Surfacing them during review gives the user a chance to adjust gate configuration before approving, and sets expectations for what will block the merge.
+**Why:** v0.18.0-F shows quality gate *results* after wave completion. But Scout writes the `## Quality Gates` section at planning time — the gates are configured before any agent launches. Surfacing them during review gives the user a chance to adjust gate configuration before approving.
 
 **Scope:**
-- ReviewScreen: parse `## Quality Gates` section from IMPL doc during the pre-wave review step (same client-side parse as v0.18.0-F)
+- ReviewScreen: parse `## Quality Gates` section from IMPL doc during the pre-wave review step
 - Show "Quality Gates" panel in the review sidebar: level badge (`quick`/`standard`/`full`), list of gates with command and required/advisory status
 - Required gates shown with lock icon — "merge will block if this fails"
 - Advisory gates shown with warning icon — "informational only"
@@ -355,6 +198,22 @@ scout-and-wave-app/      Wails desktop app (future)
 **Success criteria:**
 - User sees exactly what will run before approving — no surprises at merge time
 - Gate configuration adjustable in one click without opening a text editor
+
+---
+
+### v0.18.0-K — Large IMPL Doc Scalability
+
+**Why:** Phase 1+2 together produce 14-agent IMPL docs. Every Wave agent launched receives the full doc as context — token waste that scales O(N²) with agent count.
+
+**Scope:**
+- `GET /api/impl/{slug}/agent/{letter}/context` — serve the trimmed per-agent context payload: that agent's prompt section + interface contracts + file ownership table + scaffolds + quality gates. Used by the orchestrator at launch time.
+- Wave launch path: pass per-agent context payload instead of full IMPL doc when invoking Wave agents via `/api/wave/{slug}/start`
+- ReviewScreen: "Agent Context" toggle on each agent card — shows the trimmed payload that agent received at launch (debugging: "why did agent B miss the contract?")
+- Lazy-load IMPL doc sections in ReviewScreen: fetch and parse only the active panel, not the full doc on every view switch
+
+**Success criteria:**
+- 14-agent IMPL doc launches with the same per-agent context size as a 5-agent one
+- ReviewScreen initial load stays under 1 second regardless of IMPL doc length
 
 ---
 
@@ -423,59 +282,6 @@ GitHub App that posts IMPL doc reviews as PR comments. Approval workflow in GitH
 
 ---
 
-## Agent Color System (Cross-Cutting)
-
-### ✅ Unified Deterministic Agent Color Palette — SHIPPED (v0.20.0)
-
-**Status:** Complete. Golden angle color system with 26 base colors and multi-generation ID support shipped in v0.20.0.
-
-**What shipped:**
-- Golden angle hue calculation for 26 distinct colors (A-Z)
-- Multi-generation ID support (A2, B3, A3, etc.)
-- Dark mode awareness with automatic lightness adjustment
-- FileOwnershipTable refactored to use centralized system
-- DependencyGraphPanel regex fix for multi-generation parsing
-- All components now consistent across surfaces
-
-**Original problem statement (now resolved):** Fixed A–K palette (11 colors) broke down beyond 11 agents. FileOwnershipTable used local color arrays. Multi-generation IDs (A2, B3) not supported.
-
-**Design:**
-
-Agent IDs decompose into `(letter, generation)`:
-- `"A"` → `(A, 1)`, `"B"` → `(B, 1)`
-- `"A2"` → `(A, 2)`, `"B3"` → `(B, 3)`
-
-**Hue** is derived from the letter using the golden angle for maximum perceptual separation:
-```
-hue = (charIndex * 137.508) % 360   // charIndex: A=0, B=1, ... Z=25
-```
-A=0° → red-orange, B≈137° → blue-green, C≈275° → violet, etc. Adjacent letters land on opposite sides of the color wheel.
-
-**Lightness** varies by generation within the same hue, keeping the family relationship visually clear:
-```
-generation 1: hsl(hue, 65%, 45%)   // primary
-generation 2: hsl(hue, 65%, 30%)   // darker shade
-generation 3: hsl(hue, 65%, 60%)   // lighter shade
-generation 4+: cycle with saturation variation
-```
-
-**Two derived values per agent** (matching current API in `agentColors.ts`):
-- `getAgentColor(id)` → solid color for border, text, SVG nodes
-- `getAgentColorWithOpacity(id, opacity)` → rgba fill for card backgrounds, table row tints
-
-**Surfaces to update:**
-1. `lib/agentColors.ts` — replace lookup table with deterministic function; add multi-char ID parser
-2. `WaveStructurePanel.tsx` — already uses `getAgentColor`; picks up change automatically
-3. `WaveBoard.tsx` / `AgentCard.tsx` — already uses `getAgentColor`; picks up automatically
-4. `FileOwnershipTable.tsx` — add per-row agent color tint using `getAgentColorWithOpacity`
-5. `DependencyGraphPanel.tsx` — SVG nodes already colored; verify consistent with new function
-
-**Dark mode / light mode:** Hue stays constant across modes; lightness is mode-aware. In dark mode, lower base lightness (e.g. 40%) keeps colors vivid without washing out against dark backgrounds. In light mode, higher base lightness (e.g. 50%) prevents colors from being too dark against white. The HSL function handles this with a single `isDark` parameter that adjusts the lightness range used for each generation.
-
-**Protocol dependency:** Multi-generation IDs (A2, B3) require the protocol to define them as valid agent identifiers. The parser must recognize them, and the IMPL doc format must allow them in wave structure and file ownership tables. See protocol roadmap for the corresponding change.
-
----
-
 ## Stretch Goals
 
 - **Visual IMPL Builder** — drag-and-drop wave/agent definition, visual dep graph editor
@@ -485,29 +291,15 @@ generation 4+: cycle with saturation variation
 
 ## Current Focus
 
-**Completed recently:**
-- ✅ v0.20.3 — Multi-repo visual hierarchy (three-level: repo → wave → agent)
-- ✅ v0.20.2 — Sticky footer for action buttons
-- ✅ v0.20.0 — Golden angle color system (26 colors, multi-generation IDs, dark mode)
-- ✅ v0.17.0-A — Merge button (POST /api/wave/{slug}/merge with SSE streaming)
-- ✅ v0.17.0-B — Post-merge test runner (reads test_command, streams output)
-- ✅ v0.17.0-C — File diff viewer (FileDiffPanel with syntax highlighting)
-- ✅ v0.17.0-C — StubReportPanel (E20 stub scan output)
-- ✅ v0.17.0-C — QualityGatesPanel (E21 gate definitions)
-- ✅ v0.18.0-A — Scout context panel (attach files, add constraints)
-- ✅ v0.18.0-B — Chat with Claude (Q&A about IMPL doc before approval)
-- ✅ v0.18.0-C — Settings screen (repo, agent models, quality gates, appearance)
-- ✅ v0.33.0 — Scaffold rerun API (`POST /api/impl/{slug}/scaffold/rerun`) — 501 stub replaced with full `engine.RunScaffold` integration; events stream via existing wave SSE broker
-- ✅ v0.32.0 — Structured Scout output (schema-validated JSON → YAML); ManifestValidation panel; manifest routes wired
-
-**Next:** Finish Phase 1 — close the remaining GUI loop gaps
+**Next:** Finish Phase 1
 - v0.17.0-D — **Worktree manager** (clean up stale branches in GUI)
 
-**After that:** Remaining Phase 2 intelligence features
-- v0.18.0-K — Large IMPL doc scalability (lazy-load panels, per-agent context trim)
+**Then:** Phase 2 intelligence features
 - v0.18.0-D — Failure type action buttons (transient/fixable/needs_replan/escalate/timeout)
+- v0.18.0-I — Scaffold build failure detail (UI only — API shipped v0.33.0)
+- v0.18.0-G — CONTEXT.md viewer
 - v0.18.0-H — NOT SUITABLE full research view
-- v0.18.0-I — Scaffold build failure detail
+- v0.18.0-K — Large IMPL doc scalability
 
 **Then:** v0.19.5 — Wails desktop app. Engine extraction complete — import `scout-and-wave-go`, replace HTTP/SSE with Wails bindings, React frontend unchanged. Ships as native cross-platform app.
 
