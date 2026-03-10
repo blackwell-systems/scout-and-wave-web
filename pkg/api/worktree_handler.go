@@ -7,7 +7,9 @@ import (
 	"net/http"
 	"os/exec"
 	"regexp"
+	"strconv"
 	"strings"
+	"time"
 )
 
 // waveAgentBranchRe matches SAW-managed branches like "wave1-agent-a".
@@ -31,6 +33,9 @@ func (s *Server) handleListWorktrees(w http.ResponseWriter, r *http.Request) {
 
 	// Parse porcelain output into worktree entries
 	worktrees := parseWorktreePorcelain(out, mergedBranches)
+
+	// Enrich each entry with HasUnsaved, LastCommitAge, and stale detection
+	enrichWorktreeEntries(worktrees)
 
 	resp := WorktreeListResponse{Worktrees: worktrees}
 	w.Header().Set("Content-Type", "application/json")
@@ -88,6 +93,90 @@ func (s *Server) handleDeleteWorktree(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// handleBatchDeleteWorktrees serves POST /api/impl/{slug}/worktrees/cleanup.
+// Accepts a JSON body with branches to delete and a force flag.
+// When force=false and any branch is unmerged, returns 409 with the list.
+// When force=true (or all are merged), deletes each worktree+branch.
+func (s *Server) handleBatchDeleteWorktrees(w http.ResponseWriter, r *http.Request) {
+	var req WorktreeBatchDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "invalid JSON body", http.StatusBadRequest)
+		return
+	}
+
+	if len(req.Branches) == 0 {
+		http.Error(w, "branches list is empty", http.StatusBadRequest)
+		return
+	}
+
+	mergedBranches := getMergedBranches(s.cfg.RepoPath)
+
+	// When force=false, check for unmerged branches first
+	if !req.Force {
+		var unmerged []string
+		for _, branch := range req.Branches {
+			if !mergedBranches[branch] {
+				unmerged = append(unmerged, branch)
+			}
+		}
+		if len(unmerged) > 0 {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusConflict)
+			json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
+				"error":    "unmerged branches exist",
+				"unmerged": unmerged,
+			})
+			return
+		}
+	}
+
+	// Delete each branch
+	var results []WorktreeBatchDeleteResult
+	deletedCount := 0
+	failedCount := 0
+
+	for _, branch := range req.Branches {
+		result := WorktreeBatchDeleteResult{Branch: branch}
+
+		// Find and remove worktree
+		worktreePath := findWorktreePath(s.cfg.RepoPath, branch)
+		if worktreePath != "" {
+			rmCmd := exec.Command("git", "worktree", "remove", "--force", worktreePath)
+			rmCmd.Dir = s.cfg.RepoPath
+			rmCmd.Run() //nolint:errcheck — best effort
+		}
+
+		// Delete the branch
+		delCmd := exec.Command("git", "branch", "-d", branch)
+		delCmd.Dir = s.cfg.RepoPath
+		if err := delCmd.Run(); err != nil {
+			// Try force-delete
+			forceDelCmd := exec.Command("git", "branch", "-D", branch)
+			forceDelCmd.Dir = s.cfg.RepoPath
+			if err2 := forceDelCmd.Run(); err2 != nil {
+				result.Deleted = false
+				result.Error = "failed to delete branch"
+				failedCount++
+				results = append(results, result)
+				continue
+			}
+		}
+
+		result.Deleted = true
+		deletedCount++
+		results = append(results, result)
+	}
+
+	resp := WorktreeBatchDeleteResponse{
+		Results:      results,
+		DeletedCount: deletedCount,
+		FailedCount:  failedCount,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp) //nolint:errcheck
+}
+
 // parseWorktreePorcelain parses the output of `git worktree list --porcelain`
 // and returns WorktreeEntry values for branches matching the SAW wave pattern.
 func parseWorktreePorcelain(data []byte, mergedBranches map[string]bool) []WorktreeEntry {
@@ -138,6 +227,41 @@ func parseWorktreePorcelain(data []byte, mergedBranches map[string]bool) []Workt
 		return []WorktreeEntry{}
 	}
 	return entries
+}
+
+// enrichWorktreeEntries populates HasUnsaved, LastCommitAge, and stale status
+// for each worktree entry by running git commands against their paths.
+func enrichWorktreeEntries(entries []WorktreeEntry) {
+	now := time.Now().Unix()
+	staleThreshold := int64(24 * 60 * 60) // 24 hours in seconds
+
+	for i := range entries {
+		path := entries[i].Path
+
+		// Check for unsaved changes
+		statusCmd := exec.Command("git", "-C", path, "status", "--porcelain")
+		if statusOut, err := statusCmd.Output(); err == nil {
+			entries[i].HasUnsaved = len(bytes.TrimSpace(statusOut)) > 0
+		}
+
+		// Get last commit relative age (human-readable)
+		ageCmd := exec.Command("git", "-C", path, "log", "-1", "--format=%cr")
+		if ageOut, err := ageCmd.Output(); err == nil {
+			entries[i].LastCommitAge = strings.TrimSpace(string(ageOut))
+		}
+
+		// Stale detection: unmerged AND last commit > 24 hours old
+		if entries[i].Status == "unmerged" {
+			tsCmd := exec.Command("git", "-C", path, "log", "-1", "--format=%ct")
+			if tsOut, err := tsCmd.Output(); err == nil {
+				if ts, err := strconv.ParseInt(strings.TrimSpace(string(tsOut)), 10, 64); err == nil {
+					if now-ts > staleThreshold {
+						entries[i].Status = "stale"
+					}
+				}
+			}
+		}
+	}
 }
 
 // getMergedBranches returns a set of branch names merged into main.
