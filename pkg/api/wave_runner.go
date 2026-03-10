@@ -68,6 +68,15 @@ func runWaveLoop(
 ) {
 	publish("run_started", map[string]string{"slug": slug, "impl_path": implPath})
 
+	// Advisory stale-branch detection — does NOT block wave execution.
+	if staleBranches := detectStaleBranches(repoPath); len(staleBranches) > 0 {
+		publish("stale_branches_detected", map[string]interface{}{
+			"slug":     slug,
+			"branches": staleBranches,
+			"count":    len(staleBranches),
+		})
+	}
+
 	// Read saw.config.json to pick up the configured wave model.
 	waveModel := ""
 	if cfgData, err := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); err == nil {

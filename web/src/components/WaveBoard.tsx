@@ -50,6 +50,7 @@ function agentKey(agent: string, wave: number): string {
 export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoardProps): JSX.Element {
   // Optimistic status overrides — keyed by "wave:agent"
   const [statusOverrides, setStatusOverrides] = useState<Map<string, 'pending'>>(new Map())
+  const [staleDismissed, setStaleDismissed] = useState(false)
 
   const state = useWaveEvents(slug)
 
@@ -210,6 +211,22 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
             </span>
           )}
         </div>
+
+        {/* Stale branch warning banner */}
+        {state.staleBranches && !staleDismissed && (
+          <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-amber-800 text-sm dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400">
+            <span>
+              {state.staleBranches.count} stale branch{state.staleBranches.count !== 1 ? 'es' : ''} detected from previous runs. Open Worktrees panel to clean up.
+            </span>
+            <button
+              onClick={() => setStaleDismissed(true)}
+              className="ml-3 text-amber-600 hover:text-amber-800 dark:text-amber-400 dark:hover:text-amber-200 font-bold text-lg leading-none"
+              aria-label="Dismiss stale branch warning"
+            >
+              &times;
+            </button>
+          </div>
+        )}
 
         {/* Stage timeline — shows pipeline progress */}
         <StageTimeline entries={state.stageEntries} />

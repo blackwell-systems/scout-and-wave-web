@@ -78,6 +78,7 @@ func New(cfg Config) *Server {
 	// v0.17.0-D — Worktree manager
 	s.mux.HandleFunc("GET /api/impl/{slug}/worktrees", s.handleListWorktrees)
 	s.mux.HandleFunc("DELETE /api/impl/{slug}/worktrees/{branch}", s.handleDeleteWorktree)
+	s.mux.HandleFunc("POST /api/impl/{slug}/worktrees/cleanup", s.handleBatchDeleteWorktrees)
 
 	// v0.18.0-B — Chat with Claude
 	s.mux.HandleFunc("POST /api/impl/{slug}/chat", s.handleImplChat)

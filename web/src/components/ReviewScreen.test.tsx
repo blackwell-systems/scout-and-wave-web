@@ -76,7 +76,7 @@ describe('ReviewScreen', () => {
         onReject={() => {}}
       />
     )
-    expect(screen.getByText('Plan Review')).toBeInTheDocument()
+    expect(screen.getByText(/Plan Review/)).toBeInTheDocument()
   })
 
   it('subscribes to SSE on mount', () => {

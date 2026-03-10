@@ -283,6 +283,68 @@ func getMergedBranches(repoPath string) map[string]bool {
 	return merged
 }
 
+// detectStaleBranches returns the names of SAW-managed branches that exist
+// locally but are not merged into main. It reuses parseWorktreePorcelain and
+// getMergedBranches so the logic stays consistent with handleListWorktrees.
+// Called by wave_runner.go before each run to emit an advisory SSE event.
+func detectStaleBranches(repoPath string) []string {
+	cmd := exec.Command("git", "worktree", "list", "--porcelain")
+	cmd.Dir = repoPath
+	out, err := cmd.Output()
+	if err != nil {
+		// Also check plain branch list (worktrees may have been removed
+		// but branches still exist).
+		return detectStaleBranchesFromRefs(repoPath)
+	}
+
+	mergedBranches := getMergedBranches(repoPath)
+	entries := parseWorktreePorcelain(out, mergedBranches)
+
+	var stale []string
+	for _, e := range entries {
+		if e.Status == "unmerged" || e.Status == "stale" {
+			stale = append(stale, e.Branch)
+		}
+	}
+
+	// Also pick up orphaned branches (no worktree but branch ref exists)
+	refStale := detectStaleBranchesFromRefs(repoPath)
+	seen := make(map[string]bool, len(stale))
+	for _, b := range stale {
+		seen[b] = true
+	}
+	for _, b := range refStale {
+		if !seen[b] {
+			stale = append(stale, b)
+		}
+	}
+
+	return stale
+}
+
+// detectStaleBranchesFromRefs lists local SAW-pattern branches that are not
+// merged into main. This catches branches whose worktrees have already been
+// removed.
+func detectStaleBranchesFromRefs(repoPath string) []string {
+	cmd := exec.Command("git", "branch", "--no-merged", "main")
+	cmd.Dir = repoPath
+	out, err := cmd.Output()
+	if err != nil {
+		return nil
+	}
+
+	mergedBranches := getMergedBranches(repoPath)
+	var stale []string
+	scanner := bufio.NewScanner(bytes.NewReader(out))
+	for scanner.Scan() {
+		branch := strings.TrimSpace(strings.TrimPrefix(scanner.Text(), "*"))
+		if branch != "" && waveAgentBranchRe.MatchString(branch) && !mergedBranches[branch] {
+			stale = append(stale, branch)
+		}
+	}
+	return stale
+}
+
 // findWorktreePath returns the filesystem path for the given branch from git worktree list.
 // Returns empty string if not found.
 func findWorktreePath(repoPath, branch string) string {

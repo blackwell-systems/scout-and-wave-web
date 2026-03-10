@@ -17,6 +17,7 @@ import QualityGatesPanel from './review/QualityGatesPanel'
 import NotSuitableResearchPanel from './review/NotSuitableResearchPanel'
 import FileDiffPanel from './review/FileDiffPanel'
 import ContextViewerPanel from './review/ContextViewerPanel'
+import WorktreePanel from './WorktreePanel'
 import ChatPanel from './ChatPanel'
 import ManifestValidation from './ManifestValidation'
 
@@ -29,7 +30,7 @@ interface ReviewScreenProps {
   repos?: import('../types').RepoEntry[]
 }
 
-type PanelKey = 'pre-mortem' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'context-viewer' | 'validation'
+type PanelKey = 'pre-mortem' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'worktrees' | 'context-viewer' | 'validation'
 
 const panels: Array<{ key: PanelKey; label: string }> = [
   { key: 'pre-mortem', label: 'Pre-Mortem' },
@@ -43,6 +44,7 @@ const panels: Array<{ key: PanelKey; label: string }> = [
   { key: 'known-issues', label: 'Known Issues' },
   { key: 'post-merge-checklist', label: 'Post-Merge' },
   { key: 'quality-gates', label: 'Quality Gates' },
+  { key: 'worktrees', label: 'Worktrees' },
   { key: 'context-viewer', label: 'Project Memory' },
   { key: 'validation', label: 'Validate' },
 ]
@@ -231,6 +233,11 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
                 {/* Quality Gates — full width */}
                 {activePanels.includes('quality-gates') && (
                   <div className="panel-animate"><QualityGatesPanel gatesText={(impl as any).quality_gates_text ?? ''} /></div>
+                )}
+
+                {/* Worktrees — full width */}
+                {activePanels.includes('worktrees') && (
+                  <div className="panel-animate"><WorktreePanel slug={slug} /></div>
                 )}
 
                 {/* Validation — full width */}

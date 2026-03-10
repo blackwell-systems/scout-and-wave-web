@@ -25,6 +25,12 @@ export interface StageEntry {
   completed_at?: string
 }
 
+export interface StaleBranchesInfo {
+  slug: string
+  branches: string[]
+  count: number
+}
+
 export interface AppWaveState {
   agents: AgentStatus[]
   scaffoldStatus: 'idle' | 'running' | 'complete'
@@ -38,6 +44,7 @@ export interface AppWaveState {
   wavesMergeState: Map<number, WaveMergeState>
   wavesTestState: Map<number, WaveTestState>
   stageEntries: StageEntry[]
+  staleBranches?: StaleBranchesInfo
 }
 
 // useWaveEvents subscribes to the SSE stream for a given slug and returns
@@ -308,6 +315,11 @@ export function useWaveEvents(slug: string): AppWaveState {
         next.set(data.wave, { ...cur, status: 'fail', output: data.output })
         return { ...prev, wavesTestState: next }
       })
+    })
+
+    es.addEventListener('stale_branches_detected', (event: MessageEvent) => {
+      const data = JSON.parse(event.data) as StaleBranchesInfo
+      setState(prev => ({ ...prev, staleBranches: data }))
     })
 
     es.addEventListener('stage_transition', (event: MessageEvent) => {
