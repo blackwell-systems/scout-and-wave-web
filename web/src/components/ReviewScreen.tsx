@@ -18,6 +18,7 @@ import NotSuitableResearchPanel from './review/NotSuitableResearchPanel'
 import FileDiffPanel from './review/FileDiffPanel'
 import ContextViewerPanel from './review/ContextViewerPanel'
 import ChatPanel from './ChatPanel'
+import ManifestValidation from './ManifestValidation'
 
 interface ReviewScreenProps {
   slug: string
@@ -28,7 +29,7 @@ interface ReviewScreenProps {
   repos?: import('../types').RepoEntry[]
 }
 
-type PanelKey = 'pre-mortem' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'context-viewer'
+type PanelKey = 'pre-mortem' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'context-viewer' | 'validation'
 
 const panels: Array<{ key: PanelKey; label: string }> = [
   { key: 'pre-mortem', label: 'Pre-Mortem' },
@@ -43,6 +44,7 @@ const panels: Array<{ key: PanelKey; label: string }> = [
   { key: 'post-merge-checklist', label: 'Post-Merge' },
   { key: 'quality-gates', label: 'Quality Gates' },
   { key: 'context-viewer', label: 'Project Memory' },
+  { key: 'validation', label: 'Validate' },
 ]
 
 export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
@@ -228,6 +230,11 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
                 {/* Quality Gates — full width */}
                 {activePanels.includes('quality-gates') && (
                   <div className="panel-animate"><QualityGatesPanel gatesText={(impl as any).quality_gates_text ?? ''} /></div>
+                )}
+
+                {/* Validation — full width */}
+                {activePanels.includes('validation') && (
+                  <div className="panel-animate"><ManifestValidation slug={slug} /></div>
                 )}
               </div>
             </div>
