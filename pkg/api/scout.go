@@ -131,7 +131,7 @@ func (s *Server) runScoutAgent(ctx context.Context, runID, feature, repoOverride
 
 	// Compute slug and IMPL output path.
 	slug := scoutSlugify(feature)
-	implOut := filepath.Join(repoRoot, "docs", "IMPL", "IMPL-"+slug+".md")
+	implOut := filepath.Join(repoRoot, "docs", "IMPL", "IMPL-"+slug+".yaml")
 
 	// Locate SAW repo for prompt files.
 	sawRepo := os.Getenv("SAW_REPO")
@@ -164,11 +164,12 @@ func (s *Server) runScoutAgent(ctx context.Context, runID, feature, repoOverride
 	}
 
 	execErr := engine.RunScout(ctx, engine.RunScoutOpts{
-		Feature:     feature,
-		RepoPath:    repoRoot,
-		SAWRepoPath: sawRepo,
-		IMPLOutPath: implOut,
-		ScoutModel:  scoutModel,
+		Feature:             feature,
+		RepoPath:            repoRoot,
+		SAWRepoPath:         sawRepo,
+		IMPLOutPath:         implOut,
+		ScoutModel:          scoutModel,
+		UseStructuredOutput: true,
 	}, onChunk)
 
 	if execErr != nil {

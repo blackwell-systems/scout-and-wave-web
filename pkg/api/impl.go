@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	etypes "github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
@@ -42,20 +43,37 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 	var result []implListEntry
 	for _, e := range entries {
 		name := e.Name()
-		if strings.HasPrefix(name, "IMPL-") && strings.HasSuffix(name, ".md") {
-			slug := strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".md")
+		if strings.HasPrefix(name, "IMPL-") && (strings.HasSuffix(name, ".md") || strings.HasSuffix(name, ".yaml")) {
+			var slug string
+			if strings.HasSuffix(name, ".yaml") {
+				slug = strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".yaml")
+			} else {
+				slug = strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".md")
+			}
 			status := "active"
-			// Quick scan: explicit SAW:COMPLETE tag, or infer from completion reports.
 			var waveCount, agentCount int
-			if data, err := os.ReadFile(filepath.Join(s.cfg.IMPLDir, name)); err == nil {
-				text := string(data)
-				if strings.Contains(text, "SAW:COMPLETE") {
-					status = "complete"
-				} else if inferComplete(text) {
-					status = "complete"
+			if strings.HasSuffix(name, ".yaml") {
+				if m, err := protocol.Load(filepath.Join(s.cfg.IMPLDir, name)); err == nil {
+					for _, w := range m.Waves {
+						waveCount++
+						agentCount += len(w.Agents)
+					}
+					if m.State == protocol.StateComplete {
+						status = "complete"
+					}
 				}
-				waveCount = len(waveHeaderRe.FindAllString(text, -1))
-				agentCount = len(agentSectionRe.FindAllString(text, -1))
+			} else {
+				// Quick scan: explicit SAW:COMPLETE tag, or infer from completion reports.
+				if data, err := os.ReadFile(filepath.Join(s.cfg.IMPLDir, name)); err == nil {
+					text := string(data)
+					if strings.Contains(text, "SAW:COMPLETE") {
+						status = "complete"
+					} else if inferComplete(text) {
+						status = "complete"
+					}
+					waveCount = len(waveHeaderRe.FindAllString(text, -1))
+					agentCount = len(agentSectionRe.FindAllString(text, -1))
+				}
 			}
 			result = append(result, implListEntry{Slug: slug, DocStatus: status, WaveCount: waveCount, AgentCount: agentCount})
 		}
@@ -73,7 +91,10 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 // 404 if the file does not exist; 500 on parse error.
 func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
+	if _, err := os.Stat(implPath); os.IsNotExist(err) {
+		implPath = filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+	}
 
 	doc, err := engine.ParseIMPLDoc(implPath)
 	if err != nil {
@@ -313,7 +334,10 @@ func (s *Server) handleDeleteImpl(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "missing slug", http.StatusBadRequest)
 		return
 	}
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
+	if _, statErr := os.Stat(implPath); os.IsNotExist(statErr) {
+		implPath = filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+	}
 	if err := os.Remove(implPath); err != nil {
 		if os.IsNotExist(err) {
 			http.Error(w, "not found", http.StatusNotFound)
