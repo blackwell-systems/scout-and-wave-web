@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.43.0] - 2026-03-10
+
+### Improved
+
+- **Ask Claude button enhancements** (`ReviewScreen.tsx`) — Ask Claude button moved to end of footer (after Project Memory), features subtle violet background tint (`bg-violet-500/5` inactive, `bg-violet-500/20` active), wider padding (`px-8`), and semibold font weight. Visual prominence distinguishes it as primary interactive tool while maintaining footer consistency.
+- **ROADMAP.md updates** — Phase 1 marked complete (v0.40.0), current status updated to v0.42.0+, current focus shifted to Phase 2 intelligence features.
+
+---
+
 ## [0.42.0] - 2026-03-10
 
 ### Improved
