@@ -32,6 +32,9 @@ type IMPLDocResponse struct {
 	PostMergeChecklistText string               `json:"post_merge_checklist_text"`
 	StubReportText         string               `json:"stub_report_text"`
 	AgentPrompts           []AgentPromptEntry   `json:"agent_prompts"`
+	QualityGates           *QualityGates        `json:"quality_gates,omitempty"`
+	PostMergeChecklist     *PostMergeChecklist  `json:"post_merge_checklist,omitempty"`
+	KnownIssuesStructured  []KnownIssue         `json:"known_issues_structured,omitempty"`
 }
 
 // SuitabilityInfo is the suitability sub-object in IMPLDocResponse.
@@ -76,6 +79,45 @@ type KnownIssueEntry struct {
 	Description string `json:"description"`
 	Status      string `json:"status"`
 	Workaround  string `json:"workaround"`
+}
+
+// QualityGates represents the structured quality gates section from the IMPL manifest.
+type QualityGates struct {
+	Level string        `json:"level"`
+	Gates []QualityGate `json:"gates"`
+}
+
+// QualityGate represents a single quality check (build, lint, test, etc.).
+type QualityGate struct {
+	Type        string `json:"type"`
+	Command     string `json:"command"`
+	Required    bool   `json:"required"`
+	Description string `json:"description,omitempty"`
+}
+
+// PostMergeChecklist represents the structured post-merge verification checklist.
+type PostMergeChecklist struct {
+	Groups []ChecklistGroup `json:"groups"`
+}
+
+// ChecklistGroup is a logical grouping of related checklist items.
+type ChecklistGroup struct {
+	Title string          `json:"title"`
+	Items []ChecklistItem `json:"items"`
+}
+
+// ChecklistItem is a single verification step in the post-merge checklist.
+type ChecklistItem struct {
+	Description string `json:"description"`
+	Command     string `json:"command,omitempty"`
+}
+
+// KnownIssue represents a known issue with optional title field.
+type KnownIssue struct {
+	Title       string `json:"title,omitempty"`
+	Description string `json:"description"`
+	Status      string `json:"status,omitempty"`
+	Workaround  string `json:"workaround,omitempty"`
 }
 
 // ScaffoldFileEntry is one scaffold file with its contents.
