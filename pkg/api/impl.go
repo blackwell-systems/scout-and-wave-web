@@ -96,53 +96,65 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 		implPath = filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
 	}
 
-	doc, err := engine.ParseIMPLDoc(implPath)
-	if err != nil {
-		if isNotExistErr(err) {
-			http.Error(w, "IMPL doc not found", http.StatusNotFound)
+	// YAML manifests (Scout v0.6.0+) are loaded via protocol.Load; markdown
+	// docs use the legacy line-by-line parser.
+	var resp IMPLDocResponse
+	if strings.HasSuffix(implPath, ".yaml") || strings.HasSuffix(implPath, ".yml") {
+		manifest, err := protocol.Load(implPath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				http.Error(w, "IMPL doc not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, "failed to load IMPL manifest", http.StatusInternalServerError)
 			return
 		}
-		http.Error(w, "failed to parse IMPL doc", http.StatusInternalServerError)
-		return
-	}
-
-	// Map etypes.IMPLDoc -> IMPLDocResponse
-	docStatus := "active"
-	if doc.DocStatus == "COMPLETE" {
-		docStatus = "complete"
-	}
-	// Detect scaffold files from file ownership table
-	scaffoldFiles := []string{}
-	for file, info := range doc.FileOwnership {
-		if strings.ToLower(info.Agent) == "scaffold" {
-			scaffoldFiles = append(scaffoldFiles, file)
+		resp = implDocResponseFromManifest(slug, manifest)
+	} else {
+		doc, err := engine.ParseIMPLDoc(implPath)
+		if err != nil {
+			if isNotExistErr(err) {
+				http.Error(w, "IMPL doc not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, "failed to parse IMPL doc", http.StatusInternalServerError)
+			return
 		}
-	}
-
-	resp := IMPLDocResponse{
-		Slug:        slug,
-		DocStatus:   docStatus,
-		CompletedAt: doc.CompletedAt,
-		Suitability: SuitabilityInfo{
-			Verdict:   suitabilityVerdict(doc.Status),
-			Rationale: "",
-		},
-		FileOwnership:         mapFileOwnership(doc.FileOwnership),
-		FileOwnershipCol4Name: doc.FileOwnershipCol4,
-		Waves:                 mapWaves(doc.Waves),
-		Scaffold: ScaffoldInfo{
-			Required:  len(scaffoldFiles) > 0,
-			Files:     scaffoldFiles,
-			Contracts: []ContractEntry{}, // Contracts not parsed yet - would need scaffolds section parsing
-		},
-		PreMortem:              mapPreMortem(doc.PreMortem),
-		KnownIssues:            mapKnownIssues(doc.KnownIssues),
-		ScaffoldsDetail:        mapScaffoldsDetail(doc.ScaffoldsDetail),
-		InterfaceContractsText: doc.InterfaceContractsText,
-		DependencyGraphText:    doc.DependencyGraphText,
-		PostMergeChecklistText: doc.PostMergeChecklistText,
-		StubReportText:         doc.StubReportText,
-		AgentPrompts:           extractAgentPrompts(doc.Waves),
+		docStatus := "active"
+		if doc.DocStatus == "COMPLETE" {
+			docStatus = "complete"
+		}
+		scaffoldFiles := []string{}
+		for file, info := range doc.FileOwnership {
+			if strings.ToLower(info.Agent) == "scaffold" {
+				scaffoldFiles = append(scaffoldFiles, file)
+			}
+		}
+		resp = IMPLDocResponse{
+			Slug:        slug,
+			DocStatus:   docStatus,
+			CompletedAt: doc.CompletedAt,
+			Suitability: SuitabilityInfo{
+				Verdict:   suitabilityVerdict(doc.Status),
+				Rationale: "",
+			},
+			FileOwnership:         mapFileOwnership(doc.FileOwnership),
+			FileOwnershipCol4Name: doc.FileOwnershipCol4,
+			Waves:                 mapWaves(doc.Waves),
+			Scaffold: ScaffoldInfo{
+				Required:  len(scaffoldFiles) > 0,
+				Files:     scaffoldFiles,
+				Contracts: []ContractEntry{},
+			},
+			PreMortem:              mapPreMortem(doc.PreMortem),
+			KnownIssues:            mapKnownIssues(doc.KnownIssues),
+			ScaffoldsDetail:        mapScaffoldsDetail(doc.ScaffoldsDetail),
+			InterfaceContractsText: doc.InterfaceContractsText,
+			DependencyGraphText:    doc.DependencyGraphText,
+			PostMergeChecklistText: doc.PostMergeChecklistText,
+			StubReportText:         doc.StubReportText,
+			AgentPrompts:           extractAgentPrompts(doc.Waves),
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -254,6 +266,127 @@ func mapWaves(waves []etypes.Wave) []WaveInfo {
 		})
 	}
 	return result
+}
+
+// implDocResponseFromManifest maps a YAML *protocol.IMPLManifest to IMPLDocResponse.
+// Used by handleGetImpl for .yaml IMPL docs (Scout v0.6.0+).
+func implDocResponseFromManifest(slug string, m *protocol.IMPLManifest) IMPLDocResponse {
+	docStatus := "active"
+	if m.State == protocol.StateComplete {
+		docStatus = "complete"
+	}
+
+	// File ownership
+	foEntries := make([]FileOwnershipEntry, 0, len(m.FileOwnership))
+	for _, fo := range m.FileOwnership {
+		foEntries = append(foEntries, FileOwnershipEntry{
+			File:      fo.File,
+			Agent:     fo.Agent,
+			Wave:      fo.Wave,
+			Action:    fo.Action,
+			DependsOn: strings.Join(fo.DependsOn, ", "),
+			Repo:      fo.Repo,
+		})
+	}
+
+	// Waves
+	waveInfos := make([]WaveInfo, 0, len(m.Waves))
+	for _, w := range m.Waves {
+		agents := make([]string, 0, len(w.Agents))
+		for _, a := range w.Agents {
+			agents = append(agents, a.ID)
+		}
+		waveInfos = append(waveInfos, WaveInfo{
+			Number:       w.Number,
+			Agents:       agents,
+			Dependencies: []int{},
+		})
+	}
+
+	// Scaffolds
+	scaffoldFiles := make([]string, 0, len(m.Scaffolds))
+	scaffoldDetail := make([]ScaffoldFileEntry, 0, len(m.Scaffolds))
+	for _, sf := range m.Scaffolds {
+		scaffoldFiles = append(scaffoldFiles, sf.FilePath)
+		scaffoldDetail = append(scaffoldDetail, ScaffoldFileEntry{
+			FilePath:   sf.FilePath,
+			Contents:   sf.Contents,
+			ImportPath: sf.ImportPath,
+		})
+	}
+
+	// Known issues
+	knownIssues := make([]KnownIssueEntry, 0, len(m.KnownIssues))
+	for _, ki := range m.KnownIssues {
+		knownIssues = append(knownIssues, KnownIssueEntry{
+			Description: ki.Description,
+			Status:      ki.Status,
+			Workaround:  ki.Workaround,
+		})
+	}
+
+	// Pre-mortem
+	var preMortem *PreMortemEntry
+	if m.PreMortem != nil {
+		rows := make([]PreMortemRowEntry, 0, len(m.PreMortem.Rows))
+		for _, r := range m.PreMortem.Rows {
+			rows = append(rows, PreMortemRowEntry{
+				Scenario:   r.Scenario,
+				Likelihood: r.Likelihood,
+				Impact:     r.Impact,
+				Mitigation: r.Mitigation,
+			})
+		}
+		preMortem = &PreMortemEntry{OverallRisk: m.PreMortem.OverallRisk, Rows: rows}
+	}
+
+	// Interface contracts as text (name + definition per contract)
+	var contractsBuf strings.Builder
+	for _, ic := range m.InterfaceContracts {
+		contractsBuf.WriteString("### " + ic.Name + "\n")
+		if ic.Description != "" {
+			contractsBuf.WriteString(ic.Description + "\n")
+		}
+		contractsBuf.WriteString("```\n" + ic.Definition + "\n```\n")
+		if ic.Location != "" {
+			contractsBuf.WriteString("Location: " + ic.Location + "\n")
+		}
+		contractsBuf.WriteString("\n")
+	}
+
+	// Agent prompts
+	agentPrompts := []AgentPromptEntry{}
+	for _, w := range m.Waves {
+		for _, a := range w.Agents {
+			agentPrompts = append(agentPrompts, AgentPromptEntry{
+				Wave:   w.Number,
+				Agent:  a.ID,
+				Prompt: a.Task,
+			})
+		}
+	}
+
+	return IMPLDocResponse{
+		Slug:        slug,
+		DocStatus:   docStatus,
+		CompletedAt: m.CompletionDate,
+		Suitability: SuitabilityInfo{
+			Verdict:   m.Verdict,
+			Rationale: m.SuitabilityAssessment,
+		},
+		FileOwnership: foEntries,
+		Waves:         waveInfos,
+		Scaffold: ScaffoldInfo{
+			Required:  len(scaffoldFiles) > 0,
+			Files:     scaffoldFiles,
+			Contracts: []ContractEntry{},
+		},
+		PreMortem:              preMortem,
+		KnownIssues:            knownIssues,
+		ScaffoldsDetail:        scaffoldDetail,
+		InterfaceContractsText: contractsBuf.String(),
+		AgentPrompts:           agentPrompts,
+	}
 }
 
 // mapKnownIssues converts []etypes.KnownIssue to []KnownIssueEntry.
