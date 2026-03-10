@@ -80,6 +80,36 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
+	case "mark-complete":
+		if err := runMarkComplete(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "run-gates":
+		if err := runRunGates(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "check-conflicts":
+		if err := runCheckConflicts(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "update-agent-prompt":
+		if err := runUpdateAgentPrompt(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "validate-scaffolds":
+		if err := runValidateScaffolds(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+	case "freeze-check":
+		if err := runFreezeCheck(os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
 	case "--version", "-version":
 		fmt.Printf("saw %s\n", version)
 	case "--help", "-help", "help":
@@ -109,6 +139,12 @@ Commands:
   set-completion  Register a completion report for an agent in a manifest
   render          Render a YAML IMPL manifest as markdown
   migrate         Convert a markdown IMPL doc to YAML manifest format
+  mark-complete   Write SAW:COMPLETE marker to an IMPL doc
+  run-gates       Run quality gate checks for a wave
+  check-conflicts Detect file ownership conflicts across agents
+  update-agent-prompt  Update an agent's task prompt in a manifest
+  validate-scaffolds   Validate scaffold file status in a manifest
+  freeze-check    Check for interface contract freeze violations
 
 Global flags:
   --version   Print version and exit
