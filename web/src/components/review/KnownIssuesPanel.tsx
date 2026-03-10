@@ -1,9 +1,11 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import MarkdownContent from './MarkdownContent'
+import * as yaml from 'js-yaml'
 
 interface KnownIssue {
+  title?: string
   description: string
-  status: string
+  status?: string
   workaround?: string
 }
 
@@ -11,32 +13,14 @@ interface KnownIssuesPanelProps {
   knownIssues?: KnownIssue[]
 }
 
-interface ParsedIssue {
-  title: string
-  status: string
-  description: string
-  workaround: string
-}
-
-function parseIssueBlob(text: string): ParsedIssue[] {
-  const issues: ParsedIssue[] = []
-  const blocks = text.split(/(?=\*\*[^*]+\*\*\n)/)
-  for (const block of blocks) {
-    const trimmed = block.trim()
-    if (!trimmed) continue
-    const titleMatch = trimmed.match(/^\*\*([^*]+)\*\*/)
-    const title = titleMatch ? titleMatch[1] : 'Issue'
-    const statusMatch = trimmed.match(/- Status:\s*(.+)/i)
-    const descMatch = trimmed.match(/- Description:\s*(.+)/i)
-    const workaroundMatch = trimmed.match(/- Workaround:\s*(.+)/i)
-    issues.push({
-      title,
-      status: statusMatch?.[1] || '',
-      description: descMatch?.[1] || '',
-      workaround: workaroundMatch?.[1] || '',
-    })
+function parseKnownIssues(text: string): KnownIssue[] | null {
+  const stripped = text.replace(/^```yaml.*\n|```$/gm, '')
+  try {
+    return yaml.load(stripped) as KnownIssue[]
+  } catch (e) {
+    console.error('Failed to parse known issues YAML:', e)
+    return null
   }
-  return issues
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -66,49 +50,20 @@ export default function KnownIssuesPanel({ knownIssues }: KnownIssuesPanelProps)
     )
   }
 
-  // Try to parse structured issues from the blob
-  const allParsed: ParsedIssue[] = []
-  for (const issue of knownIssues) {
-    const parsed = parseIssueBlob(issue.description)
-    if (parsed.length > 0 && parsed[0].description) {
-      allParsed.push(...parsed)
-    }
-  }
-
-  // Fallback to raw markdown if parsing didn't work
-  if (allParsed.length === 0) {
-    return (
-      <Card>
-        <CardHeader>
-          <CardTitle>Known Issues</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            {knownIssues.map((issue, idx) => (
-              <Card key={idx} className="bg-muted/50">
-                <CardContent className="pt-6">
-                  <MarkdownContent>{issue.description}</MarkdownContent>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-    )
-  }
-
   return (
     <Card>
       <CardHeader>
         <CardTitle>Known Issues</CardTitle>
-        <p className="text-xs text-muted-foreground">{allParsed.length} issue{allParsed.length !== 1 ? 's' : ''}</p>
+        <p className="text-xs text-muted-foreground">{knownIssues.length} issue{knownIssues.length !== 1 ? 's' : ''}</p>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          {allParsed.map((issue, idx) => (
+          {knownIssues.map((issue, idx) => (
             <div key={idx} className="rounded-lg border border-border/60 bg-muted/30 p-4">
               <div className="flex items-center gap-2 mb-2">
-                <span className="text-sm font-semibold text-foreground">{issue.title}</span>
+                {issue.title && (
+                  <span className="text-sm font-semibold text-foreground">{issue.title}</span>
+                )}
                 {issue.status && <StatusBadge status={issue.status} />}
               </div>
               {issue.description && (
