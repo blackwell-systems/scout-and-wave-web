@@ -488,6 +488,9 @@ func implDocResponseFromManifest(slug string, m *protocol.IMPLManifest) IMPLDocR
 		InterfaceContractsText: contractsBuf.String(),
 		DependencyGraphText:    depGraphBuf.String(),
 		AgentPrompts:           agentPrompts,
+		QualityGates:           convertQualityGates(m.QualityGates),
+		PostMergeChecklist:     convertPostMergeChecklist(m.PostMergeChecklist),
+		KnownIssuesStructured:  convertKnownIssues(m.KnownIssues),
 	}
 }
 
@@ -559,6 +562,76 @@ func mapPreMortem(pm *etypes.PreMortem) *PreMortemEntry {
 		OverallRisk: pm.OverallRisk,
 		Rows:        rows,
 	}
+}
+
+// convertQualityGates converts protocol.QualityGates to api.QualityGates.
+// Returns nil if input is nil.
+func convertQualityGates(gates *protocol.QualityGates) *QualityGates {
+	if gates == nil {
+		return nil
+	}
+
+	apiGates := make([]QualityGate, 0, len(gates.Gates))
+	for _, g := range gates.Gates {
+		apiGates = append(apiGates, QualityGate{
+			Type:        g.Type,
+			Command:     g.Command,
+			Required:    g.Required,
+			Description: g.Description,
+		})
+	}
+
+	return &QualityGates{
+		Level: gates.Level,
+		Gates: apiGates,
+	}
+}
+
+// convertPostMergeChecklist converts protocol.PostMergeChecklist to api.PostMergeChecklist.
+// Returns nil if input is nil.
+func convertPostMergeChecklist(pmc *protocol.PostMergeChecklist) *PostMergeChecklist {
+	if pmc == nil {
+		return nil
+	}
+
+	apiGroups := make([]ChecklistGroup, 0, len(pmc.Groups))
+	for _, group := range pmc.Groups {
+		apiItems := make([]ChecklistItem, 0, len(group.Items))
+		for _, item := range group.Items {
+			apiItems = append(apiItems, ChecklistItem{
+				Description: item.Description,
+				Command:     item.Command,
+			})
+		}
+		apiGroups = append(apiGroups, ChecklistGroup{
+			Title: group.Title,
+			Items: apiItems,
+		})
+	}
+
+	return &PostMergeChecklist{
+		Groups: apiGroups,
+	}
+}
+
+// convertKnownIssues converts []protocol.KnownIssue to []api.KnownIssue.
+// Returns empty slice if input is nil or empty.
+func convertKnownIssues(issues []protocol.KnownIssue) []KnownIssue {
+	if len(issues) == 0 {
+		return []KnownIssue{}
+	}
+
+	apiIssues := make([]KnownIssue, 0, len(issues))
+	for _, issue := range issues {
+		apiIssues = append(apiIssues, KnownIssue{
+			Title:       issue.Title,
+			Description: issue.Description,
+			Status:      issue.Status,
+			Workaround:  issue.Workaround,
+		})
+	}
+
+	return apiIssues
 }
 
 // handleDeleteImpl handles DELETE /api/impl/{slug}.
