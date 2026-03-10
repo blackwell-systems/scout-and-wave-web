@@ -23,7 +23,7 @@ function statusBadge(status: 'merged' | 'unmerged' | 'stale') {
   }
 }
 
-export default function WorktreePanel({ slug }: { slug: string }) {
+export default function WorktreePanel({ slug, onClose }: { slug: string; onClose?: () => void }) {
   const { worktrees, loading, error, refresh, deleteBranches, deleteSingle } =
     useWorktrees(slug)
 
@@ -113,6 +113,11 @@ export default function WorktreePanel({ slug }: { slug: string }) {
           >
             Delete Selected ({selected.size})
           </Button>
+          {onClose && (
+            <Button variant="ghost" size="sm" onClick={onClose}>
+              Close
+            </Button>
+          )}
         </div>
       </CardHeader>
 

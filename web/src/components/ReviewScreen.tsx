@@ -232,11 +232,6 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
                   <div className="panel-animate"><QualityGatesPanel gatesText={(impl as any).quality_gates_text ?? ''} /></div>
                 )}
 
-                {/* Worktrees — full width */}
-                {activePanels.includes('worktrees') && (
-                  <div className="panel-animate"><WorktreePanel slug={slug} /></div>
-                )}
-
                 {/* Validation — full width */}
                 {activePanels.includes('validation') && (
                   <div className="panel-animate"><ManifestValidation slug={slug} /></div>
@@ -281,6 +276,16 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
           >
             Ask Claude
           </button>
+          <button
+            onClick={() => togglePanel('context-viewer')}
+            className={`flex items-center justify-center text-sm font-medium px-6 h-14 transition-all duration-150 border-t-2 ${
+              activePanels.includes('context-viewer')
+                ? 'border-t-teal-500 text-teal-700 dark:text-teal-400 bg-teal-500/10'
+                : 'border-t-teal-500/40 text-muted-foreground hover:bg-teal-500/10 hover:text-foreground'
+            }`}
+          >
+            Project Memory
+          </button>
         </div>
       )}
       </div>
@@ -303,6 +308,15 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
       {activePanels.includes('context-viewer') && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
           <ContextViewerPanel onClose={() => togglePanel('context-viewer')} />
+        </div>
+      )}
+
+      {/* Worktrees — modal overlay at very top */}
+      {activePanels.includes('worktrees') && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-6xl mt-8">
+            <WorktreePanel slug={slug} onClose={() => togglePanel('worktrees')} />
+          </div>
         </div>
       )}
 

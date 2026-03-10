@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.42.0] - 2026-03-10
+
+### Improved
+
+- **Worktree panel as modal overlay** (`ReviewScreen.tsx`, `WorktreePanel.tsx`) — Worktree manager now opens as a full-screen modal overlay (`z-50`) positioned at the top of the viewport, above all review content. Separates operational branch management from IMPL document review. Added Close button to WorktreePanel header.
+- **Project Memory button restored** (`ReviewScreen.tsx`) — Re-added Project Memory button to footer with teal color accent (`border-t-teal-500`). Complete footer: Approve | Request Changes | Reject | Validate | Worktrees | Ask Claude | Project Memory.
+
+---
+
 ## [0.41.0] - 2026-03-10
 
 ### Improved
