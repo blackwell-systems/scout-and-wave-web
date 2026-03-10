@@ -1,4 +1,4 @@
-import { IMPLDocResponse, IMPLListEntry, WorktreeListResponse, FileDiffResponse, SAWConfig, ChatMessage, AgentContextResponse, ScoutContext } from './types'
+import { IMPLDocResponse, IMPLListEntry, WorktreeListResponse, WorktreeBatchDeleteRequest, WorktreeBatchDeleteResponse, FileDiffResponse, SAWConfig, ChatMessage, AgentContextResponse, ScoutContext } from './types'
 
 export async function listImpls(): Promise<IMPLListEntry[]> {
   const response = await fetch('/api/impl')
@@ -154,6 +154,16 @@ export async function listWorktrees(slug: string): Promise<WorktreeListResponse>
 export async function deleteWorktree(slug: string, branch: string): Promise<void> {
   const r = await fetch(`/api/impl/${slug}/worktrees/${encodeURIComponent(branch)}`, { method: 'DELETE' })
   if (!r.ok) throw new Error(await r.text())
+}
+
+export async function batchDeleteWorktrees(slug: string, req: WorktreeBatchDeleteRequest): Promise<WorktreeBatchDeleteResponse> {
+  const r = await fetch(`/api/impl/${encodeURIComponent(slug)}/worktrees/cleanup`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req),
+  })
+  if (!r.ok) throw new Error(await r.text())
+  return r.json()
 }
 
 // File diff viewer
