@@ -34,17 +34,21 @@ interface ReviewScreenProps {
 type PanelKey = 'pre-mortem' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'worktrees' | 'context-viewer' | 'validation'
 
 const panels: Array<{ key: PanelKey; label: string }> = [
-  { key: 'pre-mortem', label: 'Pre-Mortem' },
-  { key: 'stub-report', label: 'Stub Report' },
-  { key: 'file-ownership', label: 'File Ownership' },
+  // Structure & Plan
   { key: 'wave-structure', label: 'Wave Structure' },
-  { key: 'agent-prompts', label: 'Agent Prompts' },
+  { key: 'dependency-graph', label: 'Dependency Graph' },
+  { key: 'file-ownership', label: 'File Ownership' },
+  // Implementation Details
   { key: 'interface-contracts', label: 'Interface Contracts' },
   { key: 'scaffolds', label: 'Scaffolds' },
-  { key: 'dependency-graph', label: 'Dependency Graph' },
-  { key: 'known-issues', label: 'Known Issues' },
-  { key: 'post-merge-checklist', label: 'Post-Merge' },
+  { key: 'agent-prompts', label: 'Agent Prompts' },
+  // Risk & Quality
+  { key: 'pre-mortem', label: 'Pre-Mortem' },
   { key: 'quality-gates', label: 'Quality Gates' },
+  { key: 'known-issues', label: 'Known Issues' },
+  // Post-Execution
+  { key: 'stub-report', label: 'Stub Report' },
+  { key: 'post-merge-checklist', label: 'Post-Merge' },
 ]
 
 export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
