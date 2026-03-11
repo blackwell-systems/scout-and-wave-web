@@ -199,6 +199,10 @@ export default function DependencyGraphPanel({ dependencyGraphText }: Dependency
   const { nodes, width, height } = layoutNodes(parsed)
   const nodeMap = new Map(nodes.map(n => [n.agent.letter, n]))
 
+  // Find scaffold node (Wave 0)
+  const scaffoldNode = nodes.find(n => n.agent.letter === 'Scaffold' && n.agent.wave === 0)
+  const hasScaffold = !!scaffoldNode
+
   // Build cross-wave adjacency for transitive reduction
   const adjMap = new Map<string, Set<string>>()
   for (const node of nodes) {
@@ -209,6 +213,12 @@ export default function DependencyGraphPanel({ dependencyGraphText }: Dependency
         directDeps.add(dep)
       }
     }
+
+    // Add implicit scaffold dependency for all Wave 1 agents
+    if (hasScaffold && node.agent.wave === 1 && node.agent.letter !== 'Scaffold') {
+      directDeps.add('Scaffold')
+    }
+
     adjMap.set(node.agent.letter, directDeps)
   }
 
