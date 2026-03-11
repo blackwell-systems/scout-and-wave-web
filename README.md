@@ -9,15 +9,18 @@
 
 ## What is this?
 
-Scout-and-Wave (SAW) coordinates multiple AI agents working in parallel on non-overlapping parts of a codebase. This repo provides:
+Scout-and-Wave (SAW) coordinates multiple AI agents working in parallel on non-overlapping parts of a codebase. This repo provides the **`saw` binary** — the user-facing web UI + orchestration tool.
 
+**Features:**
 - **Interactive web UI** for reviewing IMPL docs (implementation plans) with visual dependency graphs, wave timelines, and file ownership tables
 - **Live wave dashboard** with real-time agent status, streaming logs, and progress tracking
 - **Chat interface** to ask Claude questions about IMPL docs with full conversation context
-- **HTTP API** for programmatic access to SAW operations
+- **HTTP API** (42 endpoints) for programmatic access to SAW operations
 - **CLI interface** (`./saw`) as an alternative to the web UI
 
 The web server imports the [scout-and-wave-go](https://github.com/blackwell-systems/scout-and-wave-go) engine package for all SAW orchestration logic. The protocol specification lives in [scout-and-wave](https://github.com/blackwell-systems/scout-and-wave).
+
+**Note:** There's also a separate `sawtools` CLI in scout-and-wave-go for protocol-level operations (CI/CD, power users). See [scout-and-wave-go/docs/binaries.md](https://github.com/blackwell-systems/scout-and-wave-go/blob/develop/docs/binaries.md) for when to use which binary.
 
 ## Quickstart
 
