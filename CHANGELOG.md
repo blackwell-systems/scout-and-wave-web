@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.46.0] - 2026-03-10
+
+### Fixed
+
+- **Syntax highlighting improvements across review panels** — MarkdownContent component now detects and highlights more code blocks via expanded `guessLanguage()` heuristics.
+  - `ContextViewerPanel.tsx`: Project Memory panel now uses `MarkdownContent` instead of plain `<pre>` tag, enabling syntax highlighting for code examples in project context
+  - `MarkdownContent.tsx`: Expanded language detection to check first 3 lines instead of 1, added patterns for Go code with leading comments, type annotations, struct tags, and error handling idioms
+  - `InterfaceContractsPanel.tsx`: Changed from `compact={true}` to `compact={false}` for proper whitespace between interface definitions
+  - Improves readability of completion reports, interface contracts, and project memory containing code examples
+
+---
+
 ## [0.45.0] - 2026-03-10
 
 ### Added
