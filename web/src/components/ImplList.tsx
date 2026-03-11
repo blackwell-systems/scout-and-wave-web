@@ -178,6 +178,7 @@ export default function ImplList(props: ImplListProps): JSX.Element {
   const { entries, selectedSlug, onSelect, onDelete, loading, repos } = props
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [selectedRepo, setSelectedRepo] = useState<string>('')
+  const [showCompleted, setShowCompleted] = useState(false)
 
   // Filter entries by selected repo (empty string = all repos)
   const filteredEntries = selectedRepo === ''
@@ -228,10 +229,14 @@ export default function ImplList(props: ImplListProps): JSX.Element {
             {completedEntries.length > 0 && (
               <>
                 <div className="h-px bg-border my-2" />
-                <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground px-2 pb-1">
-                  Completed
-                </p>
-                {completedEntries.map((e) => (
+                <button
+                  onClick={() => setShowCompleted(!showCompleted)}
+                  className="w-full flex items-center justify-between text-xs font-medium uppercase tracking-wider text-muted-foreground px-2 py-1.5 hover:bg-muted transition-colors"
+                >
+                  <span>Completed ({completedEntries.length})</span>
+                  <span className="text-[10px]">{showCompleted ? '▼' : '▶'}</span>
+                </button>
+                {showCompleted && completedEntries.map((e) => (
                   <EntryRow
                     key={e.slug}
                     e={e}

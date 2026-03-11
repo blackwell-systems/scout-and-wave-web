@@ -63,15 +63,20 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 
 	var result []implListEntry
 
-	// Scan each configured repo's docs/IMPL directory
+	// Scan each configured repo's docs/IMPL and docs/IMPL/complete directories
 	for _, repo := range repos {
-		implDir := filepath.Join(repo.Path, "docs", "IMPL")
-		entries, err := os.ReadDir(implDir)
-		if err != nil {
-			continue // skip repos without IMPL directory
+		implDirs := []string{
+			filepath.Join(repo.Path, "docs", "IMPL"),
+			filepath.Join(repo.Path, "docs", "IMPL", "complete"),
 		}
 
-		for _, e := range entries {
+		for _, implDir := range implDirs {
+			entries, err := os.ReadDir(implDir)
+			if err != nil {
+				continue // skip if directory doesn't exist
+			}
+
+			for _, e := range entries {
 			name := e.Name()
 			if strings.HasPrefix(name, "IMPL-") && (strings.HasSuffix(name, ".md") || strings.HasSuffix(name, ".yaml")) {
 				var slug string
@@ -156,6 +161,7 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 				})
 			}
 		}
+		}
 	}
 
 	if result == nil {
@@ -191,19 +197,28 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 		}}
 	}
 
-	// Search all repos for the IMPL doc
+	// Search all repos for the IMPL doc (both active and complete directories)
 	var implPath string
 	for _, repo := range repos {
-		implDir := filepath.Join(repo.Path, "docs", "IMPL")
-		yamlPath := filepath.Join(implDir, "IMPL-"+slug+".yaml")
-		mdPath := filepath.Join(implDir, "IMPL-"+slug+".md")
-
-		if _, err := os.Stat(yamlPath); err == nil {
-			implPath = yamlPath
-			break
+		implDirs := []string{
+			filepath.Join(repo.Path, "docs", "IMPL"),
+			filepath.Join(repo.Path, "docs", "IMPL", "complete"),
 		}
-		if _, err := os.Stat(mdPath); err == nil {
-			implPath = mdPath
+
+		for _, implDir := range implDirs {
+			yamlPath := filepath.Join(implDir, "IMPL-"+slug+".yaml")
+			mdPath := filepath.Join(implDir, "IMPL-"+slug+".md")
+
+			if _, err := os.Stat(yamlPath); err == nil {
+				implPath = yamlPath
+				break
+			}
+			if _, err := os.Stat(mdPath); err == nil {
+				implPath = mdPath
+				break
+			}
+		}
+		if implPath != "" {
 			break
 		}
 	}
@@ -731,24 +746,87 @@ func convertKnownIssues(issues []protocol.KnownIssue) []KnownIssue {
 }
 
 // handleDeleteImpl handles DELETE /api/impl/{slug}.
-// Removes the IMPL doc file from disk.
+// Removes the IMPL doc file from disk (searches both active and complete directories).
 func (s *Server) handleDeleteImpl(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	if slug == "" {
 		http.Error(w, "missing slug", http.StatusBadRequest)
 		return
 	}
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
-	if _, statErr := os.Stat(implPath); os.IsNotExist(statErr) {
-		implPath = filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+
+	// Search both active and complete directories
+	dirs := []string{
+		s.cfg.IMPLDir,
+		filepath.Join(s.cfg.IMPLDir, "complete"),
 	}
-	if err := os.Remove(implPath); err != nil {
-		if os.IsNotExist(err) {
-			http.Error(w, "not found", http.StatusNotFound)
-			return
+
+	var implPath string
+	for _, dir := range dirs {
+		yamlPath := filepath.Join(dir, "IMPL-"+slug+".yaml")
+		mdPath := filepath.Join(dir, "IMPL-"+slug+".md")
+
+		if _, err := os.Stat(yamlPath); err == nil {
+			implPath = yamlPath
+			break
 		}
+		if _, err := os.Stat(mdPath); err == nil {
+			implPath = mdPath
+			break
+		}
+	}
+
+	if implPath == "" {
+		http.Error(w, "not found", http.StatusNotFound)
+		return
+	}
+
+	if err := os.Remove(implPath); err != nil {
 		http.Error(w, "failed to delete", http.StatusInternalServerError)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// handleArchiveImpl handles POST /api/impl/{slug}/archive.
+// Moves a completed IMPL doc from docs/IMPL/ to docs/IMPL/complete/.
+func (s *Server) handleArchiveImpl(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+	if slug == "" {
+		http.Error(w, "missing slug", http.StatusBadRequest)
+		return
+	}
+
+	// Find the IMPL in the active directory
+	activeDir := s.cfg.IMPLDir
+	completeDir := filepath.Join(s.cfg.IMPLDir, "complete")
+
+	var sourcePath string
+	for _, ext := range []string{".yaml", ".md"} {
+		candidate := filepath.Join(activeDir, "IMPL-"+slug+ext)
+		if _, err := os.Stat(candidate); err == nil {
+			sourcePath = candidate
+			break
+		}
+	}
+
+	if sourcePath == "" {
+		http.Error(w, "IMPL not found in active directory", http.StatusNotFound)
+		return
+	}
+
+	// Ensure complete directory exists
+	if err := os.MkdirAll(completeDir, 0755); err != nil {
+		http.Error(w, "failed to create complete directory", http.StatusInternalServerError)
+		return
+	}
+
+	// Move file
+	destPath := filepath.Join(completeDir, filepath.Base(sourcePath))
+	if err := os.Rename(sourcePath, destPath); err != nil {
+		http.Error(w, "failed to archive IMPL", http.StatusInternalServerError)
+		return
+	}
+
+	s.globalBroker.broadcast("impl_list_updated")
+	w.WriteHeader(http.StatusOK)
 }

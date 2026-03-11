@@ -71,6 +71,7 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("POST /api/impl/{slug}/revise/{runID}/cancel", s.handleImplReviseCancel)
 	s.mux.HandleFunc("POST /api/scout/{runID}/cancel", s.handleScoutCancel)
 	s.mux.HandleFunc("DELETE /api/impl/{slug}", s.handleDeleteImpl)
+	s.mux.HandleFunc("POST /api/impl/{slug}/archive", s.handleArchiveImpl)
 
 	// v0.17.0-C — File diff viewer
 	s.mux.HandleFunc("GET /api/impl/{slug}/diff/{agent}", s.handleImplDiff)
