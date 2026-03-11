@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { getContext, putContext } from '../../api'
+import MarkdownContent from './MarkdownContent'
 
 export default function ContextViewerPanel({ onClose }: { onClose: () => void }): JSX.Element {
   const [content, setContent] = useState<string | null>(null)
@@ -138,9 +139,9 @@ export default function ContextViewerPanel({ onClose }: { onClose: () => void })
                   </button>
                 </div>
                 {content ? (
-                  <pre className="text-xs font-mono bg-muted/50 rounded-md p-3 overflow-x-auto whitespace-pre-wrap text-foreground/80 leading-relaxed min-h-[100px]">
-                    {content}
-                  </pre>
+                  <div className="bg-muted/50 rounded-md p-3 min-h-[100px]">
+                    <MarkdownContent compact={false}>{content}</MarkdownContent>
+                  </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">Context is empty.</p>
                 )}

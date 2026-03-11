@@ -1,6 +1,5 @@
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import MarkdownContent from './MarkdownContent'
-import * as yaml from 'js-yaml'
 
 interface KnownIssue {
   title?: string
@@ -13,15 +12,6 @@ interface KnownIssuesPanelProps {
   knownIssues?: KnownIssue[]
 }
 
-function parseKnownIssues(text: string): KnownIssue[] | null {
-  const stripped = text.replace(/^```yaml.*\n|```$/gm, '')
-  try {
-    return yaml.load(stripped) as KnownIssue[]
-  } catch (e) {
-    console.error('Failed to parse known issues YAML:', e)
-    return null
-  }
-}
 
 const STATUS_COLORS: Record<string, string> = {
   'pre-existing': 'bg-amber-500/15 text-amber-700 dark:text-amber-400 border border-amber-500/20',
