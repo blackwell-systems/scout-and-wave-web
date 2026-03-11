@@ -44,12 +44,6 @@ See CHANGELOG.md for full version history.
 
 ---
 
-## Phase 1: Close the GUI Loop ✅ *COMPLETE (v0.40.0)*
-
-Phase 1 shipped: Worktree manager, failure-type action buttons, project memory viewer. See CHANGELOG.md for details.
-
----
-
 ## Phase 2: Deepen the Intelligence (v0.18.0+)
 
 ### v0.18.0-A — Verification Loop UI (Auto-Retry Visualization)
@@ -319,9 +313,6 @@ GitHub App that posts IMPL doc reviews as PR comments. Approval workflow in GitH
 ---
 
 ## Current Focus
-
-**Phase 1 Complete (v0.40.0)** ✅
-- v0.17.0-D — Worktree manager shipped, no terminal needed for branch cleanup
 
 **Now:** Phase 2 intelligence features
 - v0.18.0-E — Stub Report Panel (surface TODO/FIXME before approval)
