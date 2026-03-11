@@ -38,12 +38,12 @@ const panels: Array<{ key: PanelKey; label: string }> = [
   { key: 'wave-structure', label: 'Wave Structure' },
   { key: 'dependency-graph', label: 'Dependency Graph' },
   { key: 'file-ownership', label: 'File Ownership' },
+  { key: 'pre-mortem', label: 'Pre-Mortem' },
   // Implementation Details
   { key: 'interface-contracts', label: 'Interface Contracts' },
   { key: 'scaffolds', label: 'Scaffolds' },
   { key: 'agent-prompts', label: 'Agent Prompts' },
-  // Risk & Quality
-  { key: 'pre-mortem', label: 'Pre-Mortem' },
+  // Quality
   { key: 'quality-gates', label: 'Quality Gates' },
   { key: 'known-issues', label: 'Known Issues' },
   // Post-Execution
