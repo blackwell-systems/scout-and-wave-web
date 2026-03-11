@@ -48,9 +48,9 @@ export default function ChatPanel({ slug, onClose }: ChatPanelProps): JSX.Elemen
   }
 
   return (
-    <div className="flex flex-col h-full bg-background overflow-hidden">
+    <div className="flex flex-col h-full bg-muted overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-border">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted">
           <h2 className="text-sm font-semibold text-foreground">Ask Claude about this IMPL</h2>
           <button
             onClick={onClose}
@@ -61,7 +61,7 @@ export default function ChatPanel({ slug, onClose }: ChatPanelProps): JSX.Elemen
         </div>
 
         {/* Message list */}
-        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+        <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3 bg-muted">
           {state.messages.length === 0 && (
             <p className="text-sm text-muted-foreground text-center mt-4">
               Ask a question about this plan or IMPL doc.
@@ -108,7 +108,7 @@ export default function ChatPanel({ slug, onClose }: ChatPanelProps): JSX.Elemen
         </div>
 
         {/* Input area */}
-        <div className="flex items-stretch h-12 border-t border-border">
+        <div className="flex items-stretch h-12 border-t border-border bg-muted">
           <input
             type="text"
             value={input}
@@ -116,7 +116,7 @@ export default function ChatPanel({ slug, onClose }: ChatPanelProps): JSX.Elemen
             onKeyDown={handleKeyDown}
             disabled={state.running}
             placeholder="Ask something about this plan..."
-            className="flex-1 text-sm px-4 bg-background text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
+            className="flex-1 text-sm px-4 bg-muted text-foreground placeholder:text-muted-foreground focus:outline-none disabled:opacity-50"
           />
           <button
             onClick={handleSend}
