@@ -52,7 +52,78 @@ Phase 1 shipped: Worktree manager, failure-type action buttons, project memory v
 
 ## Phase 2: Deepen the Intelligence (v0.18.0+)
 
+### v0.18.0-A — Verification Loop UI (Auto-Retry Visualization)
 
+**Why:** Engine v0.30.0 adds E24 verification loop with automatic retry on quality gate failures. The UI needs to show retry chains and failure context.
+
+**Scope:**
+- IMPL list: show retry chain hierarchy (e.g., "Feature X → Fix Wave 1 → Fix Wave 2")
+- ReviewScreen: "Retry Context" panel when viewing a fix-wave IMPL doc
+  - Shows parent IMPL doc link, original quality gate failure output, safe point SHA
+  - "View Original Feature" button jumps to parent IMPL
+- WaveBoard: distinguish fix waves visually (orange badge: "Fix Wave 1/2")
+- After 2 retries, show escalation state: "Manual intervention required"
+
+**Success criteria:**
+- User sees full retry history without reading raw IMPL docs
+- Clear path from fix wave back to original feature
+
+---
+
+### v0.18.0-B — Enhanced Agent Progress Indicators
+
+**Why:** Engine v0.34.0 adds `agent_progress` SSE events with structured file/action tracking. Current WaveBoard shows agent status but not granular progress.
+
+**Scope:**
+- WaveBoard agent cards: show current file + action in real-time
+  - Examples: "Writing: src/api/handlers.go", "Running: go build ./...", "Tool: Edit"
+- Progress percentage: commits made / expected files (from file ownership table)
+- Progress bar per agent (0-100% based on file count)
+- Tooltip on hover: full command or tool call details
+
+**Success criteria:**
+- Wave execution is no longer a black box — see exactly what each agent is doing
+
+---
+
+### v0.18.0-C — Persistent Memory Viewer
+
+**Why:** Engine v0.33.0 adds persistent memory system (`docs/MEMORY.md`) with pattern/pitfall/preference learning. The UI should show what memories were applied and allow editing.
+
+**Scope:**
+- Settings screen: "Project Memory" tab
+  - Table view: Type | Content | Tags | Source Wave | Actions
+  - Filter by type (pattern/pitfall/preference), search by tags
+  - Edit/delete entries inline
+- Scout execution panel: show "Memories Applied" count with expandable list
+  - "3 memories applied to this Scout run" → expands to show which memories + relevance scores
+- ReviewScreen: "Learned from this wave" callout after completion
+  - Shows what new memories were extracted from completion reports
+
+**Success criteria:**
+- User sees which past learnings influenced the current Scout run
+- Memory system is transparent and editable
+
+---
+
+### v0.18.0-D — Wave Timeout Status
+
+**Why:** Engine v0.32.0 adds wave timeout enforcement. Timed-out agents need visual distinction from failures.
+
+**Scope:**
+- WaveBoard: timeout status badge (orange with clock icon)
+- Agent card: show timeout duration when exceeded ("30 min timeout exceeded")
+- Completion report: "Agent timed out" section with:
+  - Last known file being edited
+  - Partial progress percentage
+  - "Rerun Agent" button (single-agent rerun API)
+- Settings: configure default timeout per project (overridable per IMPL)
+
+**Success criteria:**
+- Timeout is visually distinct from logical failure
+- User can identify what agent was doing when timeout occurred
+
+---
 
 ### v0.18.0-E — Stub Report Panel
 

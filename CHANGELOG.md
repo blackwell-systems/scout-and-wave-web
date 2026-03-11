@@ -2,6 +2,14 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.51.0] - 2026-03-10
+
+### Added
+
+- **Phase 2 roadmap updates** — Verification loop UI (retry chain visualization), enhanced agent progress indicators, persistent memory viewer, wave timeout status badges. Aligns UI roadmap with engine v0.30.0+ feature set.
+
+---
+
 ## [0.50.0] - 2026-03-10
 
 ### Added
