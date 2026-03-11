@@ -11,20 +11,46 @@ interface MarkdownContentProps {
 /** Guess language from code content when no fence tag is provided. */
 function guessLanguage(code: string): string | null {
   const trimmed = code.trimStart()
-  // Go: type/func/package/import keywords, := operator
-  if (/^(type |func |package |import |var |const )/.test(trimmed) || /\s:=\s/.test(code)) return 'go'
-  // TypeScript/JavaScript: interface/export/import/const with types
-  if (/^(interface |export |import \{|type .* = )/.test(trimmed)) return 'typescript'
-  // Python: def/class/import with colon
-  if (/^(def |class |from |import )/.test(trimmed)) return 'python'
-  // Rust: fn/pub/use/struct/impl
-  if (/^(fn |pub |use |struct |impl |mod )/.test(trimmed)) return 'rust'
-  // YAML: key: value pattern
-  if (/^\w[\w-]*:(\s|$)/.test(trimmed)) return 'yaml'
-  // JSON: starts with { or [
-  if (/^[{\[]/.test(trimmed)) return 'json'
-  // Shell: starts with $ or #! or common commands
-  if (/^(\$\s|#!\/|cd |mkdir |npm |go |git )/.test(trimmed)) return 'bash'
+
+  // Go: keywords, operators, patterns - check first 3 lines for better detection
+  const first3 = code.split('\n').slice(0, 3).join('\n')
+  if (
+    /^(type |func |package |import |var |const |defer |go |return |struct |interface \{)/.test(trimmed) ||
+    /\s:=\s|func\s+\(.*\)\s+\w+|<-\s*chan|chan\s+/.test(first3) ||
+    /\berr\s+:=|if\s+err\s+!=\s+nil/.test(code)
+  ) return 'go'
+
+  // TypeScript/JavaScript: broader patterns including common constructs
+  if (
+    /^(interface |export |import |type |const |let |var |async |function |class |@\w+|\/\/ @ts-)/.test(trimmed) ||
+    /:\s*(string|number|boolean|any|void|Promise|unknown)\b/.test(first3) ||
+    /=>\s*\{|<\w+>/.test(first3)
+  ) return 'typescript'
+
+  // Python: def/class/import, decorators, type hints
+  if (
+    /^(def |class |from |import |async def |@\w+)/.test(trimmed) ||
+    /->\s*\w+:|:\s*\w+\s*=/.test(first3)
+  ) return 'python'
+
+  // Rust: keywords and syntax patterns
+  if (
+    /^(fn |pub |use |struct |impl |mod |let |const |enum |trait |unsafe |extern )/.test(trimmed) ||
+    /&(mut\s+)?\w+|::\w+|<'/.test(first3)
+  ) return 'rust'
+
+  // YAML: key: value pattern, list items
+  if (/^(\w[\w-]*:\s|[-*]\s+\w+:|  )/.test(trimmed) && !/^\s*\{/.test(trimmed)) return 'yaml'
+
+  // JSON: starts with { or [ and contains valid JSON structure
+  if (/^[{\[]/.test(trimmed) && /":\s*[{\["']/.test(code)) return 'json'
+
+  // Shell: prompts, shebangs, common commands
+  if (
+    /^(\$\s|#!\/|cd |mkdir |npm |go |git |cargo |docker |kubectl |curl |wget |echo |export |source |chmod )/.test(trimmed) ||
+    /\|\s*(grep|sed|awk|xargs)|&&|\|\|/.test(code)
+  ) return 'bash'
+
   return null
 }
 
