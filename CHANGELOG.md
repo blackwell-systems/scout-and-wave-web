@@ -2,6 +2,16 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.47.0] - 2026-03-10
+
+### Added
+
+- **Dynamic chat button label** — "Ask Claude" button in ReviewScreen footer now adapts to the configured chat model in settings. Button text changes to match the AI provider: "Ask Claude", "Ask GPT", "Ask Gemini", "Ask Llama", or generic "Ask {model}" for other providers. Provides consistent UI feedback matching the top nav model picker.
+  - `App.tsx`: passes `chatModel` prop to `ReviewScreen`
+  - `ReviewScreen.tsx`: `getChatButtonLabel()` detects model provider from model name string
+
+---
+
 ## [0.46.0] - 2026-03-10
 
 ### Fixed
