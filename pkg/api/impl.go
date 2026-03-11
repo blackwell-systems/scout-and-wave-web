@@ -28,77 +28,136 @@ var agentSectionRe = regexp.MustCompile(`(?m)^### (?:Wave \d+ )?Agent [A-Z]\b`)
 
 // implListEntry is one item in the GET /api/impl response.
 type implListEntry struct {
-	Slug        string `json:"slug"`
-	DocStatus   string `json:"doc_status"`   // "active" or "complete"
-	WaveCount   int    `json:"wave_count"`   // number of waves (0 if not yet planned)
-	AgentCount  int    `json:"agent_count"`  // total agents across all waves
-	IsMultiRepo bool   `json:"is_multi_repo"` // true when file ownership spans 2+ repos
+	Slug         string   `json:"slug"`
+	Repo         string   `json:"repo"`           // repo name (from saw.config.json) this IMPL belongs to
+	RepoPath     string   `json:"repo_path"`      // absolute path to the repo
+	DocStatus    string   `json:"doc_status"`     // "active" or "complete"
+	WaveCount    int      `json:"wave_count"`     // number of waves (0 if not yet planned)
+	AgentCount   int      `json:"agent_count"`    // total agents across all waves
+	IsMultiRepo  bool     `json:"is_multi_repo"`  // true when file ownership spans 2+ repos
+	InvolvedRepos []string `json:"involved_repos"` // list of repo names from file ownership (for multirepo IMPLs)
 }
 
 // handleListImpls serves GET /api/impl and returns a JSON array of impl entries.
+// Scans all repos from saw.config.json (or falls back to startup IMPLDir if no config).
 func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
-	entries, err := os.ReadDir(s.cfg.IMPLDir)
-	if err != nil {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode([]implListEntry{})
-		return
-	}
-	var result []implListEntry
-	for _, e := range entries {
-		name := e.Name()
-		if strings.HasPrefix(name, "IMPL-") && (strings.HasSuffix(name, ".md") || strings.HasSuffix(name, ".yaml")) {
-			var slug string
-			if strings.HasSuffix(name, ".yaml") {
-				slug = strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".yaml")
-			} else {
-				slug = strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".md")
-			}
-			status := "active"
-			var waveCount, agentCount int
-			var isMultiRepo bool
-			if strings.HasSuffix(name, ".yaml") {
-				if m, err := protocol.Load(filepath.Join(s.cfg.IMPLDir, name)); err == nil {
-					for _, w := range m.Waves {
-						waveCount++
-						agentCount += len(w.Agents)
-					}
-					if m.State == protocol.StateComplete {
-						status = "complete"
-					}
-					repos := make(map[string]struct{})
-					for _, fo := range m.FileOwnership {
-						if fo.Repo != "" {
-							repos[fo.Repo] = struct{}{}
-						}
-					}
-					isMultiRepo = len(repos) >= 2
-				}
-			} else {
-				// Quick scan: explicit SAW:COMPLETE tag, or infer from completion reports.
-				if data, err := os.ReadFile(filepath.Join(s.cfg.IMPLDir, name)); err == nil {
-					text := string(data)
-					if strings.Contains(text, "SAW:COMPLETE") {
-						status = "complete"
-					} else if inferComplete(text) {
-						status = "complete"
-					}
-					waveCount = len(waveHeaderRe.FindAllString(text, -1))
-					agentCount = len(agentSectionRe.FindAllString(text, -1))
-					// Detect multi-repo from file ownership table Repo column
-					if doc, err := engine.ParseIMPLDoc(filepath.Join(s.cfg.IMPLDir, name)); err == nil {
-						repos := make(map[string]struct{})
-						for _, info := range doc.FileOwnership {
-							if info.Repo != "" {
-								repos[info.Repo] = struct{}{}
-							}
-						}
-						isMultiRepo = len(repos) >= 2
-					}
-				}
-			}
-			result = append(result, implListEntry{Slug: slug, DocStatus: status, WaveCount: waveCount, AgentCount: agentCount, IsMultiRepo: isMultiRepo})
+	// Read saw.config.json to get the list of repos
+	configPath := filepath.Join(s.cfg.RepoPath, "saw.config.json")
+	configData, err := os.ReadFile(configPath)
+
+	var repos []RepoEntry
+	if err == nil {
+		var cfg SAWConfig
+		if json.Unmarshal(configData, &cfg) == nil && len(cfg.Repos) > 0 {
+			repos = cfg.Repos
 		}
 	}
+
+	// Fallback: if no config or no repos, use the startup IMPLDir
+	if len(repos) == 0 {
+		repos = []RepoEntry{{
+			Name: filepath.Base(s.cfg.RepoPath),
+			Path: s.cfg.RepoPath,
+		}}
+	}
+
+	var result []implListEntry
+
+	// Scan each configured repo's docs/IMPL directory
+	for _, repo := range repos {
+		implDir := filepath.Join(repo.Path, "docs", "IMPL")
+		entries, err := os.ReadDir(implDir)
+		if err != nil {
+			continue // skip repos without IMPL directory
+		}
+
+		for _, e := range entries {
+			name := e.Name()
+			if strings.HasPrefix(name, "IMPL-") && (strings.HasSuffix(name, ".md") || strings.HasSuffix(name, ".yaml")) {
+				var slug string
+				if strings.HasSuffix(name, ".yaml") {
+					slug = strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".yaml")
+				} else {
+					slug = strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".md")
+				}
+				status := "active"
+				var waveCount, agentCount int
+				var isMultiRepo bool
+
+				fullPath := filepath.Join(implDir, name)
+				var involvedRepos []string
+				if strings.HasSuffix(name, ".yaml") {
+					if m, err := protocol.Load(fullPath); err == nil {
+						for _, w := range m.Waves {
+							waveCount++
+							agentCount += len(w.Agents)
+						}
+						if m.State == protocol.StateComplete {
+							status = "complete"
+						}
+						repoSet := make(map[string]struct{})
+						for _, fo := range m.FileOwnership {
+							if fo.Repo != "" && fo.Repo != "system" {
+								repoSet[fo.Repo] = struct{}{}
+							}
+						}
+						isMultiRepo = len(repoSet) >= 2
+						if isMultiRepo {
+							for repoName := range repoSet {
+								involvedRepos = append(involvedRepos, repoName)
+							}
+							sort.Strings(involvedRepos)
+						}
+					}
+				} else {
+					// Quick scan: explicit SAW:COMPLETE tag, or infer from completion reports.
+					if data, err := os.ReadFile(fullPath); err == nil {
+						text := string(data)
+						if strings.Contains(text, "SAW:COMPLETE") {
+							status = "complete"
+						} else if inferComplete(text) {
+							status = "complete"
+						}
+						waveCount = len(waveHeaderRe.FindAllString(text, -1))
+						agentCount = len(agentSectionRe.FindAllString(text, -1))
+						// Detect multi-repo from file ownership table Repo column
+						if doc, err := engine.ParseIMPLDoc(fullPath); err == nil {
+							repoSet := make(map[string]struct{})
+							for _, info := range doc.FileOwnership {
+								if info.Repo != "" && info.Repo != "system" {
+									repoSet[info.Repo] = struct{}{}
+								}
+							}
+							isMultiRepo = len(repoSet) >= 2
+							if isMultiRepo {
+								for repoName := range repoSet {
+									involvedRepos = append(involvedRepos, repoName)
+								}
+								sort.Strings(involvedRepos)
+							}
+						}
+					}
+				}
+
+				repoName := repo.Name
+				if repoName == "" {
+					repoName = filepath.Base(repo.Path)
+				}
+
+				result = append(result, implListEntry{
+					Slug:          slug,
+					Repo:          repoName,
+					RepoPath:      repo.Path,
+					DocStatus:     status,
+					WaveCount:     waveCount,
+					AgentCount:    agentCount,
+					IsMultiRepo:   isMultiRepo,
+					InvolvedRepos: involvedRepos,
+				})
+			}
+		}
+	}
+
 	if result == nil {
 		result = []implListEntry{}
 	}
@@ -107,14 +166,51 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetImpl serves GET /api/impl/{slug}.
-// It locates the IMPL doc file at cfg.IMPLDir/IMPL-{slug}.md, parses it
-// via engine.ParseIMPLDoc, and returns IMPLDocResponse as JSON.
-// 404 if the file does not exist; 500 on parse error.
+// Searches all configured repos for the IMPL doc. Returns IMPLDocResponse as JSON.
+// 404 if the file does not exist in any repo; 500 on parse error.
 func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
-	if _, err := os.Stat(implPath); os.IsNotExist(err) {
-		implPath = filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+
+	// Read saw.config.json to get the list of repos
+	configPath := filepath.Join(s.cfg.RepoPath, "saw.config.json")
+	configData, err := os.ReadFile(configPath)
+
+	var repos []RepoEntry
+	if err == nil {
+		var cfg SAWConfig
+		if json.Unmarshal(configData, &cfg) == nil && len(cfg.Repos) > 0 {
+			repos = cfg.Repos
+		}
+	}
+
+	// Fallback: if no config or no repos, use the startup IMPLDir
+	if len(repos) == 0 {
+		repos = []RepoEntry{{
+			Name: filepath.Base(s.cfg.RepoPath),
+			Path: s.cfg.RepoPath,
+		}}
+	}
+
+	// Search all repos for the IMPL doc
+	var implPath string
+	for _, repo := range repos {
+		implDir := filepath.Join(repo.Path, "docs", "IMPL")
+		yamlPath := filepath.Join(implDir, "IMPL-"+slug+".yaml")
+		mdPath := filepath.Join(implDir, "IMPL-"+slug+".md")
+
+		if _, err := os.Stat(yamlPath); err == nil {
+			implPath = yamlPath
+			break
+		}
+		if _, err := os.Stat(mdPath); err == nil {
+			implPath = mdPath
+			break
+		}
+	}
+
+	if implPath == "" {
+		http.Error(w, "IMPL doc not found", http.StatusNotFound)
+		return
 	}
 
 	// YAML manifests (Scout v0.6.0+) are loaded via protocol.Load; markdown

@@ -83,10 +83,13 @@ export interface IMPLDocResponse {
 
 export interface IMPLListEntry {
   slug: string
+  repo: string // repo name this IMPL belongs to
+  repo_path: string // absolute path to the repo
   doc_status: string // "active" or "complete" (lowercase)
   wave_count?: number
   agent_count?: number
   is_multi_repo?: boolean
+  involved_repos?: string[] // list of repo names from file ownership (for multirepo IMPLs)
 }
 
 // SSE event data shapes

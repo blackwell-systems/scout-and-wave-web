@@ -46,6 +46,8 @@ const panels: Array<{ key: PanelKey; label: string }> = [
   // Quality
   { key: 'quality-gates', label: 'Quality Gates' },
   { key: 'known-issues', label: 'Known Issues' },
+  // Project Context
+  { key: 'context-viewer', label: 'Project Memory' },
   // Post-Execution
   { key: 'stub-report', label: 'Stub Report' },
   { key: 'post-merge-checklist', label: 'Post-Merge' },
@@ -54,6 +56,13 @@ const panels: Array<{ key: PanelKey; label: string }> = [
 export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
   const { slug, impl, onApprove, onReject, onRefreshImpl, repos, chatModel = 'claude-sonnet-4-6' } = props
   const isNotSuitable = impl.suitability.verdict === 'NOT SUITABLE'
+
+  // Extract involved repos from file ownership (filter out "system" placeholder)
+  const involvedRepos = Array.from(new Set(
+    impl.file_ownership
+      .map(fo => fo.repo)
+      .filter(repo => repo && repo !== 'system')
+  )).sort() as string[]
 
   // Format chat button label based on model
   const getChatButtonLabel = () => {
@@ -157,6 +166,11 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
           <h1 className="text-2xl font-bold">
             Plan Review: <span className="font-mono text-primary">{slug}</span>
           </h1>
+          {involvedRepos.length >= 2 && (
+            <p className="text-sm text-muted-foreground mt-2">
+              Repositories: <span className="font-mono">{involvedRepos.join(', ')}</span>
+            </p>
+          )}
         </div>
 
         {/* Overview - always visible */}
@@ -247,6 +261,11 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
                   <div className="panel-animate"><QualityGatesPanel gatesText={(impl as any).quality_gates_text ?? ''} /></div>
                 )}
 
+                {/* Project Memory (CONTEXT.md) — full width */}
+                {activePanels.includes('context-viewer') && (
+                  <div className="panel-animate"><ContextViewerPanel /></div>
+                )}
+
                 {/* Validation — full width */}
                 {activePanels.includes('validation') && (
                   <div className="panel-animate"><ManifestValidation slug={slug} /></div>
@@ -282,16 +301,6 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
             Worktrees
           </button>
           <button
-            onClick={() => togglePanel('context-viewer')}
-            className={`flex items-center justify-center text-sm font-medium px-6 h-14 transition-all duration-150 border-t-2 ${
-              activePanels.includes('context-viewer')
-                ? 'border-t-teal-500 text-teal-700 dark:text-teal-400 bg-teal-500/10'
-                : 'border-t-teal-500/40 text-muted-foreground hover:bg-teal-500/10 hover:text-foreground'
-            }`}
-          >
-            Project Memory
-          </button>
-          <button
             onClick={() => setShowChat(v => !v)}
             className={`flex items-center justify-center text-sm font-semibold px-8 h-14 transition-all duration-150 border-t-2 ${
               showChat
@@ -317,13 +326,6 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
             <ChatPanel slug={slug} onClose={() => setShowChat(false)} />
           </div>
         </>
-      )}
-
-      {/* Context Viewer — modal overlay */}
-      {activePanels.includes('context-viewer') && (
-        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center p-4">
-          <ContextViewerPanel onClose={() => togglePanel('context-viewer')} />
-        </div>
       )}
 
       {/* Worktrees — modal overlay at very top */}

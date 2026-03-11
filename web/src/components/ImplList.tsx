@@ -148,6 +148,13 @@ function EntryRow({ e, selectedSlug, loading, onSelect, onRequestDelete }: Entry
             <span className="text-[9px] px-1 py-0.5 rounded bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300 font-mono shrink-0">multirepo</span>
           )}
         </div>
+        {e.involved_repos && e.involved_repos.length > 0 && (
+          <div className="flex items-center gap-2 pl-3 font-sans not-italic" style={{ textDecoration: 'none' }}>
+            <span className="text-[10px] text-muted-foreground/70">
+              {e.involved_repos.join(', ')}
+            </span>
+          </div>
+        )}
         {(e.wave_count ?? 0) > 0 && (
           <div className="flex items-center gap-2 pl-3 font-sans not-italic" style={{ textDecoration: 'none' }}>
             <span className="text-[10px] text-muted-foreground/70">
@@ -170,9 +177,15 @@ function EntryRow({ e, selectedSlug, loading, onSelect, onRequestDelete }: Entry
 export default function ImplList(props: ImplListProps): JSX.Element {
   const { entries, selectedSlug, onSelect, onDelete, loading, repos } = props
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [selectedRepo, setSelectedRepo] = useState<string>('')
 
-  const activeEntries = entries.filter((e) => e.doc_status !== 'complete')
-  const completedEntries = entries.filter((e) => e.doc_status === 'complete')
+  // Filter entries by selected repo (empty string = all repos)
+  const filteredEntries = selectedRepo === ''
+    ? entries
+    : entries.filter((e) => e.repo === selectedRepo)
+
+  const activeEntries = filteredEntries.filter((e) => e.doc_status !== 'complete')
+  const completedEntries = filteredEntries.filter((e) => e.doc_status === 'complete')
 
   return (
     <>
@@ -186,9 +199,13 @@ export default function ImplList(props: ImplListProps): JSX.Element {
       <div className="flex flex-col gap-1 p-2">
         {repos && repos.length >= 2 && (
           <>
-            <select className="w-full text-xs px-2 py-1 mb-2 rounded border border-border bg-background text-foreground">
+            <select
+              value={selectedRepo}
+              onChange={(e) => setSelectedRepo(e.target.value)}
+              className="w-full text-xs px-2 py-1 mb-2 rounded border border-border bg-background text-foreground cursor-pointer focus:outline-none focus:ring-1 focus:ring-ring"
+            >
               <option value="">All repos</option>
-              {repos.map((r, i) => <option key={i} value={r.path}>{r.name || r.path}</option>)}
+              {repos.map((r, i) => <option key={i} value={r.name}>{r.name || r.path}</option>)}
             </select>
           </>
         )}
