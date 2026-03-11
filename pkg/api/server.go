@@ -104,6 +104,12 @@ func New(cfg Config) *Server {
 	// v0.32.0 — Manifest routes (validate, load, wave, completion)
 	s.RegisterManifestRoutes()
 
+	// Journal API — Tool journaling for Observatory UI
+	s.mux.HandleFunc("GET /api/journal/{wave}/{agent}", s.handleJournalGet)
+	s.mux.HandleFunc("GET /api/journal/{wave}/{agent}/summary", s.handleJournalSummary)
+	s.mux.HandleFunc("GET /api/journal/{wave}/{agent}/checkpoints", s.handleJournalCheckpoints)
+	s.mux.HandleFunc("POST /api/journal/{wave}/{agent}/restore", s.handleJournalRestore)
+
 	sub, err := fs.Sub(staticFiles, "dist")
 	if err != nil {
 		panic("saw: failed to sub embed.FS: " + err.Error())
