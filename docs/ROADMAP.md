@@ -119,25 +119,6 @@ See CHANGELOG.md for full version history.
 
 ---
 
-### ✅ SHIPPED — v0.18.0-E — Stub Report Panel (COMPLETED)
-
-**Status:** ✅ Shipped in earlier release - stub reports now surface in review screen.
-
-**Original Why:** Protocol E20 (v0.12.0) defines `## Stub Report — Wave {N}` sections written to the IMPL doc after each wave. Currently these appear as raw markdown in the review screen. Surfacing them prominently before the approve buttons gives reviewers a clear signal before they approve.
-
-**Scope:**
-- ReviewScreen: parse `## Stub Report — Wave {N}` sections from IMPL doc (prose, not a typed block)
-- Show a "Stub Report" panel per wave in the review screen, collapsed by default, with a warning badge if stubs were found
-- Table display: File | Line | Pattern | Context (from scan-stubs.sh output)
-- "No stubs detected" green indicator when clean
-- Panel appears between wave completion reports and the approve/reject buttons
-- API: `GET /api/impl/{slug}/raw` already returns the full doc — parse client-side
-
-**Success criteria:**
-- Reviewer sees stub count before approving, without reading raw markdown
-
----
-
 ### v0.18.0-E2 — Animated Dep Graph During Execution
 
 **Why:** The dependency graph SVG is static — it shows the planned structure but doesn't reflect live execution state. During wave runs, users have no visual indicator of which agents are running, complete, or failed without switching to the WaveBoard.
@@ -168,46 +149,6 @@ See CHANGELOG.md for full version history.
 
 **Success criteria:**
 - Quality gate results visible in UI without reading IMPL doc raw markdown
-
----
-
-### ✅ SHIPPED — v0.18.0-H — NOT SUITABLE Full Research View (UI COMPLETED)
-
-**Status:** ✅ UI shipped v0.17.0 (NotSuitableResearchPanel). Protocol changes to scout.md pending.
-
-**Original Why:** When Scout returns NOT SUITABLE, ReviewScreen shows a dead end — a verdict and a short rationale. Protocol roadmap item "Full Research Output on NOT SUITABLE Verdicts" will make Scouts write complete research regardless of verdict (dep graph, file survey, risk assessment, "what would make it suitable"). The UI needs to render this when it arrives rather than treating NOT SUITABLE as an empty state.
-
-**Scope:**
-- ReviewScreen: detect NOT SUITABLE verdict from `## Suitability Assessment` section
-- Render all research panels normally (dep graph, file ownership, interface contracts) with verdict badge prominent at top in red
-- Add "What Would Make It Suitable" callout card — parsed from a new `## What Would Make It Suitable` section in NOT SUITABLE IMPL docs
-- Add "Serial Implementation Notes" panel — parsed from `## Serial Implementation Notes` section
-- "Approve" and "Reject" buttons replaced with "Archive" (moves IMPL doc to `docs/IMPL/archived/`)
-- API: `GET /api/impl/{slug}/raw` already sufficient — client-side parse
-
-**Dependency:** Requires the protocol "Full Research Output on NOT SUITABLE Verdicts" change to Scout to be useful. UI can be built now as a no-op fallback.
-
-**Success criteria:**
-- NOT SUITABLE is not a dead end — it's a map of why and what to do next
-- All research panels populate even when the verdict is negative
-
----
-
-### ✅ SHIPPED — v0.18.0-I — Scaffold Build Failure Detail (API COMPLETED)
-
-**Status:** ✅ API shipped v0.33.0. UI implementation deferred (low priority - scaffold failures are rare).
-
-**Original Why:** Protocol E22 (v0.13.0) requires the Scaffold Agent to run `go build ./...` (or equivalent) and report `status: FAILED` with build error output if it fails. Currently this surfaces as a generic BLOCKED state with no detail.
-
-**Scope (remaining — UI only):**
-- ReviewScreen/WaveBoard: detect SCAFFOLD_PENDING → BLOCKED transition from scaffold status field in IMPL doc Scaffolds section
-- When scaffold status contains `FAILED:`, show build error output in a syntax-highlighted code block (streaming via existing SSE if build is still running; static if already failed)
-- "Revise Interface Contracts" button opens the IMPL doc editor (RevisePanel) pre-focused on the Interface Contracts section
-- Clear "why this failed" explanation: "The Scaffold Agent could not compile the interface definitions. Fix the contracts above and re-run."
-
-**Success criteria:**
-- Build failure output visible in UI within 2 seconds of scaffold reporting FAILED
-- User can identify and fix the failing interface contract without leaving SAW
 
 ---
 
