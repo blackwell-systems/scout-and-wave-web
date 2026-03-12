@@ -32,7 +32,9 @@ completion_reports:
             - web/src/components/ReviewScreen.test.tsx
         status: complete
         verification: PASS — go build, go test, go vet, npm run build all pass. npm run lint script not configured (non-blocking).
+# SAW:COMPLETE 2026-03-10
 feature_slug: worktree-manager
+state: COMPLETE
 file_ownership:
     - action: modify
       agent: A

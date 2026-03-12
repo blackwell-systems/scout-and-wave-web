@@ -131,7 +131,7 @@ The binary also provides a CLI for scripting and CI/CD:
 ./saw merge --impl docs/IMPL/IMPL-caching.md --wave 1
 ```
 
-See [CLI Usage](#cli-reference) for full command reference.
+See [CLI Reference](docs/cli-reference.md) for full command reference.
 
 ## Web UI Features
 
@@ -307,96 +307,47 @@ Example log output:
 2026/03/08 21:39:14 [chat] Agent completed successfully: runID=1773031123005120000 totalChunks=12
 ```
 
-## API Reference
+## Documentation
 
-All endpoints return JSON unless otherwise noted.
+- **[CLI Reference](docs/cli-reference.md)** — Complete command-line interface documentation for all 18 commands
+- **[API Reference](docs/api-reference.md)** — HTTP endpoint documentation for all 42 REST/SSE endpoints
+- **[Configuration Reference](docs/configuration.md)** — `saw.config.json` structure and settings
 
-### IMPL operations
-
-```http
-GET /api/impl
-→ {"impls": [{"slug": "...", "title": "...", "status": "...", ...}, ...]}
-
-GET /api/impl/{slug}
-→ {"slug": "...", "title": "...", "raw": "...", "waves": [...], ...}
-```
-
-### Chat (SSE)
-
-```http
-POST /api/impl/{slug}/chat
-Body: {"message": "...", "history": [{"role": "user"|"assistant", "content": "..."}]}
-→ {"run_id": "1773031123005120000"}
-
-GET /api/impl/{slug}/chat/{runID}/events
-→ SSE stream with events:
-  - chat_output: {"run_id": "...", "chunk": "..."}
-  - chat_complete: {"run_id": "...", "slug": "..."}
-  - chat_failed: {"run_id": "...", "error": "..."}
-```
-
-### Wave execution (SSE)
-
-```http
-POST /api/wave/{slug}/start
-Body: {"auto": true, "wave_num": 1}
-→ {"status": "started"}
-
-GET /api/wave/{slug}/events
-→ SSE stream with events:
-  - wave_started: {"wave": 1, "agents": ["A", "B"]}
-  - agent_output: {"wave": 1, "agent": "A", "line": "..."}
-  - agent_complete: {"wave": 1, "agent": "A", "status": "complete"}
-  - wave_complete: {"wave": 1, "status": "merged"}
-  - run_complete: {"status": "success", "waves": 3, "agents": 7}
-  - run_failed: {"error": "..."}
-```
-
-## CLI Reference
+### Quick CLI Examples
 
 ```bash
-# Scout (analyze codebase, produce IMPL doc)
+# Generate IMPL doc
 ./saw scout --feature "add OAuth support"
-./saw scout --feature "..." --backend api  # force API backend
-./saw scout --feature "..." --backend cli  # force Claude CLI backend
 
-# Scaffold (create shared type stubs)
-./saw scaffold --impl docs/IMPL/IMPL-oauth.md
+# Create interface scaffolds
+./saw scaffold --impl docs/IMPL/IMPL-oauth.yaml
 
-# Wave execution
-./saw wave --impl docs/IMPL/IMPL-oauth.md --auto          # all waves
-./saw wave --impl docs/IMPL/IMPL-oauth.md --wave 2 --auto # from wave 2
-./saw wave --impl docs/IMPL/IMPL-oauth.md                 # interactive (pause after each wave)
+# Execute waves
+./saw wave --impl docs/IMPL/IMPL-oauth.yaml --auto
 
-# Status
-./saw status --impl docs/IMPL/IMPL-oauth.md
-./saw status --impl docs/IMPL/IMPL-oauth.md --json
-./saw status --impl docs/IMPL/IMPL-oauth.md --missing  # show incomplete agents
+# Check status
+./saw status --impl docs/IMPL/IMPL-oauth.yaml
 
-# Merge (manual recovery)
-./saw merge --impl docs/IMPL/IMPL-oauth.md --wave 1
-
-# Web server
+# Start web server
 ./saw serve
-./saw serve --addr :8080 --repo /path/to/project --no-browser
-
-# Version
-./saw --version
 ```
 
-### Backend selection
-
-`saw scout` and `saw scaffold` support a `--backend` flag and `SAW_BACKEND` environment variable:
-
-| Value | Behavior |
-|-------|----------|
-| `api` | Anthropic API directly. Requires `ANTHROPIC_API_KEY`. |
-| `cli` | Claude CLI (`claude --print`). Claude Max plan, no API key. |
-| `auto` | Uses `api` if `ANTHROPIC_API_KEY` set, else `cli`. **Default.** |
+### Quick API Examples
 
 ```bash
-export SAW_BACKEND=cli  # persistent default
-./saw scout --feature "..." --backend api  # flag overrides env var
+# List all IMPL docs
+curl http://localhost:7432/api/impl
+
+# Get IMPL details
+curl http://localhost:7432/api/impl/oauth
+
+# Start wave execution
+curl -X POST http://localhost:7432/api/wave/oauth/start \
+  -H "Content-Type: application/json" \
+  -d '{"wave_num": 1, "auto": true}'
+
+# Stream wave events (SSE)
+curl -N http://localhost:7432/api/wave/oauth/events
 ```
 
 ## Protocol Compliance

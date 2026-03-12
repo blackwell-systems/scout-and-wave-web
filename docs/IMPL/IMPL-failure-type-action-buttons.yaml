@@ -4,7 +4,8 @@ feature_slug: "failure-type-action-buttons"
 verdict: "SUITABLE_WITH_CAVEATS"
 test_command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./... && cd web && command npm test -- --run"
 lint_command: "go vet ./... && cd /Users/dayna.blackwell/code/scout-and-wave-web/web && command npm run lint"
-state: "SCOUT_PENDING"
+state: "COMPLETE"
+completion_date: "2026-03-10"
 
 # Suitability Assessment
 # ----------------------
@@ -623,5 +624,27 @@ pre_mortem:
 # - pkg/api/types.go (web repo) — AgentToolCallPayload and other SSE shapes are here;
 #   agent_failed payload shape is assembled in the engine, not in this file, so no cascade.
 
-# Completion Reports (empty at scout time)
-completion_reports: {}
+# SAW:COMPLETE 2026-03-10
+
+# Completion Reports
+completion_reports:
+  A:
+    status: complete
+    branch: wave1-agent-A
+    commit: 519fbfe
+    files_changed:
+      - /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/types.go
+      - /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/wave_runner.go
+      - /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/scout.go
+      - /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/server.go
+    verification: "PASS: go build, go test, go vet all passed"
+  B:
+    status: complete
+    branch: wave1-agent-B
+    commit: d34102d
+    files_changed:
+      - /Users/dayna.blackwell/code/scout-and-wave-web/web/src/types.ts
+      - /Users/dayna.blackwell/code/scout-and-wave-web/web/src/api.ts
+      - /Users/dayna.blackwell/code/scout-and-wave-web/web/src/hooks/useWaveEvents.ts
+      - /Users/dayna.blackwell/code/scout-and-wave-web/web/src/components/WaveBoard.tsx
+    verification: "PASS: npm run build, npm run lint passed"

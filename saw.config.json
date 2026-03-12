@@ -2,7 +2,7 @@
   "repos": [
     {
       "name": "repo",
-      "path": "/Users/dayna.blackwell/code/scout-and-wave"
+      "path": "/Users/dayna.blackwell/code/scout-and-wave-go"
     }
   ],
   "repo": {
@@ -19,6 +19,6 @@
     "block_on_failure": false
   },
   "appearance": {
-    "theme": ""
+    "theme": "dark"
   }
 }

@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { getContext, putContext } from '../../api'
 import MarkdownContent from './MarkdownContent'
 
-export default function ContextViewerPanel({ onClose }: { onClose: () => void }): JSX.Element {
+export default function ContextViewerPanel({ onClose }: { onClose?: () => void }): JSX.Element {
   const [content, setContent] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -63,14 +63,16 @@ export default function ContextViewerPanel({ onClose }: { onClose: () => void })
     <Card>
       <CardHeader>
         <div className="flex items-center justify-between">
-          <CardTitle>Context</CardTitle>
-          <button
-            onClick={onClose}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded hover:bg-muted"
-            aria-label="Close"
-          >
-            × Close
-          </button>
+          <CardTitle>Project Memory (CONTEXT.md)</CardTitle>
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="text-xs text-muted-foreground hover:text-foreground transition-colors px-2 py-1 rounded hover:bg-muted"
+              aria-label="Close"
+            >
+              × Close
+            </button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
