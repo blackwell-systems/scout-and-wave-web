@@ -92,6 +92,13 @@ export default function App() {
     }
   }, [])
 
+  // Refetch IMPL list when repos configuration changes
+  useEffect(() => {
+    if (repos.length > 0) {
+      listImpls().then(setEntries).catch(() => {})
+    }
+  }, [repos])
+
   // Command palette keyboard shortcut (⌘K / Ctrl+K)
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {

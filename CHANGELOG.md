@@ -2,6 +2,15 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.52.0] - 2026-03-11
+
+### Fixed
+
+- **Repository selector auto-refresh** — Changing repositories in settings now automatically refreshes the IMPL list without requiring manual page reload. Added reactive effect that watches `repos` state and refetches IMPL list when repo configuration changes.
+  - `App.tsx`: Added `useEffect([repos])` to trigger `listImpls()` when repositories update
+
+---
+
 ## [0.51.0] - 2026-03-10
 
 ### Added
