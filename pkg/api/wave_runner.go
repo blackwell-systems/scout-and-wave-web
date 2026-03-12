@@ -10,7 +10,8 @@ import (
 	"sync"
 	"time"
 
-	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // gateChannels stores per-slug gate channels used to pause runWaveLoop
@@ -33,7 +34,7 @@ func (s *Server) handleWaveStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	implPath := s.cfg.IMPLDir + "/IMPL-" + slug + ".md"
+	implPath := s.cfg.IMPLDir + "/IMPL-" + slug + ".yaml"
 	publish := s.makePublisher(slug)
 
 	// Clear previous stage state so the timeline starts fresh for this run.
@@ -86,14 +87,14 @@ func runWaveLoop(
 		}
 	}
 
-	// Parse the IMPL doc via the engine to get wave structure.
-	doc, err := engine.ParseIMPLDoc(implPath)
+	// Load the YAML manifest to get wave structure.
+	manifest, err := protocol.Load(implPath)
 	if err != nil {
 		publish("run_failed", map[string]string{"error": err.Error()})
 		return
 	}
-	if doc == nil {
-		publish("run_failed", map[string]string{"error": "failed to parse IMPL doc: " + implPath})
+	if manifest == nil {
+		publish("run_failed", map[string]string{"error": "failed to load IMPL manifest: " + implPath})
 		return
 	}
 
@@ -110,7 +111,7 @@ func runWaveLoop(
 	}
 	onStage(StageScaffold, StageStatusComplete, 0, "")
 
-	waves := doc.Waves
+	waves := manifest.Waves
 	totalAgents := 0
 	for _, w := range waves {
 		totalAgents += len(w.Agents)
@@ -151,7 +152,7 @@ func runWaveLoop(
 		}
 		onStage(StageWaveMerge, StageStatusComplete, waveNum, "")
 
-		testCmd := doc.TestCommand
+		testCmd := manifest.TestCommand
 		if testCmd != "" {
 			onStage(StageWaveVerify, StageStatusRunning, waveNum, "")
 			if err := engine.RunVerification(ctx, engine.RunVerificationOpts{
@@ -167,7 +168,7 @@ func runWaveLoop(
 
 		completedLetters := make([]string, 0, len(wave.Agents))
 		for _, ag := range wave.Agents {
-			completedLetters = append(completedLetters, ag.Letter)
+			completedLetters = append(completedLetters, ag.ID)
 		}
 		if err := engine.UpdateIMPLStatus(implPath, completedLetters); err != nil {
 			// Non-fatal: mirrors the CLI behaviour (warning, not abort).

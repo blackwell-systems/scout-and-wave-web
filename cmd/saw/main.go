@@ -75,11 +75,6 @@ func main() {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}
-	case "migrate":
-		if err := runMigrate(os.Args[2:]); err != nil {
-			fmt.Fprintln(os.Stderr, err)
-			os.Exit(1)
-		}
 	case "mark-complete":
 		if err := runMarkComplete(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
@@ -138,7 +133,6 @@ Commands:
   extract-context Extract agent-specific context from an IMPL manifest as JSON
   set-completion  Register a completion report for an agent in a manifest
   render          Render a YAML IMPL manifest as markdown
-  migrate         Convert a markdown IMPL doc to YAML manifest format
   mark-complete   Write SAW:COMPLETE marker to an IMPL doc
   run-gates       Run quality gate checks for a wave
   check-conflicts Detect file ownership conflicts across agents

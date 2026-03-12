@@ -11,7 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // MergeWaveRequest is the JSON body for POST /api/wave/{slug}/merge.
@@ -49,7 +50,7 @@ func (s *Server) handleWaveMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
 	publish := s.makePublisher(slug)
 	wave := req.Wave
 
@@ -114,7 +115,7 @@ func (s *Server) handleWaveTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
 	publish := s.makePublisher(slug)
 	wave := req.Wave
 
@@ -130,10 +131,10 @@ func (s *Server) handleWaveTest(w http.ResponseWriter, r *http.Request) {
 			"wave": wave,
 		})
 
-		// Parse the IMPL doc to get the test command.
-		doc, err := engine.ParseIMPLDoc(implPath)
-		if err != nil || doc == nil {
-			errMsg := "failed to parse IMPL doc"
+		// Load the YAML manifest to get the test command.
+		manifest, err := protocol.Load(implPath)
+		if err != nil || manifest == nil {
+			errMsg := "failed to load IMPL manifest"
 			if err != nil {
 				errMsg = err.Error()
 			}
@@ -146,7 +147,7 @@ func (s *Server) handleWaveTest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if doc.TestCommand == "" {
+		if manifest.TestCommand == "" {
 			publish("test_failed", map[string]interface{}{
 				"slug":   slug,
 				"wave":   wave,
@@ -158,7 +159,7 @@ func (s *Server) handleWaveTest(w http.ResponseWriter, r *http.Request) {
 
 		// Run test command via sh -c to support compound commands like
 		// "go test ./... && cd web && npm test --watchAll=false".
-		cmd := exec.CommandContext(ctx, "sh", "-c", doc.TestCommand)
+		cmd := exec.CommandContext(ctx, "sh", "-c", manifest.TestCommand)
 		cmd.Dir = s.cfg.RepoPath
 
 		// Combine stdout and stderr into a single io.Pipe so we can stream
