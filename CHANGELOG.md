@@ -2,6 +2,31 @@
 
 All notable changes to this project will be documented in this file.
 
+## [0.53.0] - 2026-03-12
+
+### Removed
+
+- **Markdown IMPL handler code removed** — Complete removal of markdown-based IMPL doc handling from web API as part of protocol v0.7.0+ YAML-only mandate. All endpoints now exclusively use `protocol.Load()` for YAML manifests.
+- **Dual-format branching eliminated** — `handleListImpls`, `handleGetImpl`, `handleDeleteImpl`, `handleArchiveImpl` no longer check file extension (`.md` vs `.yaml`) and branch to different parsers. Single code path for all IMPLs.
+- **Markdown-only helper functions removed** (625 lines) — `inferComplete`, `injectScaffoldWave`, `mapFileOwnership`, `mapWaves`, `mapKnownIssues`, `mapScaffoldsDetail`, `extractAgentPrompts`, `mapPreMortem` all deleted from `pkg/api/impl.go`.
+- **Migration tool deleted** — `cmd/saw/migrate.go` (206 lines) removed. Markdown-to-YAML migration complete; tool no longer needed.
+- **Migrate command removed** — Deleted migrate case from main.go command switch and help text.
+
+### Changed
+
+- **`pkg/api/wave_runner.go`** — Updated to use `protocol.Load()` instead of `engine.ParseIMPLDoc()` for manifest loading.
+- **`pkg/api/agent_context_handler.go`** — Updated to use `protocol.ExtractAgentContextFromManifest()` instead of removed markdown extraction functions.
+- **`pkg/api/merge_test_handlers.go`** — Updated to use YAML manifests exclusively.
+- **`cmd/saw/main.go`** — Removed migrate command registration and help text.
+
+### Metrics
+
+- **Lines removed**: 625 lines of markdown handling code
+- **Cross-repo coordination**: Agent B (this repo) worked in parallel with Agent A (scout-and-wave-go) during Wave 1 of markdown system removal
+- **Out-of-scope dependencies documented**: `cmd/saw/commands.go` still uses `engine.ParseIMPLDoc()` and `engine.ParseCompletionReport()`, but those functions were updated in scout-and-wave-go to provide compatibility shims
+
+---
+
 ## [0.52.0] - 2026-03-11
 
 ### Fixed
