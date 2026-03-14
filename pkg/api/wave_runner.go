@@ -280,10 +280,6 @@ func (s *Server) handleWaveAgentRerun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
-	if _, err := os.Stat(implPath); os.IsNotExist(err) {
-		// Fall back to .md extension for legacy IMPL docs.
-		implPath = filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
-	}
 
 	// Read wave model from saw.config.json if present.
 	waveModel := ""

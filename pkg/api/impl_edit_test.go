@@ -80,7 +80,7 @@ func TestHandlePutImplRaw_Success(t *testing.T) {
 	}
 
 	// Verify file was written correctly
-	implPath := filepath.Join(dir, "docs", "IMPL", "IMPL-"+slug+".md")
+	implPath := filepath.Join(dir, "docs", "IMPL", "IMPL-"+slug+".yaml")
 	data, err := os.ReadFile(implPath)
 	if err != nil {
 		t.Fatalf("could not read written file: %v", err)

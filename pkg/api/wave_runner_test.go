@@ -29,7 +29,7 @@ func capturePublish() (func(event string, data interface{}), func() []string) {
 func TestRunWaveLoop_PublishesRunFailed_OnBadPath(t *testing.T) {
 	publish, getEvents := capturePublish()
 
-	runWaveLoop("/nonexistent/IMPL-missing.md", "missing", "/nonexistent/repo", publish, func(ExecutionStage, StageStatus, int, string) {})
+	runWaveLoop("/nonexistent/IMPL-missing.yaml", "missing", "/nonexistent/repo", publish, func(ExecutionStage, StageStatus, int, string) {})
 
 	events := getEvents()
 	if len(events) < 2 {
@@ -61,7 +61,7 @@ func TestRunWaveLoop_PublishesRunStarted_ThenRunComplete(t *testing.T) {
 	}
 
 	publish, getEvents := capturePublish()
-	runWaveLoopFunc("/some/IMPL.md", "test-slug", "/some/repo", publish, func(ExecutionStage, StageStatus, int, string) {})
+	runWaveLoopFunc("/some/IMPL.yaml", "test-slug", "/some/repo", publish, func(ExecutionStage, StageStatus, int, string) {})
 
 	events := getEvents()
 	if len(events) != 2 {

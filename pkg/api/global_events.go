@@ -101,7 +101,7 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 }
 
 // startIMPLWatcher watches the IMPL directory and broadcasts
-// "impl_list_updated" whenever a .md file is created or renamed into place.
+// "impl_list_updated" whenever a .yaml file is created or renamed into place.
 func (s *Server) startIMPLWatcher(implDir string) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {

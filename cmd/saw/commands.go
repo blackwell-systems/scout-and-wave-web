@@ -453,7 +453,7 @@ func runScout(args []string) error {
 	implOut := *implPath
 	if implOut == "" {
 		slug := slugify(*feature)
-		implOut = filepath.Join(repoRoot, "docs", "IMPL", fmt.Sprintf("IMPL-%s.md", slug))
+		implOut = filepath.Join(repoRoot, "docs", "IMPL", fmt.Sprintf("IMPL-%s.yaml", slug))
 	}
 
 	// Locate and read scout.md to verify it exists (engine will re-read it).

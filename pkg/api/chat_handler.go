@@ -91,7 +91,7 @@ func (s *Server) runImplChatAgent(ctx context.Context, runID, slug, message stri
 
 	log.Printf("[chat] Agent starting: runID=%s slug=%s", runID, slug)
 
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
 
 	// Convert history to engine.ChatMessage format
 	var engineHistory []engine.ChatMessage

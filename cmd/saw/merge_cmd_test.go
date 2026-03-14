@@ -17,7 +17,7 @@ func TestRunMerge_MissingImplFlag(t *testing.T) {
 }
 
 func TestRunMerge_InvalidImpl(t *testing.T) {
-	err := runMerge([]string{"--impl", "/nonexistent/path.md"})
+	err := runMerge([]string{"--impl", "/nonexistent/path.yaml"})
 	if err == nil {
 		t.Fatal("expected error for nonexistent IMPL path, got nil")
 	}
@@ -30,7 +30,7 @@ func TestRunMerge_FlagParsing(t *testing.T) {
 	implPath := fs.String("impl", "", "")
 	waveNum := fs.Int("wave", 1, "")
 
-	args := []string{"--impl", "/some/path.md", "--wave", "2"}
+	args := []string{"--impl", "/some/path.yaml", "--wave", "2"}
 	if err := fs.Parse(args); err != nil {
 		t.Fatalf("flag parsing failed: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestRunMerge_FlagParsing(t *testing.T) {
 	if *waveNum != 2 {
 		t.Errorf("expected --wave 2, got %d", *waveNum)
 	}
-	if *implPath != "/some/path.md" {
-		t.Errorf("expected --impl /some/path.md, got %s", *implPath)
+	if *implPath != "/some/path.yaml" {
+		t.Errorf("expected --impl /some/path.yaml, got %s", *implPath)
 	}
 }

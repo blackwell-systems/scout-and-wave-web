@@ -103,7 +103,7 @@ func setupRunWaveTest(t *testing.T, fake *fakeWaveOrch) (implPath string, cleanu
 	}
 
 	// Create a placeholder IMPL doc file (content unused; fake provides the doc).
-	implPath = filepath.Join(dir, "IMPL-test.md")
+	implPath = filepath.Join(dir, "IMPL-test.yaml")
 	if err := os.WriteFile(implPath, []byte("# IMPL: Test Feature\n"), 0o644); err != nil {
 		t.Fatalf("failed to write IMPL doc: %v", err)
 	}

@@ -25,11 +25,8 @@ type ScaffoldRerunResponse struct {
 func (s *Server) handleScaffoldRerun(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 
-	// Resolve IMPL doc path — YAML first, markdown fallback.
+	// Resolve IMPL doc path.
 	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
-	if _, err := os.Stat(implPath); os.IsNotExist(err) {
-		implPath = filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
-	}
 	if _, err := os.Stat(implPath); os.IsNotExist(err) {
 		http.Error(w, "IMPL doc not found for slug: "+slug, http.StatusNotFound)
 		return

@@ -31,7 +31,7 @@ func (s *Server) handleGetImplRaw(w http.ResponseWriter, r *http.Request) {
 	var implPath string
 	var found bool
 	for _, dir := range searchDirs {
-		for _, ext := range []string{".yaml", ".md"} {
+		for _, ext := range []string{".yaml"} {
 			candidate := filepath.Join(dir, "IMPL-"+slug+ext)
 			if _, err := os.Stat(candidate); err == nil {
 				implPath = candidate
@@ -86,9 +86,9 @@ func (s *Server) handlePutImplRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
 	// Atomic write via temp file + rename
-	tmpFile, err := os.CreateTemp(s.cfg.IMPLDir, "impl-edit-*.md.tmp")
+	tmpFile, err := os.CreateTemp(s.cfg.IMPLDir, "impl-edit-*.yaml.tmp")
 	if err != nil {
 		http.Error(w, "failed to create temp file", http.StatusInternalServerError)
 		return
@@ -195,7 +195,7 @@ func (s *Server) runImplReviseAgent(ctx context.Context, runID, slug, feedback s
 		s.broker.Publish(brokerKey, SSEEvent{Event: event, Data: data})
 	}
 
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".md")
+	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
 
 	systemPrompt := fmt.Sprintf(`You are an expert software architect revising a Scout-and-Wave IMPL doc.
 

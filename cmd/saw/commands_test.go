@@ -59,7 +59,7 @@ func TestRunStatus_MissingImpl(t *testing.T) {
 func TestRunStatus_ParsesDoc(t *testing.T) {
 	// Write the IMPL doc to a temp file.
 	dir := t.TempDir()
-	implFile := filepath.Join(dir, "IMPL-test.md")
+	implFile := filepath.Join(dir, "IMPL-test.yaml")
 	if err := os.WriteFile(implFile, []byte(minimalIMPLDoc), 0o644); err != nil {
 		t.Fatalf("failed to write IMPL doc: %v", err)
 	}
@@ -314,7 +314,7 @@ func TestRunScaffold_PromptFileMissing(t *testing.T) {
 	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
 		t.Fatalf("mkdir .git: %v", err)
 	}
-	implFile := filepath.Join(dir, "IMPL-test.md")
+	implFile := filepath.Join(dir, "IMPL-test.yaml")
 	if err := os.WriteFile(implFile, []byte(minimalIMPLDoc), 0o644); err != nil {
 		t.Fatalf("write impl: %v", err)
 	}
@@ -380,7 +380,7 @@ func TestRunScout_PromptIncludesFeature(t *testing.T) {
 	}
 
 	repoRoot := t.TempDir()
-	implOut := filepath.Join(repoRoot, "docs", "IMPL", "IMPL-"+slugify(featureDesc)+".md")
+	implOut := filepath.Join(repoRoot, "docs", "IMPL", "IMPL-"+slugify(featureDesc)+".yaml")
 	prompt := string([]byte(scoutMdContent)) + "\n\n## Feature\n" + featureDesc + "\n\n## IMPL Output Path\n" + implOut + "\n"
 
 	spec := types.AgentSpec{Letter: "scout", Prompt: prompt}
@@ -443,7 +443,7 @@ completion_reports:
 // TestRunStatus_JSONOutput calls runStatus with --json and verifies valid JSON output.
 func TestRunStatus_JSONOutput(t *testing.T) {
 	dir := t.TempDir()
-	implFile := filepath.Join(dir, "IMPL-json-test.md")
+	implFile := filepath.Join(dir, "IMPL-json-test.yaml")
 	if err := os.WriteFile(implFile, []byte(minimalIMPLDocWithReport), 0o644); err != nil {
 		t.Fatalf("failed to write IMPL doc: %v", err)
 	}
@@ -482,7 +482,7 @@ func TestRunStatus_JSONOutput(t *testing.T) {
 // a "Missing reports:" section appears in the output for agents without reports.
 func TestRunStatus_MissingFlag(t *testing.T) {
 	dir := t.TempDir()
-	implFile := filepath.Join(dir, "IMPL-missing-test.md")
+	implFile := filepath.Join(dir, "IMPL-missing-test.yaml")
 	if err := os.WriteFile(implFile, []byte(minimalIMPLDoc), 0o644); err != nil {
 		t.Fatalf("failed to write IMPL doc: %v", err)
 	}
@@ -506,7 +506,7 @@ func TestRunStatus_MissingFlag(t *testing.T) {
 // TestRunStatus_SummaryLine verifies the "Agents: X complete, Y pending, Z blocked" line.
 func TestRunStatus_SummaryLine(t *testing.T) {
 	dir := t.TempDir()
-	implFile := filepath.Join(dir, "IMPL-summary-test.md")
+	implFile := filepath.Join(dir, "IMPL-summary-test.yaml")
 	if err := os.WriteFile(implFile, []byte(minimalIMPLDocWithReport), 0o644); err != nil {
 		t.Fatalf("failed to write IMPL doc: %v", err)
 	}
