@@ -2,12 +2,51 @@
 
 All notable changes to this project will be documented in this file.
 
+| [0.54.0] | 2026-03-14 | Scout automation integration — 5 automation command wrappers added to web CLI (analyze-deps, analyze-suitability, detect-cascades, detect-scaffolds, extract-commands) |
+
+---
+
+## [0.54.0] - 2026-03-14
+
+### Added
+
+- **Scout automation command wrappers** — 5 delegation commands added to web CLI
+  - `analyze-deps` (H3): Delegates to `analyzer.AnalyzeDeps()` for dependency graph analysis
+  - `analyze-suitability` (H1a): Delegates to `suitability.AnalyzeSuitability()` for requirements status
+  - `detect-cascades` (M2): Delegates to `analyzer.DetectCascades()` for rename cascade detection
+  - `detect-scaffolds` (H4): Delegates to `scaffold.DetectScaffolds()` for interface scaffold analysis
+  - `extract-commands` (H2): Delegates to `commands.ExtractCommands()` for build/test command extraction
+  - All commands follow existing web CLI pattern (simple argument parsing, YAML output)
+  - Direct imports from `scout-and-wave-go/pkg/*` packages
+
+### Changed
+
+- **Command registration** — Updated `cmd/saw/main.go` to register 5 new automation commands in alphabetical order
+- **Interface wrappers** — Wave 1 created SDK wrapper functions to resolve interface signature mismatches:
+  - `analyzer.AnalyzeDeps()`: Wrapper around `deps.AnalyzeDeps()`
+  - `commands.ExtractCommands()`: Wrapper around `commands.ScanRepo()`
+  - `scaffold.DetectScaffolds()`: Wrapper around `scaffold.DetectScaffoldsPreAgent()`
+
+### Implementation
+
+- **Wave 1 Agent B** — Web CLI command delegation layer
+- **Files created**: 
+  - `cmd/saw/analyze_deps.go`
+  - `cmd/saw/analyze_suitability.go`
+  - `cmd/saw/detect_cascades.go`
+  - `cmd/saw/detect_scaffolds.go`
+  - `cmd/saw/extract_commands.go`
+- **Files modified**: `cmd/saw/main.go`, `cmd/saw/commands.go`
+
+---
+
 ## [0.53.0] - 2026-03-12
 
 ### Removed
 
 - **Markdown IMPL handler code removed** — Complete removal of markdown-based IMPL doc handling from web API as part of protocol v0.7.0+ YAML-only mandate. All endpoints now exclusively use `protocol.Load()` for YAML manifests.
 - **Dual-format branching eliminated** — `handleListImpls`, `handleGetImpl`, `handleDeleteImpl`, `handleArchiveImpl` no longer check file extension (`.md` vs `.yaml`) and branch to different parsers. Single code path for all IMPLs.
+| [0.54.0] | 2026-03-14 | Scout automation integration — 5 automation command wrappers added to web CLI (analyze-deps, analyze-suitability, detect-cascades, detect-scaffolds, extract-commands) |
 - **Markdown-only helper functions removed** (625 lines) — `inferComplete`, `injectScaffoldWave`, `mapFileOwnership`, `mapWaves`, `mapKnownIssues`, `mapScaffoldsDetail`, `extractAgentPrompts`, `mapPreMortem` all deleted from `pkg/api/impl.go`.
 - **Migration tool deleted** — `cmd/saw/migrate.go` (206 lines) removed. Markdown-to-YAML migration complete; tool no longer needed.
 - **Migrate command removed** — Deleted migrate case from main.go command switch and help text.
