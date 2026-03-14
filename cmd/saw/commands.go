@@ -13,18 +13,19 @@ import (
 	"strings"
 
 	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
-	etypes "github.com/blackwell-systems/scout-and-wave-go/pkg/types"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // waveOrchestrator is the minimal interface runWave needs from an Orchestrator.
 // Using an interface enables tests to inject a fake without real git/API calls.
 type waveOrchestrator interface {
-	TransitionTo(newState etypes.State) error
+	TransitionTo(newState protocol.ProtocolState) error
 	RunWave(waveNum int) error
 	MergeWave(waveNum int) error
 	RunVerification(testCommand string) error
 	UpdateIMPLStatus(waveNum int) error
-	IMPLDoc() *etypes.IMPLDoc
+	IMPLDoc() *types.IMPLDoc
 }
 
 // engineOrchAdapter wraps the engine package functions to satisfy waveOrchestrator.
@@ -32,12 +33,12 @@ type waveOrchestrator interface {
 type engineOrchAdapter struct {
 	repoPath string
 	implPath string
-	doc      *etypes.IMPLDoc
+	doc      *types.IMPLDoc
 	// state tracks the current protocol state (simplified; engine handles real state).
-	state etypes.State
+	state protocol.ProtocolState
 }
 
-func (a *engineOrchAdapter) TransitionTo(newState etypes.State) error {
+func (a *engineOrchAdapter) TransitionTo(newState protocol.ProtocolState) error {
 	a.state = newState
 	return nil
 }
@@ -82,7 +83,7 @@ func (a *engineOrchAdapter) UpdateIMPLStatus(waveNum int) error {
 	return engine.UpdateIMPLStatus(a.implPath, letters)
 }
 
-func (a *engineOrchAdapter) IMPLDoc() *etypes.IMPLDoc {
+func (a *engineOrchAdapter) IMPLDoc() *types.IMPLDoc {
 	return a.doc
 }
 
@@ -100,7 +101,7 @@ var orchestratorNewFunc = func(repoPath, implPath string) (waveOrchestrator, err
 		repoPath: repoPath,
 		implPath: implPath,
 		doc:      doc,
-		state:    etypes.ScoutPending,
+		state:    protocol.StateScoutPending,
 	}, nil
 }
 
@@ -136,10 +137,10 @@ func runWave(args []string) error {
 	}
 
 	// Advance through state machine: ScoutPending -> Reviewed -> WavePending
-	if err := o.TransitionTo(etypes.Reviewed); err != nil {
+	if err := o.TransitionTo(protocol.StateReviewed); err != nil {
 		return fmt.Errorf("wave: %w", err)
 	}
-	if err := o.TransitionTo(etypes.WavePending); err != nil {
+	if err := o.TransitionTo(protocol.StateWavePending); err != nil {
 		return fmt.Errorf("wave: %w", err)
 	}
 
@@ -165,7 +166,7 @@ func runWave(args []string) error {
 
 		// For subsequent waves (after the first), transition back to WavePending.
 		if idx > startIdx {
-			if err := o.TransitionTo(etypes.WavePending); err != nil {
+			if err := o.TransitionTo(protocol.StateWavePending); err != nil {
 				return fmt.Errorf("wave: %w", err)
 			}
 		}
@@ -176,7 +177,7 @@ func runWave(args []string) error {
 			return fmt.Errorf("wave: %w", err)
 		}
 
-		if err := o.TransitionTo(etypes.WaveExecuting); err != nil {
+		if err := o.TransitionTo(protocol.StateWaveExecuting); err != nil {
 			return fmt.Errorf("wave: %w", err)
 		}
 
@@ -199,7 +200,7 @@ func runWave(args []string) error {
 			fmt.Fprintf(os.Stderr, "wave: warning: UpdateIMPLStatus: %v\n", err)
 		}
 
-		if err := o.TransitionTo(etypes.WaveVerified); err != nil {
+		if err := o.TransitionTo(protocol.StateWaveVerified); err != nil {
 			return fmt.Errorf("wave: %w", err)
 		}
 
@@ -219,7 +220,7 @@ func runWave(args []string) error {
 	}
 
 	// All waves executed — transition to Complete.
-	if err := o.TransitionTo(etypes.Complete); err != nil {
+	if err := o.TransitionTo(protocol.StateComplete); err != nil {
 		return fmt.Errorf("wave: %w", err)
 	}
 	fmt.Println("All waves complete.")
