@@ -73,7 +73,7 @@ export default function AgentCard({ agent }: AgentCardProps) {
 
   return (
     <div
-      className="flex flex-col min-w-[320px] max-w-lg overflow-hidden transition-all duration-200"
+      className="flex flex-col w-full overflow-hidden transition-all duration-200"
       style={{
         borderRadius: '12px',
         border: '3px solid',

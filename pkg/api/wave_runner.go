@@ -126,8 +126,28 @@ func runWaveLoop(
 		totalAgents += len(w.Agents)
 	}
 
-	// Execute all waves one at a time, pausing at gates between them.
-	for i, wave := range waves {
+	// Determine first incomplete wave using completion reports.
+	// Skip waves where all agents already have status: complete.
+	currentWave := protocol.CurrentWave(manifest)
+	startIdx := 0
+	if currentWave != nil {
+		for idx, w := range waves {
+			if w.Number == currentWave.Number {
+				startIdx = idx
+				break
+			}
+		}
+		if startIdx > 0 {
+			publish("waves_skipped", map[string]interface{}{
+				"skipped": startIdx,
+				"reason":  "already completed (completion reports present)",
+			})
+		}
+	}
+
+	// Execute waves one at a time, pausing at gates between them.
+	for i := startIdx; i < len(waves); i++ {
+		wave := waves[i]
 		waveNum := wave.Number
 
 		opts := engine.RunWaveOpts{

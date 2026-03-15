@@ -2,8 +2,46 @@
 
 All notable changes to this project will be documented in this file.
 
+| [0.56.0] | 2026-03-14 | File browser (waves 1-2) — 4 backend API endpoints + 7 frontend components for in-app codebase exploration with syntax highlighting |
 | [0.55.0] | 2026-03-14 | UI improvements — Fixed stale IMPL list, added collapsible repo sections, improved repo context visibility |
 | [0.54.0] | 2026-03-14 | Scout automation integration — 5 automation command wrappers added to web CLI (analyze-deps, analyze-suitability, detect-cascades, detect-scaffolds, extract-commands) |
+
+---
+
+## [0.56.0] - 2026-03-14
+
+### Added
+
+- **File browser API** (Wave 1, Agent A) — 4 new endpoints for codebase exploration:
+  - `GET /api/files/tree` — recursive directory tree with .git/node_modules filtering
+  - `GET /api/files/read` — file content with language detection, 1MB limit, binary rejection
+  - `GET /api/files/diff` — git diff for modified files (unstaged + staged)
+  - `GET /api/files/status` — git status mapped to M/A/U/D indicators
+  - Path traversal protection via `filepath.Clean` + repo root validation
+- **useFileBrowser hook** (Wave 1, Agent C) — React hook managing tree loading, file content, diff view, and git status refresh. 4 API client functions added to `api.ts`.
+- **FileViewer component** (Wave 1, Agent D) — CodeMirror-based syntax-highlighted code viewer with Go, TypeScript, JavaScript, Python language support and dark mode detection
+- **DiffViewer component** (Wave 1, Agent E) — Unified diff viewer with +/- line coloring (green/red/blue hunk headers)
+- **FileTree component** (Wave 1, Agent F) — Recursive tree navigation with expand/collapse, git status badges (M/A/U/D), auto-expand first 2 levels
+- **FilePicker component** (Wave 1, Agent G) — Fuzzy search file picker modal (Cmd+P style) with keyboard navigation
+- **FileModal component** (Wave 2, Agent H) — Two-column modal integrating FileTree + FileViewer + DiffViewer with Cmd+P picker and Cmd+D diff toggle
+
+### Changed
+
+- **Wave runner skips completed waves** — `runWaveLoop` now uses `CurrentWave()` to determine start index, skipping waves where all agents have completion reports. Enables safe re-runs after partial failures.
+- **Wider agent cards** — `AgentCard` min-width increased from 240px to 320px, max-width from `sm` to `lg`
+
+### Dependencies
+
+- `@uiw/react-codemirror` ^4.21.0
+- `@codemirror/lang-javascript` ^6.2.0, `@codemirror/lang-python` ^6.1.0, `@codemirror/lang-go` ^6.0.0
+- `@codemirror/theme-one-dark` ^6.1.0
+
+### Implementation
+
+- **IMPL doc**: `docs/IMPL/IMPL-file-browser.yaml` (3 waves, 9 agents)
+- **Wave 1**: 6 parallel agents (A, C, D, E, F, G) — backend + individual components
+- **Wave 2**: 2 parallel agents (B route registration, H modal integration)
+- **Wave 3**: pending (Agent I — FileOwnershipPanel "View File" links)
 
 ---
 
