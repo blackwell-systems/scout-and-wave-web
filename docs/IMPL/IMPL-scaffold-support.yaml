@@ -1,0 +1,121 @@
+# IMPL: scaffold-support
+title: "Add scaffold agent support to web app wave execution pipeline"
+feature_slug: scaffold-support
+verdict: NOT_SUITABLE
+state: NOT_SUITABLE
+
+# Suitability Assessment
+# ----------------------
+# Verdict: NOT_SUITABLE
+#
+# Pre-implementation scan results:
+# - Total items: 6 requirements from feature description
+# - Already implemented (DONE): 5 items (83% of work)
+# - Partially implemented (PARTIAL): 1 item
+# - Not implemented (TO-DO): 0 items
+#
+# Item-by-item status:
+#
+# 1. "Detect pending scaffolds before launching wave agents"
+#    STATUS: DONE
+#    Evidence: wave_runner.go lines 112-121 call engine.RunScaffold() which
+#    internally loads the manifest, checks for pending scaffolds, and skips
+#    if all scaffold files already exist (runner.go lines 303-322).
+#
+# 2. "Launch a scaffold agent using configured model from saw.config.json"
+#    STATUS: PARTIAL
+#    Evidence: wave_runner.go line 114 calls engine.RunScaffold() but passes
+#    empty string for sawRepoPath. The engine.RunScaffold signature does not
+#    accept a model parameter -- it uses cli.New("", backend.Config{}) with
+#    no model override. The saw.config.json AgentConfig struct has scout_model
+#    and wave_model but no scaffold_model field. However, the scaffold agent
+#    IS launched -- only the model configuration is missing.
+#    Note: Adding scaffold_model requires cross-repo changes (scout-and-wave-go
+#    engine API + scout-and-wave-web types/config), which is a single-file
+#    change in each repo, not parallelizable.
+#
+# 3. "Wait for scaffold agent to complete"
+#    STATUS: DONE
+#    Evidence: wave_runner.go lines 114-120 -- RunScaffold is called
+#    synchronously (blocking) before the wave loop begins. The function
+#    returns only after the scaffold agent completes or fails.
+#
+# 4. "Verify all scaffold files show status: committed"
+#    STATUS: DONE
+#    Evidence: engine.RunScaffold (runner.go lines 308-322) checks if all
+#    scaffold files exist on disk. After agent execution, it runs
+#    runScaffoldBuildVerification (E22) to compile and verify the scaffolds.
+#    Status is verified by file existence + build success, not YAML status field.
+#
+# 5. "Block execution and report error if scaffold fails"
+#    STATUS: DONE
+#    Evidence: wave_runner.go lines 116-120 -- if RunScaffold returns error,
+#    onStage(StageScaffold, StageStatusFailed, ...) is called, "run_failed"
+#    is published, and the function returns (blocking wave execution).
+#
+# 6. "Scaffold SSE events for frontend progress display"
+#    STATUS: DONE (with minor gap)
+#    Evidence:
+#    - scaffold_started: handled in useWaveEvents.ts line 119-121
+#    - scaffold_complete: handled in useWaveEvents.ts line 123-125
+#    - scaffold_failed: NOT handled in useWaveEvents.ts (minor gap -- the
+#      run_failed event catches this at the pipeline level, and the
+#      StageTimeline shows scaffold failure via stage_transition events)
+#    - WaveBoard.tsx lines 264-280 renders scaffold status (running/complete)
+#    - StageTimeline.tsx line 5 renders "Scaffold" stage label
+#    - scaffold_handler.go provides a dedicated rerun endpoint
+#
+# Decomposition analysis:
+# The only remaining work is:
+#   a) Add scaffold_model to AgentConfig (types.go) -- 1 line
+#   b) Add scaffold_model validation in config_handler.go -- 1 line
+#   c) Pass scaffold_model through to engine.RunScaffold -- requires changing
+#      the engine API in scout-and-wave-go (cross-repo, not parallelizable)
+#   d) Optionally add scaffold_failed listener in useWaveEvents.ts -- 3 lines
+#
+# This is ~10 lines of code across 3-4 files in 2 repos. It cannot be
+# decomposed into 2+ agents with disjoint file ownership because:
+# - The config change (types.go + config_handler.go) is a single logical
+#   change in one package
+# - The engine API change is in a different repo (scout-and-wave-go)
+# - The frontend change is a single 3-line addition
+#
+# 1. File decomposition: NO -- all changes funnel through tightly coupled
+#    files (types.go, config_handler.go, wave_runner.go) in the same package.
+#    Cross-repo engine change cannot be parallelized with the web changes.
+#
+# 2. Investigation-first: NO -- the remaining work is clearly scoped.
+#
+# 3. Interface discoverability: YES -- the engine.RunScaffold API change is
+#    straightforward (add model parameter).
+#
+# 4. Pre-implementation status: 83% already done (see above).
+#
+# 5. Parallelization value: NONE -- estimated sequential time is ~5 minutes
+#    for the remaining ~10 lines of code. SAW overhead would exceed the work.
+#
+# Estimated times:
+# - Scout phase: ~8 min (this analysis)
+# - Sequential implementation: ~5 min (add scaffold_model field, wire it through)
+# - SAW overhead if attempted: ~15 min (agent setup, worktrees, merge)
+#
+# Recommendation: Implement sequentially. The feature is 83% complete.
+# The remaining work is:
+#
+# 1. In scout-and-wave-go (engine repo):
+#    - Add model parameter to RunScaffold signature
+#    - Pass model to cli.New() or backend.Config{}
+#
+# 2. In scout-and-wave-web (this repo):
+#    - Add scaffold_model to AgentConfig in pkg/api/types.go
+#    - Add validation in pkg/api/config_handler.go
+#    - Read scaffold_model from SAWConfig and pass to engine.RunScaffold
+#      in pkg/api/wave_runner.go (line 114) and pkg/api/scaffold_handler.go (line 65)
+#    - Optionally add scaffold_failed SSE listener in
+#      web/src/hooks/useWaveEvents.ts (cosmetic -- failures already surface
+#      via run_failed and stage_transition events)
+
+test_command: "go test ./..."
+lint_command: "go vet ./..."
+
+completion_reports: {}

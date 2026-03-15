@@ -1,0 +1,830 @@
+# IMPL: cobra-migration
+title: "Migrate CLI from flag.FlagSet to Cobra"
+feature_slug: cobra-migration
+verdict: SUITABLE
+test_command: "go test ./cmd/saw/..."
+lint_command: "go vet ./..."
+state: SCOUT_PENDING
+
+# Suitability Assessment
+# ----------------------
+# Verdict: SUITABLE
+#
+# 1. File decomposition: YES — 22 command files in cmd/saw/ can be split across
+#    agents with disjoint ownership. main.go is the integration point (root command
+#    wiring) and belongs to a dedicated agent. go.mod is orchestrator-owned
+#    (cobra dependency addition applied before Wave 1).
+#
+# 2. Investigation-first: NO — This is a straightforward mechanical refactor.
+#    The SDK repo already uses cobra successfully, providing a proven pattern.
+#
+# 3. Interface discoverability: YES — Each command's cobra.Command constructor
+#    (newXxxCmd) returns *cobra.Command. The root command wires them via AddCommand.
+#    Signatures are fully known before implementation starts.
+#
+# 4. Pre-implementation status check:
+#    Total items: 22 commands + main.go + go.mod
+#    Already implemented (DONE): 0 (no cobra usage exists in web binary)
+#    Partially implemented (PARTIAL): 0
+#    Not implemented (TO-DO): 24 items
+#
+# 5. Parallelization value: HIGH — 22 command files are fully independent
+#    refactors. Build/test cycle is moderate (~15s). Each agent touches 1-3 files.
+#    All command agents run in Wave 1 (fully parallel), only root wiring in Wave 2.
+#
+# Estimated times:
+# - Scout phase: ~8 min
+# - Agent execution: ~15 min (5 agents x 10 min avg, all Wave 1 parallel + 1 Wave 2)
+# - Merge & verification: ~5 min
+# Total SAW time: ~28 min
+#
+# Sequential baseline: ~60 min (6 agents x 10 min sequential)
+# Time savings: ~32 min (~53% faster)
+# Recommendation: Clear speedup. Proceed.
+
+# Quality Gates
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: "go build ./cmd/saw/"
+      required: true
+    - type: test
+      command: "go test ./cmd/saw/..."
+      required: true
+    - type: lint
+      command: "go vet ./cmd/saw/..."
+      required: false
+      description: "Check for common Go mistakes"
+
+# Scaffolds
+scaffolds:
+  - file_path: cmd/saw/root.go
+    contents: |
+      package main
+
+      import "github.com/spf13/cobra"
+
+      // repoDir is the repository root directory, bound via --repo-dir persistent flag.
+      var repoDir string
+
+      func newRootCmd() *cobra.Command {
+          cmd := &cobra.Command{
+              Use:     "saw",
+              Short:   "SAW Orchestration CLI with embedded web UI",
+              Version: version,
+          }
+          cmd.PersistentFlags().StringVar(&repoDir, "repo-dir", ".", "Repository root directory")
+          return cmd
+      }
+    import_path: "github.com/blackwell-systems/scout-and-wave-web/cmd/saw"
+    status: pending
+
+# Interface Contracts
+interface_contracts:
+  - name: newRootCmd
+    description: |
+      Returns the root cobra.Command. All subcommands attach to this via AddCommand
+      in main(). Provides --repo-dir persistent flag and --version.
+    definition: |
+      func newRootCmd() *cobra.Command
+    location: cmd/saw/root.go
+
+  - name: "newServeCmd"
+    description: |
+      Returns cobra.Command for the serve subcommand. Primary web server entrypoint.
+    definition: |
+      func newServeCmd() *cobra.Command
+    location: cmd/saw/serve_cmd.go
+
+  - name: "newWaveCmd"
+    description: |
+      Returns cobra.Command for the wave subcommand. Executes wave agents.
+    definition: |
+      func newWaveCmd() *cobra.Command
+    location: cmd/saw/commands.go
+
+  - name: "newStatusCmd"
+    description: |
+      Returns cobra.Command for the status subcommand.
+    definition: |
+      func newStatusCmd() *cobra.Command
+    location: cmd/saw/commands.go
+
+  - name: "newScoutCmd"
+    description: |
+      Returns cobra.Command for the scout subcommand.
+    definition: |
+      func newScoutCmd() *cobra.Command
+    location: cmd/saw/commands.go
+
+  - name: "newScaffoldCmd"
+    description: |
+      Returns cobra.Command for the scaffold subcommand.
+    definition: |
+      func newScaffoldCmd() *cobra.Command
+    location: cmd/saw/commands.go
+
+  - name: "newValidateCmd"
+    description: |
+      Returns cobra.Command for the validate subcommand.
+    definition: |
+      func newValidateCmd() *cobra.Command
+    location: cmd/saw/validate.go
+
+  - name: "newMergeCmd"
+    description: |
+      Returns cobra.Command for the merge subcommand.
+    definition: |
+      func newMergeCmd() *cobra.Command
+    location: cmd/saw/merge_cmd.go
+
+  - name: "newMergeWaveCmd"
+    description: |
+      Returns cobra.Command for the merge-wave subcommand.
+    definition: |
+      func newMergeWaveCmd() *cobra.Command
+    location: cmd/saw/merge_wave.go
+
+  - name: "newRenderCmd"
+    description: |
+      Returns cobra.Command for the render subcommand.
+    definition: |
+      func newRenderCmd() *cobra.Command
+    location: cmd/saw/render.go
+
+  - name: "newExtractContextCmd"
+    description: |
+      Returns cobra.Command for the extract-context subcommand.
+    definition: |
+      func newExtractContextCmd() *cobra.Command
+    location: cmd/saw/extract.go
+
+  - name: "newSetCompletionCmd"
+    description: |
+      Returns cobra.Command for the set-completion subcommand.
+    definition: |
+      func newSetCompletionCmd() *cobra.Command
+    location: cmd/saw/completion.go
+
+  - name: "newCurrentWaveCmd"
+    description: |
+      Returns cobra.Command for the current-wave subcommand.
+    definition: |
+      func newCurrentWaveCmd() *cobra.Command
+    location: cmd/saw/merge_wave.go
+
+  - name: "newCheckConflictsCmd"
+    description: |
+      Returns cobra.Command for the check-conflicts subcommand.
+    definition: |
+      func newCheckConflictsCmd() *cobra.Command
+    location: cmd/saw/check_conflicts.go
+
+  - name: "newFreezeCheckCmd"
+    description: |
+      Returns cobra.Command for the freeze-check subcommand.
+    definition: |
+      func newFreezeCheckCmd() *cobra.Command
+    location: cmd/saw/freeze_check.go
+
+  - name: "newMarkCompleteCmd"
+    description: |
+      Returns cobra.Command for the mark-complete subcommand.
+    definition: |
+      func newMarkCompleteCmd() *cobra.Command
+    location: cmd/saw/mark_complete.go
+
+  - name: "newRunGatesCmd"
+    description: |
+      Returns cobra.Command for the run-gates subcommand.
+    definition: |
+      func newRunGatesCmd() *cobra.Command
+    location: cmd/saw/run_gates.go
+
+  - name: "newValidateScaffoldsCmd"
+    description: |
+      Returns cobra.Command for the validate-scaffolds subcommand.
+    definition: |
+      func newValidateScaffoldsCmd() *cobra.Command
+    location: cmd/saw/validate_scaffolds.go
+
+  - name: "newUpdateAgentPromptCmd"
+    description: |
+      Returns cobra.Command for the update-agent-prompt subcommand.
+    definition: |
+      func newUpdateAgentPromptCmd() *cobra.Command
+    location: cmd/saw/update_prompt.go
+
+  - name: "newAnalyzeDepsCmd"
+    description: |
+      Returns cobra.Command for the analyze-deps subcommand.
+    definition: |
+      func newAnalyzeDepsCmd() *cobra.Command
+    location: cmd/saw/analyze_deps.go
+
+  - name: "newAnalyzeSuitabilityCmd"
+    description: |
+      Returns cobra.Command for the analyze-suitability subcommand.
+    definition: |
+      func newAnalyzeSuitabilityCmd() *cobra.Command
+    location: cmd/saw/analyze_suitability.go
+
+  - name: "newDetectCascadesCmd"
+    description: |
+      Returns cobra.Command for the detect-cascades subcommand.
+    definition: |
+      func newDetectCascadesCmd() *cobra.Command
+    location: cmd/saw/detect_cascades.go
+
+  - name: "newDetectScaffoldsCmd"
+    description: |
+      Returns cobra.Command for the detect-scaffolds subcommand.
+    definition: |
+      func newDetectScaffoldsCmd() *cobra.Command
+    location: cmd/saw/detect_scaffolds.go
+
+  - name: "newExtractCommandsCmd"
+    description: |
+      Returns cobra.Command for the extract-commands subcommand.
+    definition: |
+      func newExtractCommandsCmd() *cobra.Command
+    location: cmd/saw/extract_commands.go
+
+# File Ownership
+file_ownership:
+  # Wave 1 - Agent A: serve + orchestration commands (complex, stateful)
+  - file: cmd/saw/serve_cmd.go
+    agent: A
+    wave: 1
+    action: modify
+  - file: cmd/saw/commands.go
+    agent: A
+    wave: 1
+    action: modify
+  - file: cmd/saw/wave_cmd_test.go
+    agent: A
+    wave: 1
+    action: modify
+  - file: cmd/saw/commands_test.go
+    agent: A
+    wave: 1
+    action: modify
+  - file: cmd/saw/serve_cmd_test.go
+    agent: A
+    wave: 1
+    action: modify
+  - file: cmd/saw/wave_loop_test.go
+    agent: A
+    wave: 1
+    action: modify
+
+  # Wave 1 - Agent B: manifest operation commands (validate, render, extract, completion)
+  - file: cmd/saw/validate.go
+    agent: B
+    wave: 1
+    action: modify
+  - file: cmd/saw/render.go
+    agent: B
+    wave: 1
+    action: modify
+  - file: cmd/saw/extract.go
+    agent: B
+    wave: 1
+    action: modify
+  - file: cmd/saw/completion.go
+    agent: B
+    wave: 1
+    action: modify
+  - file: cmd/saw/validate_test.go
+    agent: B
+    wave: 1
+    action: modify
+  - file: cmd/saw/render_test.go
+    agent: B
+    wave: 1
+    action: modify
+  - file: cmd/saw/extract_test.go
+    agent: B
+    wave: 1
+    action: modify
+  - file: cmd/saw/completion_test.go
+    agent: B
+    wave: 1
+    action: modify
+
+  # Wave 1 - Agent C: merge + wave status commands
+  - file: cmd/saw/merge_cmd.go
+    agent: C
+    wave: 1
+    action: modify
+  - file: cmd/saw/merge_wave.go
+    agent: C
+    wave: 1
+    action: modify
+  - file: cmd/saw/merge_cmd_test.go
+    agent: C
+    wave: 1
+    action: modify
+  - file: cmd/saw/merge_wave_test.go
+    agent: C
+    wave: 1
+    action: modify
+
+  # Wave 1 - Agent D: check/gate/freeze commands + simple commands
+  - file: cmd/saw/check_conflicts.go
+    agent: D
+    wave: 1
+    action: modify
+  - file: cmd/saw/freeze_check.go
+    agent: D
+    wave: 1
+    action: modify
+  - file: cmd/saw/mark_complete.go
+    agent: D
+    wave: 1
+    action: modify
+  - file: cmd/saw/run_gates.go
+    agent: D
+    wave: 1
+    action: modify
+  - file: cmd/saw/validate_scaffolds.go
+    agent: D
+    wave: 1
+    action: modify
+  - file: cmd/saw/update_prompt.go
+    agent: D
+    wave: 1
+    action: modify
+
+  # Wave 1 - Agent E: analyzer/tooling commands
+  - file: cmd/saw/analyze_deps.go
+    agent: E
+    wave: 1
+    action: modify
+  - file: cmd/saw/analyze_suitability.go
+    agent: E
+    wave: 1
+    action: modify
+  - file: cmd/saw/detect_cascades.go
+    agent: E
+    wave: 1
+    action: modify
+  - file: cmd/saw/detect_scaffolds.go
+    agent: E
+    wave: 1
+    action: modify
+  - file: cmd/saw/extract_commands.go
+    agent: E
+    wave: 1
+    action: modify
+
+  # Wave 2 - Agent F: root command, main.go wiring, go.mod
+  - file: cmd/saw/root.go
+    agent: F
+    wave: 2
+    action: new
+  - file: cmd/saw/main.go
+    agent: F
+    wave: 2
+    action: modify
+
+# Waves
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## What to Implement
+          Refactor the serve, wave, status, scout, and scaffold commands from
+          `runXxx(args []string) error` with `flag.NewFlagSet` to cobra `newXxxCmd() *cobra.Command`
+          constructors. Preserve ALL existing behavior exactly.
+
+          ## Pattern to Follow
+          For each command, convert from this pattern:
+          ```go
+          func runServe(args []string) error {
+              fs := flag.NewFlagSet("serve", flag.ContinueOnError)
+              addr := fs.String("addr", "localhost:7432", "Listen address")
+              if err := fs.Parse(args); err != nil { ... }
+              // ... body ...
+          }
+          ```
+          To this cobra pattern:
+          ```go
+          func newServeCmd() *cobra.Command {
+              var addr string
+              cmd := &cobra.Command{
+                  Use:   "serve",
+                  Short: "Start a local HTTP server for reviewing IMPL docs",
+                  RunE: func(cmd *cobra.Command, args []string) error {
+                      // ... body using addr variable ...
+                  },
+              }
+              cmd.Flags().StringVar(&addr, "addr", "localhost:7432", "Listen address")
+              return cmd
+          }
+          ```
+
+          ## Specific Commands to Convert
+
+          **serve_cmd.go**: Convert `runServe` to `newServeCmd`. Flags: --addr, --impl-dir, --repo, --no-browser.
+          Keep `openBrowser` as a standalone helper function.
+
+          **commands.go**: Convert `runWave` to `newWaveCmd`, `runStatus` to `newStatusCmd`,
+          `runScout` to `newScoutCmd`, `runScaffold` to `newScaffoldCmd`.
+          Keep helper functions (`findRepoRoot`, `slugify`, `locatePromptFile`) and
+          the `waveOrchestrator` interface + `engineOrchAdapter` struct unchanged.
+          Keep `orchestratorNewFunc` var for test seam.
+          Flags for wave: --impl (required, use MarkFlagRequired), --wave (default 1), --auto.
+          Flags for status: --impl (required), --json, --missing.
+          Flags for scout: --feature (required), --impl, --repo, --backend.
+          Flags for scaffold: --impl (required), --repo, --backend.
+
+          ## Tests to Update
+          Update tests in commands_test.go, wave_cmd_test.go, serve_cmd_test.go,
+          and wave_loop_test.go. Tests currently call `runXxx([]string{...})` directly.
+          After migration, tests should call the cobra command's `Execute()` method or
+          continue calling the RunE function directly. Preserve all test semantics.
+
+          For tests that check flag parsing errors, use `cmd.SetArgs(args)` then `cmd.Execute()`.
+          For tests using `orchestratorNewFunc` seam, that pattern stays the same.
+
+          ## Verification Gate
+          ```bash
+          go build ./cmd/saw/
+          go vet ./cmd/saw/...
+          go test ./cmd/saw/ -run "TestRunWave|TestRunStatus|TestRunServe|TestRunScout|TestRunScaffold|TestPrintUsage|TestFindRepoRoot|TestLocatePromptFile"
+          ```
+
+          ## Constraints
+          - Do NOT remove `findRepoRoot`, `slugify`, `locatePromptFile`, `splitComma` helpers
+          - Do NOT remove `waveOrchestrator` interface or `engineOrchAdapter`
+          - Do NOT remove `orchestratorNewFunc` var — tests depend on it
+          - Preserve the `flag.ErrHelp` return-nil behavior (cobra handles help automatically, so remove those checks)
+          - Keep `openBrowser` function in serve_cmd.go
+          - Import `"github.com/spf13/cobra"` in each file that defines commands
+          - The `version` var stays in main.go (Agent F handles it)
+          - Do NOT modify main.go — Agent F owns it
+        files:
+          - cmd/saw/serve_cmd.go
+          - cmd/saw/commands.go
+          - cmd/saw/commands_test.go
+          - cmd/saw/serve_cmd_test.go
+          - cmd/saw/wave_cmd_test.go
+          - cmd/saw/wave_loop_test.go
+        dependencies: []
+
+      - id: B
+        task: |
+          ## What to Implement
+          Refactor validate, render, extract-context, and set-completion commands from
+          `runXxx(args []string) error` with `flag.NewFlagSet` to cobra `newXxxCmd() *cobra.Command`.
+
+          ## Pattern to Follow
+          Same cobra pattern as Agent A. For commands that take positional args
+          (validate, render take manifest-path as positional), use `cobra.ExactArgs(1)`
+          or `cobra.MinimumNArgs(N)` in the Args field. For set-completion which
+          takes `<manifest-path> <agent-id>`, use `cobra.ExactArgs(2)`.
+
+          ## Specific Commands
+
+          **validate.go**: Convert `runValidate` to `newValidateCmd`.
+          Positional arg: manifest-path (use cobra.ExactArgs(1), access via args[0]).
+          Flag: --fix (bool).
+
+          **render.go**: Convert `runRender` to `newRenderCmd`.
+          Positional arg: manifest-path (cobra.ExactArgs(1)).
+          Keep `renderMarkdown` helper function unchanged.
+
+          **extract.go**: Convert `runExtractContext` to `newExtractContextCmd`.
+          Flags: --impl (required), --agent (required). Use cmd.MarkFlagRequired.
+
+          **completion.go**: Convert `runSetCompletion` to `newSetCompletionCmd`.
+          Positional args: manifest-path, agent-id (cobra.ExactArgs(2)).
+          Reads YAML from stdin — that logic stays the same.
+
+          ## Tests to Update
+          Update validate_test.go, render_test.go, extract_test.go, completion_test.go.
+          Tests calling `runXxx([]string{...})` should call the cobra command's Execute()
+          or call RunE directly. For tests that check "missing argument" errors, cobra's
+          Args validation handles this automatically — test via cmd.SetArgs + Execute.
+
+          ## Verification Gate
+          ```bash
+          go build ./cmd/saw/
+          go vet ./cmd/saw/...
+          go test ./cmd/saw/ -run "TestValidate|TestRender|TestExtractContext|TestRunSetCompletion"
+          ```
+
+          ## Constraints
+          - Keep `renderMarkdown` helper in render.go
+          - Keep `contains` and `containsHelper` in validate_test.go
+          - Do NOT modify main.go
+          - Import `"github.com/spf13/cobra"`
+        files:
+          - cmd/saw/validate.go
+          - cmd/saw/render.go
+          - cmd/saw/extract.go
+          - cmd/saw/completion.go
+          - cmd/saw/validate_test.go
+          - cmd/saw/render_test.go
+          - cmd/saw/extract_test.go
+          - cmd/saw/completion_test.go
+        dependencies: []
+
+      - id: C
+        task: |
+          ## What to Implement
+          Refactor merge, merge-wave, and current-wave commands to cobra.
+
+          ## Specific Commands
+
+          **merge_cmd.go**: Convert `runMerge` to `newMergeCmd`.
+          Flags: --impl (required), --wave (default 1).
+
+          **merge_wave.go**: Convert `runMergeWave` to `newMergeWaveCmd`.
+          Positional args: manifest-path, wave-number (cobra.ExactArgs(2)).
+          Also convert `runCurrentWave` to `newCurrentWaveCmd`.
+          Positional arg: manifest-path (cobra.ExactArgs(1)).
+
+          ## Tests to Update
+          Update merge_cmd_test.go and merge_wave_test.go.
+          Keep `runMergeWaveNoExit` test helper but update it to match new calling convention.
+
+          ## Verification Gate
+          ```bash
+          go build ./cmd/saw/
+          go vet ./cmd/saw/...
+          go test ./cmd/saw/ -run "TestRunMerge|TestMergeWave|TestCurrentWave"
+          ```
+
+          ## Constraints
+          - Keep `runMergeWaveNoExit` in merge_wave_test.go (tests need it for os.Exit avoidance)
+          - Do NOT modify main.go
+          - Import `"github.com/spf13/cobra"`
+        files:
+          - cmd/saw/merge_cmd.go
+          - cmd/saw/merge_wave.go
+          - cmd/saw/merge_cmd_test.go
+          - cmd/saw/merge_wave_test.go
+        dependencies: []
+
+      - id: D
+        task: |
+          ## What to Implement
+          Refactor check-conflicts, freeze-check, mark-complete, run-gates,
+          validate-scaffolds, and update-agent-prompt commands to cobra.
+
+          ## Specific Commands
+
+          **check_conflicts.go**: Convert `runCheckConflicts` to `newCheckConflictsCmd`.
+          Positional arg: manifest-path (cobra.ExactArgs(1)).
+
+          **freeze_check.go**: Convert `runFreezeCheck` to `newFreezeCheckCmd`.
+          Positional arg: manifest-path (cobra.ExactArgs(1)).
+
+          **mark_complete.go**: Convert `runMarkComplete` to `newMarkCompleteCmd`.
+          Positional arg: impl-doc-path (cobra.ExactArgs(1)).
+          Flag: --date (default: today's date).
+
+          **run_gates.go**: Convert `runRunGates` to `newRunGatesCmd`.
+          Positional arg: manifest-path (cobra.ExactArgs(1)).
+          Flags: --wave (required, int), --repo-dir (default ".").
+
+          **validate_scaffolds.go**: Convert `runValidateScaffolds` to `newValidateScaffoldsCmd`.
+          Positional arg: manifest-path (cobra.ExactArgs(1)).
+
+          **update_prompt.go**: Convert `runUpdateAgentPrompt` to `newUpdateAgentPromptCmd`.
+          Positional arg: manifest-path (cobra.ExactArgs(1)).
+          Flag: --agent (required). Reads from stdin.
+
+          ## Verification Gate
+          ```bash
+          go build ./cmd/saw/
+          go vet ./cmd/saw/...
+          go test ./cmd/saw/ -run "TestCheckConflicts|TestFreezeCheck|TestMarkComplete|TestRunGates|TestValidateScaffolds|TestUpdateAgentPrompt" -count=1
+          ```
+
+          ## Constraints
+          - These files have no existing tests; do NOT add new tests unless a test file already exists
+          - Do NOT modify main.go
+          - Import `"github.com/spf13/cobra"`
+        files:
+          - cmd/saw/check_conflicts.go
+          - cmd/saw/freeze_check.go
+          - cmd/saw/mark_complete.go
+          - cmd/saw/run_gates.go
+          - cmd/saw/validate_scaffolds.go
+          - cmd/saw/update_prompt.go
+        dependencies: []
+
+      - id: E
+        task: |
+          ## What to Implement
+          Refactor analyze-deps, analyze-suitability, detect-cascades,
+          detect-scaffolds, and extract-commands commands to cobra.
+
+          ## Specific Commands
+
+          **analyze_deps.go**: Convert `runAnalyzeDeps` to `newAnalyzeDepsCmd`.
+          Positional arg: repo-root (cobra.ExactArgs(1)).
+          Flag: --target (comma-separated file list).
+          Keep `splitComma` helper function.
+
+          **analyze_suitability.go**: Convert `runAnalyzeSuitability` to `newAnalyzeSuitabilityCmd`.
+          Positional args: requirements-file, repo-root (cobra.ExactArgs(2)).
+          Keep `parseRequirements` helper function.
+
+          **detect_cascades.go**: Convert `runDetectCascades` to `newDetectCascadesCmd`.
+          Positional arg: repo-root (cobra.ExactArgs(1)).
+          Flag: --renames (required).
+
+          **detect_scaffolds.go**: Convert `runDetectScaffolds` to `newDetectScaffoldsCmd`.
+          Positional arg: impl-path (cobra.ExactArgs(1)).
+
+          **extract_commands.go**: Convert `runExtractCommands` to `newExtractCommandsCmd`.
+          Positional arg: repo-root (cobra.ExactArgs(1)).
+
+          ## Verification Gate
+          ```bash
+          go build ./cmd/saw/
+          go vet ./cmd/saw/...
+          go test ./cmd/saw/ -run "TestAnalyzeDeps|TestAnalyzeSuitability|TestDetectCascades|TestDetectScaffolds|TestExtractCommands" -count=1
+          ```
+
+          ## Constraints
+          - Keep `splitComma` helper in analyze_deps.go
+          - Keep `parseRequirements` helper in analyze_suitability.go
+          - These files have no existing test files; do NOT add new tests
+          - Do NOT modify main.go
+          - Import `"github.com/spf13/cobra"`
+        files:
+          - cmd/saw/analyze_deps.go
+          - cmd/saw/analyze_suitability.go
+          - cmd/saw/detect_cascades.go
+          - cmd/saw/detect_scaffolds.go
+          - cmd/saw/extract_commands.go
+        dependencies: []
+
+  - number: 2
+    agents:
+      - id: F
+        task: |
+          ## What to Implement
+          Create the root cobra.Command in root.go and rewrite main.go to use it.
+          Also add `github.com/spf13/cobra` to go.mod.
+
+          ## root.go (new file)
+          Create `cmd/saw/root.go` containing `newRootCmd() *cobra.Command`:
+          ```go
+          package main
+
+          import "github.com/spf13/cobra"
+
+          var repoDir string
+
+          func newRootCmd() *cobra.Command {
+              cmd := &cobra.Command{
+                  Use:     "saw",
+                  Short:   "SAW Orchestration CLI with embedded web UI",
+                  Version: version,
+              }
+              cmd.PersistentFlags().StringVar(&repoDir, "repo-dir", ".", "Repository root directory")
+              return cmd
+          }
+          ```
+
+          ## main.go (rewrite)
+          Replace the switch-case dispatch with cobra root command wiring:
+          ```go
+          package main
+
+          import (
+              "fmt"
+              "os"
+          )
+
+          var version = "dev"
+
+          func main() {
+              rootCmd := newRootCmd()
+              rootCmd.AddCommand(
+                  newServeCmd(),
+                  newWaveCmd(),
+                  newStatusCmd(),
+                  newScoutCmd(),
+                  newScaffoldCmd(),
+                  newValidateCmd(),
+                  newMergeCmd(),
+                  newMergeWaveCmd(),
+                  newCurrentWaveCmd(),
+                  newRenderCmd(),
+                  newExtractContextCmd(),
+                  newSetCompletionCmd(),
+                  newCheckConflictsCmd(),
+                  newFreezeCheckCmd(),
+                  newMarkCompleteCmd(),
+                  newRunGatesCmd(),
+                  newValidateScaffoldsCmd(),
+                  newUpdateAgentPromptCmd(),
+                  newAnalyzeDepsCmd(),
+                  newAnalyzeSuitabilityCmd(),
+                  newDetectCascadesCmd(),
+                  newDetectScaffoldsCmd(),
+                  newExtractCommandsCmd(),
+              )
+              if err := rootCmd.Execute(); err != nil {
+                  os.Exit(1)
+              }
+          }
+          ```
+
+          Remove `printUsage` function entirely — cobra generates help automatically.
+
+          ## go.mod
+          Run `go get github.com/spf13/cobra` to add the dependency, then `go mod tidy`.
+
+          ## Tests to Update
+          The `TestPrintUsage` and `TestPrintUsage_IncludesMerge` tests in commands_test.go
+          reference `printUsage` which will no longer exist. Agent A should have already
+          removed those tests or converted them. If they remain, update commands_test.go
+          to test root command help output instead (owned by Agent A in wave 1, but if
+          the tests reference `printUsage` which no longer compiles, fix them here).
+
+          ## Verification Gate
+          ```bash
+          go get github.com/spf13/cobra && go mod tidy
+          go build ./cmd/saw/
+          go vet ./cmd/saw/...
+          go test ./cmd/saw/...
+          ```
+
+          ## Constraints
+          - The `version` var MUST stay in main.go (set via ldflags at build time)
+          - All 22 newXxxCmd() functions must be wired via AddCommand — miss none
+          - Run go mod tidy after adding cobra
+          - Verify `./saw --version` prints the version
+          - Verify `./saw --help` lists all subcommands
+          - Verify `./saw serve --help` shows serve-specific flags
+        files:
+          - cmd/saw/root.go
+          - cmd/saw/main.go
+        dependencies:
+          - A
+          - B
+          - C
+          - D
+          - E
+
+# Pre-Mortem
+pre_mortem:
+  overall_risk: medium
+  rows:
+    - scenario: "Tests call runXxx() directly but function signatures change"
+      likelihood: medium
+      impact: medium
+      mitigation: |
+        Agent A owns the test files alongside the command files.
+        Tests should call cmd.Execute() or the RunE closure directly.
+        wave_loop_test.go uses orchestratorNewFunc seam which stays unchanged.
+    - scenario: "os.Exit(1) calls in RunE closures cause test process termination"
+      likelihood: medium
+      impact: high
+      mitigation: |
+        Commands like check-conflicts, freeze-check, run-gates, merge-wave, validate
+        currently call os.Exit(1). These must be converted to return a sentinel error
+        or use cobra's SilenceErrors + exit in main. Agents must replace os.Exit(1)
+        with returning a non-nil error from RunE, and let cobra handle the exit.
+    - scenario: "Merge conflicts in commands_test.go which is large and shared"
+      likelihood: low
+      impact: medium
+      mitigation: |
+        commands_test.go is assigned entirely to Agent A. No other agent touches it.
+        The printUsage tests will be removed/converted by Agent A since printUsage
+        is removed by Agent F.
+    - scenario: "go.mod cobra dependency not available in agent worktrees"
+      likelihood: medium
+      impact: high
+      mitigation: |
+        The scaffold step must add cobra to go.mod before Wave 1 launches.
+        Alternatively, each agent can run `go get github.com/spf13/cobra` in
+        their worktree. Agent F in Wave 2 runs go mod tidy as final cleanup.
+
+# Known Issues
+known_issues:
+  - title: "os.Exit calls in command handlers"
+    description: |
+      Several commands (check-conflicts, freeze-check, run-gates, merge-wave, validate)
+      call os.Exit(1) directly inside what will become RunE closures. Cobra expects RunE
+      to return errors, not exit the process. Each agent converting these commands MUST
+      replace os.Exit(1) with returning a custom error, and the root command should handle
+      exit codes.
+    status: "Must be addressed during migration"
+    workaround: |
+      Return a sentinel error type (e.g., ExitError{Code: 1}) from RunE. In main.go,
+      check for this error type after rootCmd.Execute() and call os.Exit with the code.
+      Example: type ExitError struct{ Code int }; func (e ExitError) Error() string { ... }
+
+# Completion Reports
+completion_reports: {}
