@@ -62,7 +62,16 @@ func (s *Server) runScaffoldAgent(ctx context.Context, slug, runID, implPath str
 		s.broker.Publish(slug, SSEEvent{Event: ev.Event, Data: ev.Data})
 	}
 
-	if err := engine.RunScaffold(ctx, implPath, s.cfg.RepoPath, sawRepo, onEvent); err != nil {
+	// Read scaffold model from config.
+	scaffoldModel := ""
+	if cfgData, err := os.ReadFile(filepath.Join(s.cfg.RepoPath, "saw.config.json")); err == nil {
+		var sawCfg SAWConfig
+		if json.Unmarshal(cfgData, &sawCfg) == nil {
+			scaffoldModel = sawCfg.Agent.ScaffoldModel
+		}
+	}
+
+	if err := engine.RunScaffold(ctx, implPath, s.cfg.RepoPath, sawRepo, scaffoldModel, onEvent); err != nil {
 		if ctx.Err() != nil {
 			s.broker.Publish(slug, SSEEvent{
 				Event: "scaffold_cancelled",

@@ -87,12 +87,14 @@ func runWaveLoop(
 		})
 	}
 
-	// Read saw.config.json to pick up the configured wave model.
+	// Read saw.config.json to pick up configured models.
 	waveModel := ""
+	scaffoldModel := ""
 	if cfgData, err := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); err == nil {
 		var sawCfg SAWConfig
 		if json.Unmarshal(cfgData, &sawCfg) == nil {
 			waveModel = sawCfg.Agent.WaveModel
+			scaffoldModel = sawCfg.Agent.ScaffoldModel
 		}
 	}
 
@@ -111,7 +113,7 @@ func runWaveLoop(
 
 	// Run scaffold agent if needed (engine handles the check internally).
 	onStage(StageScaffold, StageStatusRunning, 0, "")
-	if err := engine.RunScaffold(ctx, implPath, repoPath, "", func(ev engine.Event) {
+	if err := engine.RunScaffold(ctx, implPath, repoPath, "", scaffoldModel, func(ev engine.Event) {
 		publish(ev.Event, ev.Data)
 	}); err != nil {
 		onStage(StageScaffold, StageStatusFailed, 0, err.Error())
@@ -130,19 +132,27 @@ func runWaveLoop(
 	// Skip waves where all agents already have status: complete.
 	currentWave := protocol.CurrentWave(manifest)
 	startIdx := 0
-	if currentWave != nil {
-		for idx, w := range waves {
-			if w.Number == currentWave.Number {
-				startIdx = idx
-				break
-			}
+	if currentWave == nil {
+		// All waves complete — nothing to run.
+		publish("run_complete", map[string]interface{}{
+			"status": "success",
+			"waves":  len(waves),
+			"agents": totalAgents,
+			"note":   "all waves already complete",
+		})
+		return
+	}
+	for idx, w := range waves {
+		if w.Number == currentWave.Number {
+			startIdx = idx
+			break
 		}
-		if startIdx > 0 {
-			publish("waves_skipped", map[string]interface{}{
-				"skipped": startIdx,
-				"reason":  "already completed (completion reports present)",
-			})
-		}
+	}
+	if startIdx > 0 {
+		publish("waves_skipped", map[string]interface{}{
+			"skipped": startIdx,
+			"reason":  "already completed (completion reports present)",
+		})
 	}
 
 	// Execute waves one at a time, pausing at gates between them.

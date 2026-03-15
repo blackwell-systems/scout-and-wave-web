@@ -124,6 +124,11 @@ export function useWaveEvents(slug: string): AppWaveState {
       setState(prev => ({ ...prev, scaffoldStatus: 'complete' }))
     })
 
+    es.addEventListener('scaffold_failed', (event: MessageEvent) => {
+      const data = JSON.parse(event.data) as { error: string }
+      setState(prev => ({ ...prev, scaffoldStatus: 'failed', error: data.error }))
+    })
+
     es.addEventListener('agent_started', (event: MessageEvent) => {
       const data = JSON.parse(event.data) as { agent: string; wave: number; files: string[] }
       setState(prev =>

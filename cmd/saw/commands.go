@@ -528,7 +528,7 @@ func runScaffold(args []string) error {
 	sawRepo := filepath.Dir(filepath.Dir(scaffoldMdPath))
 
 	ctx := context.Background()
-	if err := engine.RunScaffold(ctx, absImpl, repoRoot, sawRepo, func(ev engine.Event) {
+	if err := engine.RunScaffold(ctx, absImpl, repoRoot, sawRepo, "", func(ev engine.Event) {
 		fmt.Println(ev.Event)
 	}); err != nil {
 		return fmt.Errorf("scaffold: %w", err)
