@@ -105,6 +105,12 @@ func New(cfg Config) *Server {
 	// v0.32.0 — Manifest routes (validate, load, wave, completion)
 	s.RegisterManifestRoutes()
 
+	// File browser API — tree, read, diff, status
+	s.mux.HandleFunc("GET /api/files/tree", s.handleFilesTree)
+	s.mux.HandleFunc("GET /api/files/read", s.handleFilesRead)
+	s.mux.HandleFunc("GET /api/files/diff", s.handleFilesDiff)
+	s.mux.HandleFunc("GET /api/files/status", s.handleFilesStatus)
+
 	// Journal API — Tool journaling for Observatory UI
 	s.mux.HandleFunc("GET /api/journal/{wave}/{agent}", s.handleJournalGet)
 	s.mux.HandleFunc("GET /api/journal/{wave}/{agent}/summary", s.handleJournalSummary)
