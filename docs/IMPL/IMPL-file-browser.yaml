@@ -1,748 +1,778 @@
-title: "In-App File Browser for Codebase Exploration"
-feature_slug: "file-browser"
-verdict: "SUITABLE"
-test_command: "cd web && npm test"
-lint_command: "cd web && npm run build"
-state: "SCOUT_PENDING"
-
+title: In-App File Browser for Codebase Exploration
+feature_slug: file-browser
+verdict: SUITABLE
 suitability_assessment: |
-  Verdict: SUITABLE
+    Verdict: SUITABLE
 
-  1. File decomposition: YES — 9 distinct files across backend (4 Go files) and frontend (5 TypeScript files). Backend API handlers have no overlap with frontend components. File ownership is fully disjoint.
+    1. File decomposition: YES — 9 distinct files across backend (4 Go files) and frontend (5 TypeScript files). Backend API handlers have no overlap with frontend components. File ownership is fully disjoint.
 
-  2. Investigation-first: NO — All requirements are clear. File tree APIs follow existing patterns (browse_handler.go), git integration uses existing pkg/git utilities, and frontend follows established CommandPalette pattern. No unknowns requiring investigation.
+    2. Investigation-first: NO — All requirements are clear. File tree APIs follow existing patterns (browse_handler.go), git integration uses existing pkg/git utilities, and frontend follows established CommandPalette pattern. No unknowns requiring investigation.
 
-  3. Interface discoverability: YES — All API contracts can be defined before implementation. Response types match existing patterns (browseResponse, FileDiffResponse). Frontend components follow established React patterns with clear prop interfaces.
+    3. Interface discoverability: YES — All API contracts can be defined before implementation. Response types match existing patterns (browseResponse, FileDiffResponse). Frontend components follow established React patterns with clear prop interfaces.
 
-  4. Pre-implementation status check:
-     - File tree API: TO-DO (new endpoints needed)
-     - Git status integration: PARTIAL (git.Poller exists, needs new status endpoint)
-     - Syntax highlighting: TO-DO (@uiw/react-codemirror not yet added)
-     - Fuzzy search: PARTIAL (CommandPalette pattern exists, needs adaptation)
-     - Deep linking: TO-DO (URL query param support)
-     Total: 0 implemented, 2 partial, 3 to-do
+    4. Pre-implementation status check:
+       - File tree API: TO-DO (new endpoints needed)
+       - Git status integration: PARTIAL (git.Poller exists, needs new status endpoint)
+       - Syntax highlighting: TO-DO (@uiw/react-codemirror not yet added)
+       - Fuzzy search: PARTIAL (CommandPalette pattern exists, needs adaptation)
+       - Deep linking: TO-DO (URL query param support)
+       Total: 0 implemented, 2 partial, 3 to-do
 
-  5. Parallelization value: HIGH — 4 backend agents + 5 frontend agents = 9 agents. Build cycle is ~15s (Go build + npm build), test cycle is ~8s. Average 2-3 files per agent. High independence (only scaffold types create cross-agent dependency). Estimated 25-30 min sequential vs 12-15 min parallel = ~50% time savings.
+    5. Parallelization value: HIGH — 4 backend agents + 5 frontend agents = 9 agents. Build cycle is ~15s (Go build + npm build), test cycle is ~8s. Average 2-3 files per agent. High independence (only scaffold types create cross-agent dependency). Estimated 25-30 min sequential vs 12-15 min parallel = ~50% time savings.
 
-  Estimated times:
-  - Scout phase: ~8 min (9 agents, interface contracts, dependency analysis)
-  - Agent execution: ~14 min (9 agents × 3.5 min avg, 4 waves with parallelism)
-  - Merge & verification: ~4 min (build, test, manual verification)
-  Total SAW time: ~26 min
+    Estimated times:
+    - Scout phase: ~8 min (9 agents, interface contracts, dependency analysis)
+    - Agent execution: ~14 min (9 agents × 3.5 min avg, 4 waves with parallelism)
+    - Merge & verification: ~4 min (build, test, manual verification)
+    Total SAW time: ~26 min
 
-  Sequential baseline: ~35 min (9 agents × 4 min avg sequential time)
-  Time savings: ~9 min (~26% faster)
-  Recommendation: Clear speedup. Proceed with SAW.
-
-quality_gates:
-  level: "standard"
-  gates:
-    - type: "build"
-      command: "cd web && npm run build"
-      required: true
-      description: "Build React frontend with Vite"
-    - type: "build"
-      command: "go build -o saw ./cmd/saw"
-      required: true
-      description: "Build Go server with embedded assets"
-    - type: "test"
-      command: "cd web && npm test"
-      required: true
-      description: "Run Vitest unit tests"
-    - type: "lint"
-      command: "cd web && npx tsc --noEmit"
-      required: false
-      description: "TypeScript type checking"
-
-scaffolds:
-  - file_path: "web/src/types/filebrowser.ts"
-    contents: |
-      // File browser API types (shared across frontend components)
-
-      export interface FileNode {
-        name: string
-        path: string
-        isDir: boolean
-        children?: FileNode[]
-        gitStatus?: 'M' | 'A' | 'U' | 'D' | null
-      }
-
-      export interface FileTreeResponse {
-        repo: string
-        root: FileNode
-      }
-
-      export interface FileContentResponse {
-        repo: string
-        path: string
-        content: string
-        language: string
-        size: number
-      }
-
-      export interface GitStatusResponse {
-        repo: string
-        files: Array<{
-          path: string
-          status: 'M' | 'A' | 'U' | 'D'
-        }>
-      }
-    import_path: "../types/filebrowser"
-    status: "committed"
-
-interface_contracts:
-  - name: "GET /api/files/tree"
-    description: |
-      Returns recursive directory tree for a repository.
-      Security: validates path stays within repo root, skips .git and node_modules.
-    definition: |
-      Query params: repo (string), path (string, optional, defaults to repo root)
-      Response: FileTreeResponse (200 OK)
-      Error: 400 Bad Request if path escapes repo root or repo not found
-    location: "pkg/api/files_handler.go"
-
-  - name: "GET /api/files/read"
-    description: |
-      Returns file content as plain text with language detection.
-      Security: validates path, rejects files >1MB, detects binary files.
-    definition: |
-      Query params: repo (string), path (string)
-      Response: FileContentResponse (200 OK)
-      Error: 400 Bad Request if path invalid, 413 if file too large, 415 if binary
-    location: "pkg/api/files_handler.go"
-
-  - name: "GET /api/files/diff"
-    description: |
-      Returns git diff for modified files (unstaged + staged changes).
-      Uses git diff HEAD for unstaged, git diff --cached for staged.
-    definition: |
-      Query params: repo (string), path (string)
-      Response: { repo: string, path: string, diff: string } (200 OK)
-      Error: 400 Bad Request if file not modified or path invalid
-    location: "pkg/api/files_handler.go"
-
-  - name: "GET /api/files/status"
-    description: |
-      Returns git status for all tracked/untracked files in repository.
-      Maps to M (modified), A (added), U (untracked), D (deleted).
-    definition: |
-      Query params: repo (string)
-      Response: GitStatusResponse (200 OK)
-      Error: 400 Bad Request if repo not found
-    location: "pkg/api/files_handler.go"
-
-  - name: "useFileBrowser hook"
-    description: |
-      React hook managing file browser state: tree loading, file content,
-      diff view, git status. Abstracts API calls and loading states.
-    definition: |
-      export function useFileBrowser(repo: string): {
-        tree: FileNode | null
-        content: string | null
-        diff: string | null
-        language: string
-        loading: boolean
-        error: string | null
-        loadTree: (path?: string) => Promise<void>
-        loadFile: (path: string) => Promise<void>
-        loadDiff: (path: string) => Promise<void>
-        refreshStatus: () => Promise<void>
-      }
-    location: "web/src/hooks/useFileBrowser.ts"
-
-  - name: "FileNode type"
-    description: |
-      Recursive tree node representing files and directories.
-      Shared across FileTree component and useFileBrowser hook.
-    definition: |
-      See scaffolds section (web/src/types/filebrowser.ts)
-    location: "web/src/types/filebrowser.ts"
-
+    Sequential baseline: ~35 min (9 agents × 4 min avg sequential time)
+    Time savings: ~9 min (~26% faster)
+    Recommendation: Clear speedup. Proceed with SAW.
+test_command: cd web && npm test
+lint_command: cd web && npm run build
 file_ownership:
-  - file: "web/src/types/filebrowser.ts"
-    agent: "S"
-    wave: 0
-    action: "new"
-
-  # Backend Wave 1
-  - file: "pkg/api/files_handler.go"
-    agent: "A"
-    wave: 1
-    action: "new"
-  - file: "pkg/api/files_handler_test.go"
-    agent: "A"
-    wave: 1
-    action: "new"
-
-  # Frontend Wave 1
-  - file: "web/src/hooks/useFileBrowser.ts"
-    agent: "C"
-    wave: 1
-    action: "new"
-  - file: "web/src/api.ts"
-    agent: "C"
-    wave: 1
-    action: "modify"
-  - file: "web/src/components/FileBrowser/FileViewer.tsx"
-    agent: "D"
-    wave: 1
-    action: "new"
-  - file: "web/src/components/FileBrowser/DiffViewer.tsx"
-    agent: "E"
-    wave: 1
-    action: "new"
-  - file: "web/src/components/FileBrowser/FileTree.tsx"
-    agent: "F"
-    wave: 1
-    action: "new"
-  - file: "web/src/components/FileBrowser/FilePicker.tsx"
-    agent: "G"
-    wave: 1
-    action: "new"
-
-  # Backend Wave 2 (depends on A)
-  - file: "pkg/api/server.go"
-    agent: "B"
-    wave: 2
-    action: "modify"
-
-  # Frontend Wave 2 (depends on C, D, E, F, G)
-  - file: "web/src/components/FileBrowser/FileModal.tsx"
-    agent: "H"
-    wave: 2
-    action: "new"
-  - file: "web/package.json"
-    agent: "H"
-    wave: 2
-    action: "modify"
-
-  # Frontend Wave 3 (depends on H)
-  - file: "web/src/components/review/FileOwnershipPanel.tsx"
-    agent: "I"
-    wave: 3
-    action: "modify"
-
+    - file: web/src/types/filebrowser.ts
+      agent: S
+      wave: 0
+      action: new
+    - file: pkg/api/files_handler.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/api/files_handler_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: web/src/hooks/useFileBrowser.ts
+      agent: C
+      wave: 1
+      action: new
+    - file: web/src/api.ts
+      agent: C
+      wave: 1
+      action: modify
+    - file: web/src/components/FileBrowser/FileViewer.tsx
+      agent: D
+      wave: 1
+      action: new
+    - file: web/src/components/FileBrowser/DiffViewer.tsx
+      agent: E
+      wave: 1
+      action: new
+    - file: web/src/components/FileBrowser/FileTree.tsx
+      agent: F
+      wave: 1
+      action: new
+    - file: web/src/components/FileBrowser/FilePicker.tsx
+      agent: G
+      wave: 1
+      action: new
+    - file: pkg/api/server.go
+      agent: B
+      wave: 2
+      action: modify
+    - file: web/src/components/FileBrowser/FileModal.tsx
+      agent: H
+      wave: 2
+      action: new
+    - file: web/package.json
+      agent: H
+      wave: 2
+      action: modify
+    - file: web/src/components/review/FileOwnershipPanel.tsx
+      agent: I
+      wave: 3
+      action: modify
+interface_contracts:
+    - name: GET /api/files/tree
+      description: |
+        Returns recursive directory tree for a repository.
+        Security: validates path stays within repo root, skips .git and node_modules.
+      definition: |
+        Query params: repo (string), path (string, optional, defaults to repo root)
+        Response: FileTreeResponse (200 OK)
+        Error: 400 Bad Request if path escapes repo root or repo not found
+      location: pkg/api/files_handler.go
+    - name: GET /api/files/read
+      description: |
+        Returns file content as plain text with language detection.
+        Security: validates path, rejects files >1MB, detects binary files.
+      definition: |
+        Query params: repo (string), path (string)
+        Response: FileContentResponse (200 OK)
+        Error: 400 Bad Request if path invalid, 413 if file too large, 415 if binary
+      location: pkg/api/files_handler.go
+    - name: GET /api/files/diff
+      description: |
+        Returns git diff for modified files (unstaged + staged changes).
+        Uses git diff HEAD for unstaged, git diff --cached for staged.
+      definition: |
+        Query params: repo (string), path (string)
+        Response: { repo: string, path: string, diff: string } (200 OK)
+        Error: 400 Bad Request if file not modified or path invalid
+      location: pkg/api/files_handler.go
+    - name: GET /api/files/status
+      description: |
+        Returns git status for all tracked/untracked files in repository.
+        Maps to M (modified), A (added), U (untracked), D (deleted).
+      definition: |
+        Query params: repo (string)
+        Response: GitStatusResponse (200 OK)
+        Error: 400 Bad Request if repo not found
+      location: pkg/api/files_handler.go
+    - name: useFileBrowser hook
+      description: |
+        React hook managing file browser state: tree loading, file content,
+        diff view, git status. Abstracts API calls and loading states.
+      definition: |
+        export function useFileBrowser(repo: string): {
+          tree: FileNode | null
+          content: string | null
+          diff: string | null
+          language: string
+          loading: boolean
+          error: string | null
+          loadTree: (path?: string) => Promise<void>
+          loadFile: (path: string) => Promise<void>
+          loadDiff: (path: string) => Promise<void>
+          refreshStatus: () => Promise<void>
+        }
+      location: web/src/hooks/useFileBrowser.ts
+    - name: FileNode type
+      description: |
+        Recursive tree node representing files and directories.
+        Shared across FileTree component and useFileBrowser hook.
+      definition: |
+        See scaffolds section (web/src/types/filebrowser.ts)
+      location: web/src/types/filebrowser.ts
 waves:
-  - number: 1
-    agents:
-      - id: "A"
-        task: |
-          ## What to Implement
-          Backend API handler with 4 endpoints for file browsing and git integration:
-          - GET /api/files/tree — recursive directory tree (skips .git, node_modules, build artifacts)
-          - GET /api/files/read — file content with size limit (<1MB) and binary detection
-          - GET /api/files/diff — git diff for modified files
-          - GET /api/files/status — git status for all files in repo
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+            Backend API handler with 4 endpoints for file browsing and git integration:
+            - GET /api/files/tree — recursive directory tree (skips .git, node_modules, build artifacts)
+            - GET /api/files/read — file content with size limit (<1MB) and binary detection
+            - GET /api/files/diff — git diff for modified files
+            - GET /api/files/status — git status for all files in repo
 
-          ## Interfaces to Implement
-          All endpoints accept `repo` query param (repo name from SAWConfig.repos).
-          Use existing Config.RepoPath resolution pattern from browse_handler.go.
+            ## Interfaces to Implement
+            All endpoints accept `repo` query param (repo name from SAWConfig.repos).
+            Use existing Config.RepoPath resolution pattern from browse_handler.go.
 
-          Response types (as Go structs):
-          ```go
-          type FileNode struct {
-            Name      string      `json:"name"`
-            Path      string      `json:"path"`
-            IsDir     bool        `json:"is_dir"`
-            Children  []FileNode  `json:"children,omitempty"`
-            GitStatus *string     `json:"git_status,omitempty"`
-          }
+            Response types (as Go structs):
+            ```go
+            type FileNode struct {
+              Name      string      `json:"name"`
+              Path      string      `json:"path"`
+              IsDir     bool        `json:"is_dir"`
+              Children  []FileNode  `json:"children,omitempty"`
+              GitStatus *string     `json:"git_status,omitempty"`
+            }
 
-          type FileTreeResponse struct {
-            Repo string   `json:"repo"`
-            Root FileNode `json:"root"`
-          }
+            type FileTreeResponse struct {
+              Repo string   `json:"repo"`
+              Root FileNode `json:"root"`
+            }
 
-          type FileContentResponse struct {
-            Repo     string `json:"repo"`
-            Path     string `json:"path"`
-            Content  string `json:"content"`
-            Language string `json:"language"`
-            Size     int64  `json:"size"`
-          }
+            type FileContentResponse struct {
+              Repo     string `json:"repo"`
+              Path     string `json:"path"`
+              Content  string `json:"content"`
+              Language string `json:"language"`
+              Size     int64  `json:"size"`
+            }
 
-          type GitFileStatus struct {
-            Path   string `json:"path"`
-            Status string `json:"status"` // "M", "A", "U", "D"
-          }
+            type GitFileStatus struct {
+              Path   string `json:"path"`
+              Status string `json:"status"` // "M", "A", "U", "D"
+            }
 
-          type GitStatusResponse struct {
-            Repo  string          `json:"repo"`
-            Files []GitFileStatus `json:"files"`
-          }
-          ```
+            type GitStatusResponse struct {
+              Repo  string          `json:"repo"`
+              Files []GitFileStatus `json:"files"`
+            }
+            ```
 
-          ## Interfaces to Call
-          - Server.cfg.RepoPath (string) — base repo path
-          - filepath.Clean() — sanitize paths, detect .. escapes
-          - os.ReadDir() — read directory contents
-          - os.Stat() — check file size before reading
-          - os.ReadFile() — read file contents (with 1MB size check)
-          - exec.Command("git", "status", "--porcelain") — get git status
-          - exec.Command("git", "diff", "HEAD", "--", path) — get diff for file
+            ## Interfaces to Call
+            - Server.cfg.RepoPath (string) — base repo path
+            - filepath.Clean() — sanitize paths, detect .. escapes
+            - os.ReadDir() — read directory contents
+            - os.Stat() — check file size before reading
+            - os.ReadFile() — read file contents (with 1MB size check)
+            - exec.Command("git", "status", "--porcelain") — get git status
+            - exec.Command("git", "diff", "HEAD", "--", path) — get diff for file
 
-          Language detection: use file extension mapping (.go → "go", .ts → "typescript", .tsx → "tsx", etc.)
+            Language detection: use file extension mapping (.go → "go", .ts → "typescript", .tsx → "tsx", etc.)
 
-          ## Tests to Write
-          1. TestHandleFilesTree_Basic — returns tree for valid repo
-          2. TestHandleFilesTree_PathEscape — rejects paths with ../
-          3. TestHandleFilesRead_Success — returns file content
-          4. TestHandleFilesRead_TooLarge — rejects files >1MB
-          5. TestHandleFilesRead_Binary — detects binary files (check for null bytes)
-          6. TestHandleFilesDiff_Modified — returns diff for modified file
-          7. TestHandleFilesStatus_Success — returns git status array
+            ## Tests to Write
+            1. TestHandleFilesTree_Basic — returns tree for valid repo
+            2. TestHandleFilesTree_PathEscape — rejects paths with ../
+            3. TestHandleFilesRead_Success — returns file content
+            4. TestHandleFilesRead_TooLarge — rejects files >1MB
+            5. TestHandleFilesRead_Binary — detects binary files (check for null bytes)
+            6. TestHandleFilesDiff_Modified — returns diff for modified file
+            7. TestHandleFilesStatus_Success — returns git status array
 
-          ## Verification Gate
-          ```bash
-          go build ./pkg/api
-          go test ./pkg/api -run TestHandleFiles
-          ```
+            ## Verification Gate
+            ```bash
+            go build ./pkg/api
+            go test ./pkg/api -run TestHandleFiles
+            ```
 
-          ## Constraints
-          - Security: ALWAYS validate path is within repo root (reject if filepath.Clean reveals .. escape)
-          - Skip these directories when building tree: .git, node_modules, dist, build, target, .next
-          - Binary file detection: read first 512 bytes, check for null bytes
-          - Size limit: reject files >1MB (1048576 bytes) with 413 Payload Too Large
-          - Git commands: run in repo root directory (use exec.Cmd.Dir)
-          - Error handling: return 400 for bad paths, 404 for missing files, 413 for oversized files
-        files:
-          - "pkg/api/files_handler.go"
-          - "pkg/api/files_handler_test.go"
+            ## Constraints
+            - Security: ALWAYS validate path is within repo root (reject if filepath.Clean reveals .. escape)
+            - Skip these directories when building tree: .git, node_modules, dist, build, target, .next
+            - Binary file detection: read first 512 bytes, check for null bytes
+            - Size limit: reject files >1MB (1048576 bytes) with 413 Payload Too Large
+            - Git commands: run in repo root directory (use exec.Cmd.Dir)
+            - Error handling: return 400 for bad paths, 404 for missing files, 413 for oversized files
+          files:
+            - pkg/api/files_handler.go
+            - pkg/api/files_handler_test.go
+        - id: C
+          task: |
+            ## What to Implement
+            React hook managing file browser state and API interactions.
+            Handles tree loading, file content fetching, diff viewing, and git status refresh.
 
-      - id: "C"
-        task: |
-          ## What to Implement
-          React hook managing file browser state and API interactions.
-          Handles tree loading, file content fetching, diff viewing, and git status refresh.
+            Also add 4 new API client functions to api.ts for backend communication.
 
-          Also add 4 new API client functions to api.ts for backend communication.
+            ## Interfaces to Implement
+            Hook signature:
+            ```typescript
+            export function useFileBrowser(repo: string): {
+              tree: FileNode | null
+              content: string | null
+              diff: string | null
+              language: string
+              loading: boolean
+              error: string | null
+              selectedPath: string | null
+              loadTree: (path?: string) => Promise<void>
+              loadFile: (path: string) => Promise<void>
+              loadDiff: (path: string) => Promise<void>
+              refreshStatus: () => Promise<void>
+            }
+            ```
 
-          ## Interfaces to Implement
-          Hook signature:
-          ```typescript
-          export function useFileBrowser(repo: string): {
-            tree: FileNode | null
-            content: string | null
-            diff: string | null
-            language: string
-            loading: boolean
-            error: string | null
-            selectedPath: string | null
-            loadTree: (path?: string) => Promise<void>
-            loadFile: (path: string) => Promise<void>
-            loadDiff: (path: string) => Promise<void>
-            refreshStatus: () => Promise<void>
-          }
-          ```
+            API client functions (add to api.ts):
+            ```typescript
+            export async function fetchFileTree(repo: string, path?: string): Promise<FileTreeResponse>
+            export async function fetchFileContent(repo: string, path: string): Promise<FileContentResponse>
+            export async function fetchFileDiff(repo: string, path: string): Promise<{ repo: string, path: string, diff: string }>
+            export async function fetchGitStatus(repo: string): Promise<GitStatusResponse>
+            ```
 
-          API client functions (add to api.ts):
-          ```typescript
-          export async function fetchFileTree(repo: string, path?: string): Promise<FileTreeResponse>
-          export async function fetchFileContent(repo: string, path: string): Promise<FileContentResponse>
-          export async function fetchFileDiff(repo: string, path: string): Promise<{ repo: string, path: string, diff: string }>
-          export async function fetchGitStatus(repo: string): Promise<GitStatusResponse>
-          ```
+            ## Interfaces to Call
+            - fetch() — call /api/files/tree, /api/files/read, /api/files/diff, /api/files/status
+            - useState, useCallback from React
+            - FileNode, FileTreeResponse, FileContentResponse, GitStatusResponse from scaffold types
 
-          ## Interfaces to Call
-          - fetch() — call /api/files/tree, /api/files/read, /api/files/diff, /api/files/status
-          - useState, useCallback from React
-          - FileNode, FileTreeResponse, FileContentResponse, GitStatusResponse from scaffold types
+            ## Tests to Write
+            1. test('useFileBrowser loads tree on mount')
+            2. test('useFileBrowser loads file content')
+            3. test('useFileBrowser handles API errors')
+            4. test('useFileBrowser refreshes git status')
 
-          ## Tests to Write
-          1. test('useFileBrowser loads tree on mount')
-          2. test('useFileBrowser loads file content')
-          3. test('useFileBrowser handles API errors')
-          4. test('useFileBrowser refreshes git status')
+            Use vitest + @testing-library/react. Mock fetch with vi.fn().
 
-          Use vitest + @testing-library/react. Mock fetch with vi.fn().
+            ## Verification Gate
+            ```bash
+            cd web && npm test -- useFileBrowser
+            cd web && npx tsc --noEmit
+            ```
 
-          ## Verification Gate
-          ```bash
-          cd web && npm test -- useFileBrowser
-          cd web && npx tsc --noEmit
-          ```
+            ## Constraints
+            - Hook must NOT auto-load tree on mount (only when loadTree() is called)
+            - Loading state: true during any async operation, false when complete
+            - Error state: store error message string, clear on successful operation
+            - Git status refresh: fetch status, merge into tree nodes by matching paths
+            - API client functions: follow existing pattern in api.ts (check response.ok, throw Error)
+          files:
+            - web/src/hooks/useFileBrowser.ts
+            - web/src/api.ts
+        - id: D
+          task: |
+            ## What to Implement
+            Read-only code viewer component using @uiw/react-codemirror.
+            Displays syntax-highlighted file content with line numbers.
 
-          ## Constraints
-          - Hook must NOT auto-load tree on mount (only when loadTree() is called)
-          - Loading state: true during any async operation, false when complete
-          - Error state: store error message string, clear on successful operation
-          - Git status refresh: fetch status, merge into tree nodes by matching paths
-          - API client functions: follow existing pattern in api.ts (check response.ok, throw Error)
-        files:
-          - "web/src/hooks/useFileBrowser.ts"
-          - "web/src/api.ts"
+            ## Interfaces to Implement
+            Component props:
+            ```typescript
+            interface FileViewerProps {
+              content: string
+              language: string
+              path: string
+              loading?: boolean
+            }
+            export default function FileViewer(props: FileViewerProps): JSX.Element
+            ```
 
-      - id: "D"
-        task: |
-          ## What to Implement
-          Read-only code viewer component using @uiw/react-codemirror.
-          Displays syntax-highlighted file content with line numbers.
+            ## Interfaces to Call
+            - CodeMirror from @uiw/react-codemirror
+            - Language extensions: @codemirror/lang-javascript, @codemirror/lang-python (imported dynamically)
+            - Theme: use app's current theme (light/dark detection via document.documentElement.classList)
 
-          ## Interfaces to Implement
-          Component props:
-          ```typescript
-          interface FileViewerProps {
-            content: string
-            language: string
+            Language mapping:
+            - "go" → @codemirror/lang-go
+            - "typescript", "tsx" → @codemirror/lang-javascript (TypeScript mode)
+            - "javascript", "jsx" → @codemirror/lang-javascript
+            - "python" → @codemirror/lang-python
+            - "yaml", "yml" → text mode (no highlighting)
+            - "markdown", "md" → text mode
+
+            ## Tests to Write
+            1. test('FileViewer renders content')
+            2. test('FileViewer shows loading state')
+            3. test('FileViewer applies correct language mode')
+
+            ## Verification Gate
+            ```bash
+            cd web && npm test -- FileViewer
+            cd web && npx tsc --noEmit
+            ```
+
+            ## Constraints
+            - Read-only: pass readOnly={true} to CodeMirror
+            - Line numbers: enabled by default
+            - Height: use height="600px" or make it fill parent container
+            - Dark mode detection: check document.documentElement.classList.contains('dark')
+            - Loading state: show skeleton loader (animate-pulse div) while loading
+            - Path display: show file path above editor in muted text
+          files:
+            - web/src/components/FileBrowser/FileViewer.tsx
+        - id: E
+          task: |
+            ## What to Implement
+            Git diff viewer component displaying unified diff format with +/- line highlighting.
+            Uses CodeMirror in diff mode or custom syntax highlighting for diff output.
+
+            ## Interfaces to Implement
+            Component props:
+            ```typescript
+            interface DiffViewerProps {
+              diff: string
+              path: string
+              loading?: boolean
+            }
+            export default function DiffViewer(props: DiffViewerProps): JSX.Element
+            ```
+
+            ## Interfaces to Call
+            - CodeMirror from @uiw/react-codemirror (or react-syntax-highlighter as fallback)
+            - Existing MarkdownContent component pattern for code block rendering
+
+            ## Tests to Write
+            1. test('DiffViewer renders diff content')
+            2. test('DiffViewer highlights added lines')
+            3. test('DiffViewer highlights removed lines')
+
+            ## Verification Gate
+            ```bash
+            cd web && npm test -- DiffViewer
+            cd web && npx tsc --noEmit
+            ```
+
+            ## Constraints
+            - Read-only: no editing of diff content
+            - Line colors:
+              - Lines starting with '+' (not '+++') → green background
+              - Lines starting with '-' (not '---') → red background
+              - Lines starting with '@@' → blue/muted background (hunk headers)
+            - Use monospace font (font-mono class)
+            - Loading state: show skeleton loader while loading
+            - Empty state: if diff is empty, show "No changes" message
+          files:
+            - web/src/components/FileBrowser/DiffViewer.tsx
+        - id: F
+          task: |
+            ## What to Implement
+            Recursive tree navigation component with expand/collapse, git status badges,
+            and file selection. Auto-expands first 2 levels on initial render.
+
+            ## Interfaces to Implement
+            Component props:
+            ```typescript
+            interface FileTreeProps {
+              tree: FileNode
+              onSelect: (path: string, isDir: boolean) => void
+              selectedPath?: string | null
+            }
+            export default function FileTree(props: FileTreeProps): JSX.Element
+            ```
+
+            Internal recursive component:
+            ```typescript
+            interface TreeNodeProps {
+              node: FileNode
+              depth: number
+              onSelect: (path: string, isDir: boolean) => void
+              selectedPath?: string | null
+            }
+            function TreeNode(props: TreeNodeProps): JSX.Element
+            ```
+
+            ## Interfaces to Call
+            - useState, useEffect from React
+            - FileNode type from scaffold
+            - Lucide icons: ChevronRight, ChevronDown, File, Folder, FolderOpen
+
+            ## Tests to Write
+            1. test('FileTree renders tree structure')
+            2. test('FileTree expands/collapses directories')
+            3. test('FileTree highlights selected file')
+            4. test('FileTree auto-expands first 2 levels')
+            5. test('FileTree shows git status badges')
+
+            ## Verification Gate
+            ```bash
+            cd web && npm test -- FileTree
+            cd web && npx tsc --noEmit
+            ```
+
+            ## Constraints
+            - Auto-expand: directories at depth 0 and 1 start expanded (use useEffect to set initial state)
+            - Git status badges:
+              - M → yellow dot + "M" label
+              - A → green dot + "A" label
+              - U → blue dot + "U" label
+              - D → red dot + "D" label (show in tree but with strikethrough)
+            - Selection highlight: selected file/dir has blue background
+            - Indentation: 16px per depth level (use style={{ paddingLeft: depth * 16 }})
+            - Click behavior: directories toggle expand/collapse AND call onSelect, files only call onSelect
+            - Scroll: wrap in overflow-y-auto container
+          files:
+            - web/src/components/FileBrowser/FileTree.tsx
+        - id: G
+          task: |
+            ## What to Implement
+            Fuzzy search file picker modal (⌘P / ⌘K style). Filter-as-you-type with
+            keyboard navigation, jumps directly to selected file.
+
+            ## Interfaces to Implement
+            Component props:
+            ```typescript
+            interface FilePickerProps {
+              files: string[]  // flat array of all file paths
+              onSelect: (path: string) => void
+              onClose: () => void
+            }
+            export default function FilePicker(props: FilePickerProps): JSX.Element
+            ```
+
+            ## Interfaces to Call
+            - useState, useEffect, useRef from React
+            - Existing CommandPalette component pattern (reuse modal structure, keyboard nav logic)
+            - Search icon from lucide-react
+
+            ## Tests to Write
+            1. test('FilePicker filters files on input')
+            2. test('FilePicker navigates with arrow keys')
+            3. test('FilePicker selects with Enter')
+            4. test('FilePicker closes with Escape')
+
+            ## Verification Gate
+            ```bash
+            cd web && npm test -- FilePicker
+            cd web && npx tsc --noEmit
+            ```
+
+            ## Constraints
+            - Copy CommandPalette structure: fixed overlay with centered modal
+            - Filter logic: case-insensitive includes (file.toLowerCase().includes(query.toLowerCase()))
+            - Keyboard nav: ArrowUp/ArrowDown to move selection, Enter to select, Escape to close
+            - Active item highlight: use same blue primary color as CommandPalette
+            - Max height: 400px with overflow-y-auto
+            - Auto-focus input on mount (use inputRef.current?.focus())
+            - Click outside to close: onMouseDown on backdrop calls onClose
+          files:
+            - web/src/components/FileBrowser/FilePicker.tsx
+    - number: 2
+      agents:
+        - id: B
+          task: |
+            ## What to Implement
+            Register 4 new file browser API routes in server.go New() function.
+            Add routes after existing browse routes, before the static file handler.
+
+            ## Interfaces to Implement
+            None (registration only).
+
+            ## Interfaces to Call
+            - s.mux.HandleFunc() — register new routes
+            - s.handleFilesTree, s.handleFilesRead, s.handleFilesDiff, s.handleFilesStatus — new handlers from Agent A
+
+            ## Tests to Write
+            No new tests needed (routes tested via handler tests in Agent A).
+
+            ## Verification Gate
+            ```bash
+            go build ./cmd/saw
+            go test ./pkg/api -run TestHandleFiles
+            ```
+
+            ## Constraints
+            - Add routes in this order (logical grouping):
+              1. GET /api/files/tree
+              2. GET /api/files/read
+              3. GET /api/files/diff
+              4. GET /api/files/status
+            - Place after line 52 (after handleBrowseNative) and before line 114 (before embed static files)
+            - Use exact handler names from Agent A (handleFilesTree, handleFilesRead, handleFilesDiff, handleFilesStatus)
+            - Follow existing pattern: s.mux.HandleFunc("GET /api/files/tree", s.handleFilesTree)
+          files:
+            - pkg/api/server.go
+          dependencies:
+            - A
+        - id: H
+          task: |
+            ## What to Implement
+            Modal container component integrating FileTree, FileViewer, and DiffViewer
+            into a two-column layout. This is the disposable wrapper — built composably
+            so components can be extracted to sidebar/split view later.
+
+            Also add @uiw/react-codemirror dependencies to package.json.
+
+            ## Interfaces to Implement
+            Component props:
+            ```typescript
+            interface FileModalProps {
+              repo: string
+              initialFile?: string  // optional deep link path
+              onClose: () => void
+            }
+            export default function FileModal(props: FileModalProps): JSX.Element
+            ```
+
+            ## Interfaces to Call
+            - useFileBrowser hook from Agent C
+            - FileTree component from Agent F
+            - FileViewer component from Agent D
+            - DiffViewer component from Agent E
+            - FilePicker component from Agent G
+            - createPortal from react-dom (render modal at document.body)
+
+            ## Tests to Write
+            1. test('FileModal renders tree and viewer')
+            2. test('FileModal loads initial file from deep link')
+            3. test('FileModal closes on Escape key')
+            4. test('FileModal toggles to diff view for modified files')
+
+            ## Verification Gate
+            ```bash
+            cd web && npm test -- FileModal
+            cd web && npx tsc --noEmit
+            cd web && npm run build
+            ```
+
+            ## Constraints
+            - Layout: two-column, 30% tree (left), 70% viewer (right), resizable divider
+            - Header: show repo name + file path + close button
+            - Keyboard shortcuts:
+              - Escape → close modal
+              - ⌘P / Ctrl+P → open FilePicker
+              - ⌘D / Ctrl+D → toggle diff view (if file is modified)
+            - State management: use useFileBrowser hook for all data
+            - Load initial file: if initialFile prop provided, call loadFile(initialFile) on mount
+            - View toggle: button to switch between FileViewer and DiffViewer (only show if file is modified)
+            - Backdrop: semi-transparent black, click to close
+            - Modal size: 90vw × 90vh, centered on screen
+
+            Package.json additions:
+            ```json
+            "@uiw/react-codemirror": "^4.21.0",
+            "@codemirror/lang-javascript": "^6.2.0",
+            "@codemirror/lang-python": "^6.1.0",
+            "@codemirror/lang-go": "^6.0.0",
+            "@codemirror/theme-one-dark": "^6.1.0"
+            ```
+          files:
+            - web/src/components/FileBrowser/FileModal.tsx
+            - web/package.json
+          dependencies:
+            - C
+            - D
+            - E
+            - F
+            - G
+    - number: 3
+      agents:
+        - id: I
+          task: |
+            ## What to Implement
+            Add "View File" link/icon next to each file path in the File Ownership table.
+            Clicking the link opens FileModal with that file pre-loaded.
+
+            ## Interfaces to Implement
+            No new exports. Modify existing FileOwnershipPanel component.
+
+            ## Interfaces to Call
+            - FileModal component from Agent H
+            - useState from React
+            - Eye icon from lucide-react
+
+            ## Tests to Write
+            1. test('FileOwnershipPanel shows view file buttons')
+            2. test('FileOwnershipPanel opens modal on button click')
+
+            ## Verification Gate
+            ```bash
+            cd web && npm test -- FileOwnershipPanel
+            cd web && npx tsc --noEmit
+            ```
+
+            ## Constraints
+            - Add icon button next to each file path (in the "File" column)
+            - Icon: Eye from lucide-react, size 14, muted color
+            - Click behavior: open FileModal with initialFile={row.file}
+            - Multi-repo support: if file has `repo` field, pass that to FileModal, else use first repo from repos array
+            - Only show icon for existing files (action !== "delete")
+            - Modal state: use useState to track open/closed and selected file path
+            - Button styling: transparent background, hover shows background, follows existing button patterns
+          files:
+            - web/src/components/review/FileOwnershipPanel.tsx
+          dependencies:
+            - H
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: cd web && npm run build
+          required: true
+          description: Build React frontend with Vite
+        - type: build
+          command: go build -o saw ./cmd/saw
+          required: true
+          description: Build Go server with embedded assets
+        - type: test
+          command: cd web && npm test
+          required: true
+          description: Run Vitest unit tests
+        - type: lint
+          command: cd web && npx tsc --noEmit
+          required: false
+          description: TypeScript type checking
+scaffolds:
+    - file_path: web/src/types/filebrowser.ts
+      contents: |
+        // File browser API types (shared across frontend components)
+
+        export interface FileNode {
+          name: string
+          path: string
+          isDir: boolean
+          children?: FileNode[]
+          gitStatus?: 'M' | 'A' | 'U' | 'D' | null
+        }
+
+        export interface FileTreeResponse {
+          repo: string
+          root: FileNode
+        }
+
+        export interface FileContentResponse {
+          repo: string
+          path: string
+          content: string
+          language: string
+          size: number
+        }
+
+        export interface GitStatusResponse {
+          repo: string
+          files: Array<{
             path: string
-            loading?: boolean
-          }
-          export default function FileViewer(props: FileViewerProps): JSX.Element
-          ```
-
-          ## Interfaces to Call
-          - CodeMirror from @uiw/react-codemirror
-          - Language extensions: @codemirror/lang-javascript, @codemirror/lang-python (imported dynamically)
-          - Theme: use app's current theme (light/dark detection via document.documentElement.classList)
-
-          Language mapping:
-          - "go" → @codemirror/lang-go
-          - "typescript", "tsx" → @codemirror/lang-javascript (TypeScript mode)
-          - "javascript", "jsx" → @codemirror/lang-javascript
-          - "python" → @codemirror/lang-python
-          - "yaml", "yml" → text mode (no highlighting)
-          - "markdown", "md" → text mode
-
-          ## Tests to Write
-          1. test('FileViewer renders content')
-          2. test('FileViewer shows loading state')
-          3. test('FileViewer applies correct language mode')
-
-          ## Verification Gate
-          ```bash
-          cd web && npm test -- FileViewer
-          cd web && npx tsc --noEmit
-          ```
-
-          ## Constraints
-          - Read-only: pass readOnly={true} to CodeMirror
-          - Line numbers: enabled by default
-          - Height: use height="600px" or make it fill parent container
-          - Dark mode detection: check document.documentElement.classList.contains('dark')
-          - Loading state: show skeleton loader (animate-pulse div) while loading
-          - Path display: show file path above editor in muted text
-        files:
-          - "web/src/components/FileBrowser/FileViewer.tsx"
-
-      - id: "E"
-        task: |
-          ## What to Implement
-          Git diff viewer component displaying unified diff format with +/- line highlighting.
-          Uses CodeMirror in diff mode or custom syntax highlighting for diff output.
-
-          ## Interfaces to Implement
-          Component props:
-          ```typescript
-          interface DiffViewerProps {
-            diff: string
-            path: string
-            loading?: boolean
-          }
-          export default function DiffViewer(props: DiffViewerProps): JSX.Element
-          ```
-
-          ## Interfaces to Call
-          - CodeMirror from @uiw/react-codemirror (or react-syntax-highlighter as fallback)
-          - Existing MarkdownContent component pattern for code block rendering
-
-          ## Tests to Write
-          1. test('DiffViewer renders diff content')
-          2. test('DiffViewer highlights added lines')
-          3. test('DiffViewer highlights removed lines')
-
-          ## Verification Gate
-          ```bash
-          cd web && npm test -- DiffViewer
-          cd web && npx tsc --noEmit
-          ```
-
-          ## Constraints
-          - Read-only: no editing of diff content
-          - Line colors:
-            - Lines starting with '+' (not '+++') → green background
-            - Lines starting with '-' (not '---') → red background
-            - Lines starting with '@@' → blue/muted background (hunk headers)
-          - Use monospace font (font-mono class)
-          - Loading state: show skeleton loader while loading
-          - Empty state: if diff is empty, show "No changes" message
-        files:
-          - "web/src/components/FileBrowser/DiffViewer.tsx"
-
-      - id: "F"
-        task: |
-          ## What to Implement
-          Recursive tree navigation component with expand/collapse, git status badges,
-          and file selection. Auto-expands first 2 levels on initial render.
-
-          ## Interfaces to Implement
-          Component props:
-          ```typescript
-          interface FileTreeProps {
-            tree: FileNode
-            onSelect: (path: string, isDir: boolean) => void
-            selectedPath?: string | null
-          }
-          export default function FileTree(props: FileTreeProps): JSX.Element
-          ```
-
-          Internal recursive component:
-          ```typescript
-          interface TreeNodeProps {
-            node: FileNode
-            depth: number
-            onSelect: (path: string, isDir: boolean) => void
-            selectedPath?: string | null
-          }
-          function TreeNode(props: TreeNodeProps): JSX.Element
-          ```
-
-          ## Interfaces to Call
-          - useState, useEffect from React
-          - FileNode type from scaffold
-          - Lucide icons: ChevronRight, ChevronDown, File, Folder, FolderOpen
-
-          ## Tests to Write
-          1. test('FileTree renders tree structure')
-          2. test('FileTree expands/collapses directories')
-          3. test('FileTree highlights selected file')
-          4. test('FileTree auto-expands first 2 levels')
-          5. test('FileTree shows git status badges')
-
-          ## Verification Gate
-          ```bash
-          cd web && npm test -- FileTree
-          cd web && npx tsc --noEmit
-          ```
-
-          ## Constraints
-          - Auto-expand: directories at depth 0 and 1 start expanded (use useEffect to set initial state)
-          - Git status badges:
-            - M → yellow dot + "M" label
-            - A → green dot + "A" label
-            - U → blue dot + "U" label
-            - D → red dot + "D" label (show in tree but with strikethrough)
-          - Selection highlight: selected file/dir has blue background
-          - Indentation: 16px per depth level (use style={{ paddingLeft: depth * 16 }})
-          - Click behavior: directories toggle expand/collapse AND call onSelect, files only call onSelect
-          - Scroll: wrap in overflow-y-auto container
-        files:
-          - "web/src/components/FileBrowser/FileTree.tsx"
-
-      - id: "G"
-        task: |
-          ## What to Implement
-          Fuzzy search file picker modal (⌘P / ⌘K style). Filter-as-you-type with
-          keyboard navigation, jumps directly to selected file.
-
-          ## Interfaces to Implement
-          Component props:
-          ```typescript
-          interface FilePickerProps {
-            files: string[]  // flat array of all file paths
-            onSelect: (path: string) => void
-            onClose: () => void
-          }
-          export default function FilePicker(props: FilePickerProps): JSX.Element
-          ```
-
-          ## Interfaces to Call
-          - useState, useEffect, useRef from React
-          - Existing CommandPalette component pattern (reuse modal structure, keyboard nav logic)
-          - Search icon from lucide-react
-
-          ## Tests to Write
-          1. test('FilePicker filters files on input')
-          2. test('FilePicker navigates with arrow keys')
-          3. test('FilePicker selects with Enter')
-          4. test('FilePicker closes with Escape')
-
-          ## Verification Gate
-          ```bash
-          cd web && npm test -- FilePicker
-          cd web && npx tsc --noEmit
-          ```
-
-          ## Constraints
-          - Copy CommandPalette structure: fixed overlay with centered modal
-          - Filter logic: case-insensitive includes (file.toLowerCase().includes(query.toLowerCase()))
-          - Keyboard nav: ArrowUp/ArrowDown to move selection, Enter to select, Escape to close
-          - Active item highlight: use same blue primary color as CommandPalette
-          - Max height: 400px with overflow-y-auto
-          - Auto-focus input on mount (use inputRef.current?.focus())
-          - Click outside to close: onMouseDown on backdrop calls onClose
-        files:
-          - "web/src/components/FileBrowser/FilePicker.tsx"
-
-  - number: 2
-    agents:
-      - id: "B"
-        task: |
-          ## What to Implement
-          Register 4 new file browser API routes in server.go New() function.
-          Add routes after existing browse routes, before the static file handler.
-
-          ## Interfaces to Implement
-          None (registration only).
-
-          ## Interfaces to Call
-          - s.mux.HandleFunc() — register new routes
-          - s.handleFilesTree, s.handleFilesRead, s.handleFilesDiff, s.handleFilesStatus — new handlers from Agent A
-
-          ## Tests to Write
-          No new tests needed (routes tested via handler tests in Agent A).
-
-          ## Verification Gate
-          ```bash
-          go build ./cmd/saw
-          go test ./pkg/api -run TestHandleFiles
-          ```
-
-          ## Constraints
-          - Add routes in this order (logical grouping):
-            1. GET /api/files/tree
-            2. GET /api/files/read
-            3. GET /api/files/diff
-            4. GET /api/files/status
-          - Place after line 52 (after handleBrowseNative) and before line 114 (before embed static files)
-          - Use exact handler names from Agent A (handleFilesTree, handleFilesRead, handleFilesDiff, handleFilesStatus)
-          - Follow existing pattern: s.mux.HandleFunc("GET /api/files/tree", s.handleFilesTree)
-        files:
-          - "pkg/api/server.go"
-        dependencies:
-          - "A"
-
-      - id: "H"
-        task: |
-          ## What to Implement
-          Modal container component integrating FileTree, FileViewer, and DiffViewer
-          into a two-column layout. This is the disposable wrapper — built composably
-          so components can be extracted to sidebar/split view later.
-
-          Also add @uiw/react-codemirror dependencies to package.json.
-
-          ## Interfaces to Implement
-          Component props:
-          ```typescript
-          interface FileModalProps {
-            repo: string
-            initialFile?: string  // optional deep link path
-            onClose: () => void
-          }
-          export default function FileModal(props: FileModalProps): JSX.Element
-          ```
-
-          ## Interfaces to Call
-          - useFileBrowser hook from Agent C
-          - FileTree component from Agent F
-          - FileViewer component from Agent D
-          - DiffViewer component from Agent E
-          - FilePicker component from Agent G
-          - createPortal from react-dom (render modal at document.body)
-
-          ## Tests to Write
-          1. test('FileModal renders tree and viewer')
-          2. test('FileModal loads initial file from deep link')
-          3. test('FileModal closes on Escape key')
-          4. test('FileModal toggles to diff view for modified files')
-
-          ## Verification Gate
-          ```bash
-          cd web && npm test -- FileModal
-          cd web && npx tsc --noEmit
-          cd web && npm run build
-          ```
-
-          ## Constraints
-          - Layout: two-column, 30% tree (left), 70% viewer (right), resizable divider
-          - Header: show repo name + file path + close button
-          - Keyboard shortcuts:
-            - Escape → close modal
-            - ⌘P / Ctrl+P → open FilePicker
-            - ⌘D / Ctrl+D → toggle diff view (if file is modified)
-          - State management: use useFileBrowser hook for all data
-          - Load initial file: if initialFile prop provided, call loadFile(initialFile) on mount
-          - View toggle: button to switch between FileViewer and DiffViewer (only show if file is modified)
-          - Backdrop: semi-transparent black, click to close
-          - Modal size: 90vw × 90vh, centered on screen
-
-          Package.json additions:
-          ```json
-          "@uiw/react-codemirror": "^4.21.0",
-          "@codemirror/lang-javascript": "^6.2.0",
-          "@codemirror/lang-python": "^6.1.0",
-          "@codemirror/lang-go": "^6.0.0",
-          "@codemirror/theme-one-dark": "^6.1.0"
-          ```
-        files:
-          - "web/src/components/FileBrowser/FileModal.tsx"
-          - "web/package.json"
-        dependencies:
-          - "C"
-          - "D"
-          - "E"
-          - "F"
-          - "G"
-
-  - number: 3
-    agents:
-      - id: "I"
-        task: |
-          ## What to Implement
-          Add "View File" link/icon next to each file path in the File Ownership table.
-          Clicking the link opens FileModal with that file pre-loaded.
-
-          ## Interfaces to Implement
-          No new exports. Modify existing FileOwnershipPanel component.
-
-          ## Interfaces to Call
-          - FileModal component from Agent H
-          - useState from React
-          - Eye icon from lucide-react
-
-          ## Tests to Write
-          1. test('FileOwnershipPanel shows view file buttons')
-          2. test('FileOwnershipPanel opens modal on button click')
-
-          ## Verification Gate
-          ```bash
-          cd web && npm test -- FileOwnershipPanel
-          cd web && npx tsc --noEmit
-          ```
-
-          ## Constraints
-          - Add icon button next to each file path (in the "File" column)
-          - Icon: Eye from lucide-react, size 14, muted color
-          - Click behavior: open FileModal with initialFile={row.file}
-          - Multi-repo support: if file has `repo` field, pass that to FileModal, else use first repo from repos array
-          - Only show icon for existing files (action !== "delete")
-          - Modal state: use useState to track open/closed and selected file path
-          - Button styling: transparent background, hover shows background, follows existing button patterns
-        files:
-          - "web/src/components/review/FileOwnershipPanel.tsx"
-        dependencies:
-          - "H"
-
+            status: 'M' | 'A' | 'U' | 'D'
+          }>
+        }
+      import_path: ../types/filebrowser
+      status: committed
+completion_reports:
+    A:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-A
+        branch: wave1-agent-A
+        commit: aa7325d7cca1ced68449c917800e8f5443841ae1
+        notes: no changes produced (API agent)
+    B:
+        status: complete
+        branch: wave2-agent-B
+        commit: no-op
+        verification: routes already registered by agent A
+    C:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-C
+        branch: wave1-agent-C
+        commit: aa7325d7cca1ced68449c917800e8f5443841ae1
+        notes: no changes produced (API agent)
+    D:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-D
+        branch: wave1-agent-D
+        commit: aa7325d7cca1ced68449c917800e8f5443841ae1
+        notes: no changes produced (API agent)
+    E:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-E
+        branch: wave1-agent-E
+        commit: aa7325d7cca1ced68449c917800e8f5443841ae1
+        notes: no changes produced (API agent)
+    F:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-F
+        branch: wave1-agent-F
+        commit: aa7325d7cca1ced68449c917800e8f5443841ae1
+        notes: no changes produced (API agent)
+    G:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-G
+        branch: wave1-agent-G
+        commit: aa7325d7cca1ced68449c917800e8f5443841ae1
+        notes: no changes produced (API agent)
+    H:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave2-agent-H
+        branch: saw/wave2-agent-H
+        commit: 05fa808ae59cdcd8a445c3a79efb725a3ccdb85f
+        files_changed:
+            - web/dist/index.html
+            - web/package-lock.json
+            - web/package.json
+            - web/src/components/FileBrowser/FileModal.test.tsx
+            - web/src/components/FileBrowser/FileModal.tsx
+        notes: auto-committed by orchestrator (API agent)
+    I:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave3-agent-I
+        branch: wave3-agent-I
+        commit: 6bb08a5ead48dc54c125ffe658e4cba02c1220e3
+        files_changed:
+            - web/dist/index.html
+            - web/src/components/FileOwnershipTable.tsx
+            - web/src/components/review/FileOwnershipPanel.test.tsx
+            - web/src/components/review/FileOwnershipPanel.tsx
+        notes: auto-committed by orchestrator (API agent)
 pre_mortem:
-  overall_risk: "low"
-  rows:
-    - scenario: "File path traversal vulnerability (../ escape bypasses security check)"
-      likelihood: "low"
-      impact: "high"
-      mitigation: "Agent A must use filepath.Clean and verify result stays within repo root. Add test specifically checking ../ rejection. Code review before merge."
-
-    - scenario: "CodeMirror bundle size bloats frontend (each language extension adds ~50-100KB)"
-      likelihood: "medium"
-      impact: "low"
-      mitigation: "Lazy load language extensions only when needed (dynamic import). Initial implementation can load statically, optimize in follow-up if bundle exceeds 500KB."
-
-    - scenario: "Large file causes browser hang (>1MB file loaded into CodeMirror)"
-      likelihood: "low"
-      impact: "medium"
-      mitigation: "Backend enforces 1MB limit (Agent A). Frontend shows file size before loading, warns if >500KB. Add test verifying 413 response for oversized files."
-
-    - scenario: "Git status polling causes performance issues on large repos (thousands of files)"
-      likelihood: "medium"
-      impact: "low"
-      mitigation: "Don't auto-refresh git status. Only refresh on explicit user action (button click). Future optimization: use git status --porcelain with file path filter."
-
-completion_reports: {}
+    overall_risk: low
+    rows:
+        - scenario: File path traversal vulnerability (../ escape bypasses security check)
+          likelihood: low
+          impact: high
+          mitigation: Agent A must use filepath.Clean and verify result stays within repo root. Add test specifically checking ../ rejection. Code review before merge.
+        - scenario: CodeMirror bundle size bloats frontend (each language extension adds ~50-100KB)
+          likelihood: medium
+          impact: low
+          mitigation: Lazy load language extensions only when needed (dynamic import). Initial implementation can load statically, optimize in follow-up if bundle exceeds 500KB.
+        - scenario: Large file causes browser hang (>1MB file loaded into CodeMirror)
+          likelihood: low
+          impact: medium
+          mitigation: Backend enforces 1MB limit (Agent A). Frontend shows file size before loading, warns if >500KB. Add test verifying 413 response for oversized files.
+        - scenario: Git status polling causes performance issues on large repos (thousands of files)
+          likelihood: medium
+          impact: low
+          mitigation: 'Don''t auto-refresh git status. Only refresh on explicit user action (button click). Future optimization: use git status --porcelain with file path filter.'
+state: WAVE_PENDING

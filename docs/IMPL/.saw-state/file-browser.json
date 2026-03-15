@@ -1,28 +1,35 @@
 {
   "slug": "file-browser",
-  "current_stage": "wave_merge",
+  "current_stage": "wave_verify",
   "entries": [
     {
       "stage": "scaffold",
       "status": "complete",
-      "started_at": "2026-03-14T17:26:33.261594-07:00",
-      "completed_at": "2026-03-14T17:26:33.262303-07:00"
+      "started_at": "2026-03-14T18:04:54.814279-07:00",
+      "completed_at": "2026-03-14T18:04:54.81502-07:00"
     },
     {
       "stage": "wave_execute",
       "status": "complete",
       "wave_num": 1,
-      "started_at": "2026-03-14T17:26:33.262436-07:00",
-      "completed_at": "2026-03-14T17:29:28.230791-07:00"
+      "started_at": "2026-03-14T18:04:54.815171-07:00",
+      "completed_at": "2026-03-14T18:06:18.079102-07:00"
     },
     {
       "stage": "wave_merge",
+      "status": "complete",
+      "wave_num": 1,
+      "started_at": "2026-03-14T18:06:18.079285-07:00",
+      "completed_at": "2026-03-14T18:06:40.769892-07:00"
+    },
+    {
+      "stage": "wave_verify",
       "status": "failed",
       "wave_num": 1,
-      "message": "executeMergeWave: no completion report for agent A",
-      "started_at": "2026-03-14T17:29:28.232043-07:00",
-      "completed_at": "2026-03-14T17:29:28.237959-07:00"
+      "message": "engine.RunVerification: orchestrator.New: failed to parse IMPL doc \"\": failed to read manifest file: open : no such file or directory",
+      "started_at": "2026-03-14T18:06:40.770471-07:00",
+      "completed_at": "2026-03-14T18:06:40.77096-07:00"
     }
   ],
-  "updated_at": "2026-03-14T17:29:28.237959-07:00"
+  "updated_at": "2026-03-14T18:06:40.77096-07:00"
 }
