@@ -261,3 +261,35 @@ export async function fetchAgentContext(slug: string, agent: string): Promise<Ag
   if (!r.ok) throw new Error(await r.text())
   return r.json()
 }
+
+// File browser API
+import { FileTreeResponse, FileContentResponse, GitStatusResponse } from './types/filebrowser'
+
+export async function fetchFileTree(repo: string, path?: string): Promise<FileTreeResponse> {
+  const params = new URLSearchParams({ repo })
+  if (path !== undefined) params.set('path', path)
+  const r = await fetch(`/api/files/tree?${params}`)
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
+  return r.json() as Promise<FileTreeResponse>
+}
+
+export async function fetchFileContent(repo: string, path: string): Promise<FileContentResponse> {
+  const params = new URLSearchParams({ repo, path })
+  const r = await fetch(`/api/files/read?${params}`)
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
+  return r.json() as Promise<FileContentResponse>
+}
+
+export async function fetchFileDiffForBrowser(repo: string, path: string): Promise<{ repo: string; path: string; diff: string }> {
+  const params = new URLSearchParams({ repo, path })
+  const r = await fetch(`/api/files/diff?${params}`)
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
+  return r.json() as Promise<{ repo: string; path: string; diff: string }>
+}
+
+export async function fetchGitStatus(repo: string): Promise<GitStatusResponse> {
+  const params = new URLSearchParams({ repo })
+  const r = await fetch(`/api/files/status?${params}`)
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
+  return r.json() as Promise<GitStatusResponse>
+}
