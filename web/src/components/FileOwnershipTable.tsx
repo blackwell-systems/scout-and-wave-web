@@ -1,4 +1,5 @@
 import { FileOwnershipEntry } from '../types'
+import React from 'react'
 import {
   Table,
   TableBody,
@@ -14,6 +15,7 @@ interface FileOwnershipTableProps {
   fileOwnership: FileOwnershipEntry[]
   col4Name?: string
   onFileClick?: (file: string, agent: string, wave: number) => void
+  renderViewButton?: (entry: FileOwnershipEntry) => React.ReactNode
 }
 
 // Wave-level colors (border wrapper + badge) - middle hierarchy
@@ -43,7 +45,7 @@ function getRepoColor(repoIndex: number) {
   return REPO_COLORS[repoIndex % REPO_COLORS.length]
 }
 
-export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileClick: _onFileClick }: FileOwnershipTableProps): JSX.Element {
+export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileClick: _onFileClick, renderViewButton }: FileOwnershipTableProps): JSX.Element {
   // Build agent color map (excluding Scaffold which gets grey)
   const agents = Array.from(new Set(fileOwnership.map(e => e.agent))).sort()
   const nonScaffoldAgents = agents.filter(a => a.toLowerCase() !== 'scaffold')
@@ -184,7 +186,12 @@ export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileC
                                   color: agentColor,
                                 }}
                               >
-                                <TableCell className="font-mono text-xs">{entry.file}</TableCell>
+                                <TableCell className="font-mono text-xs">
+                                  <span className="inline-flex items-center gap-0.5">
+                                    {entry.file}
+                                    {renderViewButton ? renderViewButton(entry) : null}
+                                  </span>
+                                </TableCell>
                                 <TableCell className="font-medium">{entry.agent}</TableCell>
                                 {hasWaves && (
                                   <TableCell>
