@@ -313,10 +313,6 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
                   <div className="panel-animate"><ContextViewerPanel /></div>
                 )}
 
-                {/* Validation — full width */}
-                {activePanels.includes('validation') && (
-                  <div className="panel-animate"><ManifestValidation slug={slug} /></div>
-                )}
               </div>
             </div>
           </>
@@ -430,6 +426,14 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto">
           <div className="w-full max-w-6xl mt-8">
             <WorktreePanel slug={slug} onClose={() => togglePanel('worktrees')} onWorktreeDeleted={refreshWorktreeCount} />
+          </div>
+        </div>
+      )}
+
+      {activePanels.includes('validation') && (
+        <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto">
+          <div className="w-full max-w-2xl mt-8">
+            <ManifestValidation slug={slug} />
           </div>
         </div>
       )}
