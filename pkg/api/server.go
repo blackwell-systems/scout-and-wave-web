@@ -32,6 +32,7 @@ type Server struct {
 	progressTracker  *ProgressTracker // tracks per-agent progress
 	commitCounts     sync.Map        // "slug/wave/agent" -> int; tracks git commit counts per agent
 	filesOwnedCache  sync.Map        // "slug/wave/agent" -> []string; caches files owned per agent
+	agentSnapshots   sync.Map        // slug -> *agentSnapshot; latest agent lifecycle event per agent for SSE replay
 }
 
 // New creates a Server with the given Config and registers all routes.

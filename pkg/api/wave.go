@@ -7,6 +7,72 @@ import (
 	"sync"
 )
 
+// agentSnapshot holds the latest lifecycle SSE event per agent for a given slug.
+// Used to replay current agent state to late-connecting SSE clients.
+type agentSnapshot struct {
+	mu     sync.RWMutex
+	events map[string]SSEEvent // "wave:agent" -> latest event (agent_started/complete/failed)
+}
+
+// cacheAgentEvent records the latest lifecycle event for an agent under slug.
+// The cache key is "wave:agent" extracted from the event data.
+func (s *Server) cacheAgentEvent(slug string, ev SSEEvent) {
+	key := extractAgentKey(ev)
+	if key == "" {
+		return
+	}
+	v, _ := s.agentSnapshots.LoadOrStore(slug, &agentSnapshot{
+		events: make(map[string]SSEEvent),
+	})
+	snap := v.(*agentSnapshot)
+	snap.mu.Lock()
+	snap.events[key] = ev
+	snap.mu.Unlock()
+}
+
+// clearAgentSnapshot resets the snapshot for slug (called when a new run starts).
+func (s *Server) clearAgentSnapshot(slug string) {
+	s.agentSnapshots.Store(slug, &agentSnapshot{events: make(map[string]SSEEvent)})
+}
+
+// snapshotAgentEvents returns a copy of all cached agent events for slug.
+func (s *Server) snapshotAgentEvents(slug string) []SSEEvent {
+	v, ok := s.agentSnapshots.Load(slug)
+	if !ok {
+		return nil
+	}
+	snap := v.(*agentSnapshot)
+	snap.mu.RLock()
+	defer snap.mu.RUnlock()
+	result := make([]SSEEvent, 0, len(snap.events))
+	for _, ev := range snap.events {
+		result = append(result, ev)
+	}
+	return result
+}
+
+// extractAgentKey extracts a "wave:agent" cache key from an SSE event's data.
+// Uses a JSON round-trip to handle both struct and map data types.
+func extractAgentKey(ev SSEEvent) string {
+	b, err := json.Marshal(ev.Data)
+	if err != nil {
+		return ""
+	}
+	var m map[string]interface{}
+	if err := json.Unmarshal(b, &m); err != nil {
+		return ""
+	}
+	agent, ok := m["agent"].(string)
+	if !ok || agent == "" {
+		return ""
+	}
+	wave, ok := m["wave"]
+	if !ok {
+		return ""
+	}
+	return fmt.Sprintf("%v:%s", wave, agent)
+}
+
 // sseBroker manages SSE subscriptions per IMPL slug.
 // Goroutine-safe via mu.
 type sseBroker struct {
@@ -71,6 +137,19 @@ func (s *Server) handleWaveEvents(w http.ResponseWriter, r *http.Request) {
 
 	ch := s.broker.subscribe(slug)
 	defer s.broker.unsubscribe(slug, ch)
+
+	// Replay cached agent lifecycle events so late-connecting clients (e.g. page
+	// reload mid-execution) immediately see current agent states. Events are
+	// written directly to the wire before entering the live event loop to
+	// guarantee snapshot-before-stream ordering.
+	for _, ev := range s.snapshotAgentEvents(slug) {
+		data, err := json.Marshal(ev.Data)
+		if err != nil {
+			continue
+		}
+		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Event, data)
+	}
+	flusher.Flush()
 
 	for {
 		select {
