@@ -82,6 +82,9 @@ func (s *Server) handleWaveEvents(w http.ResponseWriter, r *http.Request) {
 			}
 			fmt.Fprintf(w, "event: %s\ndata: %s\n\n", ev.Event, data)
 			flusher.Flush()
+			if ev.Event == "agent_tool_call" {
+				s.ParseAndEmitProgress(ev, slug)
+			}
 		case <-r.Context().Done():
 			return
 		}

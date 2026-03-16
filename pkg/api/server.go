@@ -18,17 +18,20 @@ type Config struct {
 
 // Server is the HTTP server for the saw web UI.
 type Server struct {
-	cfg           Config
-	mux           *http.ServeMux
-	broker        *sseBroker    // unexported; used by wave.go handlers
-	globalBroker  *globalBroker // fans out global SSE events (impl_list_updated, etc.)
-	activeRuns    sync.Map      // slug -> struct{}; tracks in-progress wave runs
-	scoutRuns     sync.Map      // runID -> context.CancelFunc; tracks in-progress scout runs
-	reviseCancels sync.Map      // runID -> context.CancelFunc; tracks in-progress revise runs
-	mergingRuns   sync.Map      // slug -> struct{}; tracks in-progress merge operations
-	testingRuns   sync.Map      // slug -> struct{}; tracks in-progress test runs
-	scaffoldRuns  sync.Map      // runID -> context.CancelFunc; tracks in-progress scaffold reruns
-	stages        *stageManager // per-slug stage state persistence
+	cfg              Config
+	mux              *http.ServeMux
+	broker           *sseBroker      // unexported; used by wave.go handlers
+	globalBroker     *globalBroker   // fans out global SSE events (impl_list_updated, etc.)
+	activeRuns       sync.Map        // slug -> struct{}; tracks in-progress wave runs
+	scoutRuns        sync.Map        // runID -> context.CancelFunc; tracks in-progress scout runs
+	reviseCancels    sync.Map        // runID -> context.CancelFunc; tracks in-progress revise runs
+	mergingRuns      sync.Map        // slug -> struct{}; tracks in-progress merge operations
+	testingRuns      sync.Map        // slug -> struct{}; tracks in-progress test runs
+	scaffoldRuns     sync.Map        // runID -> context.CancelFunc; tracks in-progress scaffold reruns
+	stages           *stageManager   // per-slug stage state persistence
+	progressTracker  *ProgressTracker // tracks per-agent progress
+	commitCounts     sync.Map        // "slug/wave/agent" -> int; tracks git commit counts per agent
+	filesOwnedCache  sync.Map        // "slug/wave/agent" -> []string; caches files owned per agent
 }
 
 // New creates a Server with the given Config and registers all routes.
@@ -39,8 +42,9 @@ func New(cfg Config) *Server {
 		broker: &sseBroker{
 			clients: make(map[string][]chan SSEEvent),
 		},
-		globalBroker: newGlobalBroker(),
-		stages:       newStageManager(cfg.IMPLDir),
+		globalBroker:    newGlobalBroker(),
+		stages:          newStageManager(cfg.IMPLDir),
+		progressTracker: NewProgressTracker(),
 	}
 
 	// Watch the IMPL directory for new/changed docs so connected clients
