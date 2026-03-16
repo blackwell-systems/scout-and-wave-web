@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { IMPLDocResponse } from '../types'
 import { listWorktrees, batchDeleteWorktrees } from '../api'
+import { useExecutionSync } from '../hooks/useExecutionSync'
 import ActionButtons from './ActionButtons'
 import RevisePanel from './RevisePanel'
 import OverviewPanel from './review/OverviewPanel'
@@ -57,6 +58,8 @@ const panels: Array<{ key: PanelKey; label: string }> = [
 export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
   const { slug, impl, onApprove, onReject, onRefreshImpl, repos, chatModel = 'claude-sonnet-4-6' } = props
   const isNotSuitable = impl.suitability.verdict === 'NOT SUITABLE'
+
+  const executionState = useExecutionSync(slug)
 
   // Extract involved repos from file ownership (filter out "system" placeholder)
   const involvedRepos = Array.from(new Set(
@@ -261,8 +264,8 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
                       ? 'grid-cols-1 md:grid-cols-2'
                       : 'grid-cols-1'
                   }`}>
-                    {activePanels.includes('wave-structure') && <WaveStructurePanel impl={impl} />}
-                    {activePanels.includes('dependency-graph') && <DependencyGraphPanel dependencyGraphText={(impl as any).dependency_graph_text} />}
+                    {activePanels.includes('wave-structure') && <WaveStructurePanel impl={impl} {...(executionState.isLive ? { executionState } : {})} />}
+                    {activePanels.includes('dependency-graph') && <DependencyGraphPanel dependencyGraphText={(impl as any).dependency_graph_text} {...(executionState.isLive ? { executionState } : {})} />}
                   </div>
                 )}
 

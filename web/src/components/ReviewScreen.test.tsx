@@ -88,8 +88,10 @@ describe('ReviewScreen', () => {
         onReject={() => {}}
       />
     )
-    expect(MockEventSource.instances).toHaveLength(1)
-    expect(MockEventSource.instances[0].url).toBe('/api/wave/my-slug/events')
+    // ReviewScreen creates two SSE connections: one via useExecutionSync (useWaveEvents)
+    // and one in its own useEffect for wave_complete → onRefreshImpl wiring.
+    expect(MockEventSource.instances.length).toBeGreaterThanOrEqual(1)
+    expect(MockEventSource.instances.every(es => es.url === '/api/wave/my-slug/events')).toBe(true)
   })
 
   it('calls onRefreshImpl on wave_complete event', async () => {
@@ -105,9 +107,12 @@ describe('ReviewScreen', () => {
       />
     )
 
-    const es = MockEventSource.instances[0]
+    // Dispatch wave_complete on all SSE instances — the ReviewScreen useEffect
+    // listener will pick it up and call onRefreshImpl.
     await act(async () => {
-      es.dispatchEvent('wave_complete', { wave: 1, merge_status: 'ok' })
+      for (const es of MockEventSource.instances) {
+        es.dispatchEvent('wave_complete', { wave: 1, merge_status: 'ok' })
+      }
     })
 
     expect(onRefreshImpl).toHaveBeenCalledTimes(1)
@@ -124,12 +129,11 @@ describe('ReviewScreen', () => {
       />
     )
 
-    const es = MockEventSource.instances[0]
-    expect(es.closeCalled).toBe(false)
+    expect(MockEventSource.instances.every(es => !es.closeCalled)).toBe(true)
 
     unmount()
 
-    expect(es.closeCalled).toBe(true)
+    expect(MockEventSource.instances.every(es => es.closeCalled)).toBe(true)
   })
 
   it('does not crash when onRefreshImpl is not provided', async () => {
@@ -142,12 +146,12 @@ describe('ReviewScreen', () => {
       />
     )
 
-    const es = MockEventSource.instances[0]
-
     // Should not throw even though onRefreshImpl is undefined
     await expect(
       act(async () => {
-        es.dispatchEvent('wave_complete', { wave: 1, merge_status: 'ok' })
+        for (const es of MockEventSource.instances) {
+          es.dispatchEvent('wave_complete', { wave: 1, merge_status: 'ok' })
+        }
       })
     ).resolves.not.toThrow()
   })
