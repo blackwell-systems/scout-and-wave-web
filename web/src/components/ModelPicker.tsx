@@ -27,18 +27,22 @@ const MODEL_SUGGESTIONS: Record<string, string[]> = {
 }
 
 /** Shared dropdown used for both provider and model selection. */
-function Dropdown({ trigger, children, open, onToggle }: {
+function Dropdown({ trigger, children, open, onToggle, keepOpenOnSelect = false }: {
   trigger: React.ReactNode
   children: React.ReactNode
   open: boolean
   onToggle: (open: boolean) => void
+  keepOpenOnSelect?: boolean
 }) {
   const ref = useRef<HTMLDivElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!open) return
     function handleClick(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onToggle(false)
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        onToggle(false)
+      }
     }
     document.addEventListener('mousedown', handleClick)
     return () => document.removeEventListener('mousedown', handleClick)
@@ -55,7 +59,11 @@ function Dropdown({ trigger, children, open, onToggle }: {
         <ChevronDown size={12} className="ml-auto text-muted-foreground shrink-0" />
       </button>
       {open && (
-        <div className="absolute top-[calc(100%+4px)] left-0 z-50 min-w-full w-max max-h-[280px] overflow-y-auto rounded-lg border border-border bg-popover shadow-2xl py-1 animate-in fade-in slide-in-from-top-1 duration-150">
+        <div
+          ref={contentRef}
+          onClick={(e) => { if (keepOpenOnSelect) e.stopPropagation() }}
+          className="absolute top-[calc(100%+4px)] left-0 z-50 min-w-full w-max max-h-[280px] overflow-y-auto rounded-lg border border-border bg-popover shadow-2xl py-1 animate-in fade-in slide-in-from-top-1 duration-150"
+        >
           {children}
         </div>
       )}
@@ -138,7 +146,7 @@ export default function ModelPicker({ value, onChange, label, id }: ModelPickerP
               <ProviderIcon size={15} className={`shrink-0 ${currentProvider?.color ?? ''}`} />
               <span className="truncate">{currentProvider?.label ?? selectedProvider}</span>
             </>
-          } open={providerOpen} onToggle={setProviderOpen}>
+          } open={providerOpen} onToggle={setProviderOpen} keepOpenOnSelect={true}>
             {PROVIDERS.map(p => {
               const Icon = p.icon
               return (
