@@ -222,7 +222,7 @@ export interface RepoEntry {
 export interface SAWConfig {
   repos: RepoEntry[]                             // NEW: named repo registry
   repo: { path: string }                         // KEPT for backward compat read
-  agent: { scout_model: string; wave_model: string; chat_model?: string }
+  agent: { scout_model: string; wave_model: string; chat_model?: string; scaffold_model?: string }
   quality: { require_tests: boolean; require_lint: boolean; block_on_failure: boolean }
   appearance: { theme: 'system' | 'light' | 'dark'; color_theme?: string; favorite_themes_dark?: string[]; favorite_themes_light?: string[] }
 }

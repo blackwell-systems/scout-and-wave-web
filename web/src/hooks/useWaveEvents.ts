@@ -33,7 +33,7 @@ export interface StaleBranchesInfo {
 
 export interface AppWaveState {
   agents: AgentStatus[]
-  scaffoldStatus: 'idle' | 'running' | 'complete'
+  scaffoldStatus: 'idle' | 'running' | 'complete' | 'failed'
   runComplete: boolean
   runStatus?: string
   runFailed?: string

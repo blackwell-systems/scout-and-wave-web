@@ -29,10 +29,11 @@ export default function App() {
   const activeRepo: RepoEntry | null = repos[activeRepoIndex] ?? null
 
   const [scoutModel, setScoutModel] = useState<string>('claude-sonnet-4-6')
+  const [scaffoldModel, setScaffoldModel] = useState<string>('claude-sonnet-4-6')
   const [waveModel, setWaveModel] = useState<string>('claude-sonnet-4-6')
   const [chatModel, setChatModel] = useState<string>('claude-sonnet-4-6')
 
-  const [pickerOpen, setPickerOpen] = useState<'scout' | 'wave' | 'chat' | 'all' | null>(null)
+  const [pickerOpen, setPickerOpen] = useState<'scout' | 'scaffold' | 'wave' | 'chat' | 'all' | null>(null)
 
   const [sseConnected, setSseConnected] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
@@ -84,6 +85,7 @@ export default function App() {
         setRepos([{ name: 'repo', path: config.repo.path }])
       }
       setScoutModel(config.agent?.scout_model || 'claude-sonnet-4-6')
+      setScaffoldModel(config.agent?.scaffold_model || 'claude-sonnet-4-6')
       setWaveModel(config.agent?.wave_model || 'claude-sonnet-4-6')
       setChatModel(config.agent?.chat_model || 'claude-sonnet-4-6')
     }).catch(() => {})
@@ -185,7 +187,7 @@ export default function App() {
     }
   }
 
-  async function saveModel(field: 'scout' | 'wave' | 'chat' | 'all', value: string) {
+  async function saveModel(field: 'scout' | 'scaffold' | 'wave' | 'chat' | 'all', value: string) {
     try {
       const cfg = await getConfig()
       const updated = {
@@ -193,16 +195,18 @@ export default function App() {
         agent: {
           ...cfg.agent,
           ...(field === 'scout' && { scout_model: value }),
+          ...(field === 'scaffold' && { scaffold_model: value }),
           ...(field === 'wave' && { wave_model: value }),
           ...(field === 'chat' && { chat_model: value }),
-          ...(field === 'all' && { scout_model: value, wave_model: value, chat_model: value }),
+          ...(field === 'all' && { scout_model: value, scaffold_model: value, wave_model: value, chat_model: value }),
         }
       }
       await saveConfig(updated)
       if (field === 'scout') setScoutModel(value)
+      if (field === 'scaffold') setScaffoldModel(value)
       if (field === 'wave') setWaveModel(value)
       if (field === 'chat') setChatModel(value)
-      if (field === 'all') { setScoutModel(value); setWaveModel(value); setChatModel(value) }
+      if (field === 'all') { setScoutModel(value); setScaffoldModel(value); setWaveModel(value); setChatModel(value) }
     } catch { /* ignore */ }
   }
 
@@ -259,8 +263,8 @@ export default function App() {
           </button>
         </div>
         <div className="flex items-stretch">
-          {(['scout', 'wave', 'chat'] as const).map(field => {
-            const model = field === 'scout' ? scoutModel : field === 'wave' ? waveModel : chatModel
+          {(['scout', 'scaffold', 'wave', 'chat'] as const).map(field => {
+            const model = field === 'scout' ? scoutModel : field === 'scaffold' ? scaffoldModel : field === 'wave' ? waveModel : chatModel
             const label = field.charAt(0).toUpperCase() + field.slice(1)
             return (
               <div key={field} className="relative flex items-stretch border-r border-border">
@@ -416,6 +420,7 @@ export default function App() {
             setShowSettings(false)
             getConfig().then(config => {
               setScoutModel(config.agent?.scout_model ?? '')
+              setScaffoldModel(config.agent?.scaffold_model ?? '')
               setWaveModel(config.agent?.wave_model ?? '')
               setChatModel(config.agent?.chat_model ?? '')
             }).catch(() => {})
