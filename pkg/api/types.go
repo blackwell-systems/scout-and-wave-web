@@ -210,10 +210,11 @@ type SAWConfig struct {
 }
 
 type AgentConfig struct {
-	ScoutModel    string `json:"scout_model"`
-	WaveModel     string `json:"wave_model"`
-	ChatModel     string `json:"chat_model"`
-	ScaffoldModel string `json:"scaffold_model"`
+	ScoutModel       string `json:"scout_model"`
+	WaveModel        string `json:"wave_model"`
+	ChatModel        string `json:"chat_model"`
+	ScaffoldModel    string `json:"scaffold_model"`
+	IntegrationModel string `json:"integration_model"`
 }
 
 type QualityConfig struct {

@@ -91,6 +91,10 @@ func (s *Server) handleSaveConfig(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid chat_model: "+err.Error(), http.StatusBadRequest)
 		return
 	}
+	if err := validateModelName(cfg.Agent.IntegrationModel); err != nil {
+		http.Error(w, "invalid integration_model: "+err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	cfg.Repo = RepoConfig{} // ensure legacy field is never written back
 

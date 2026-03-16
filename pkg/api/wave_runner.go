@@ -98,15 +98,18 @@ func runWaveLoop(
 	// for cross-repo IMPLs that don't have their own saw.config.json.
 	waveModel := ""
 	scaffoldModel := ""
+	integrationModel := ""
 	if cfgData, err := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); err == nil {
 		var sawCfg SAWConfig
 		if json.Unmarshal(cfgData, &sawCfg) == nil {
 			waveModel = sawCfg.Agent.WaveModel
 			scaffoldModel = sawCfg.Agent.ScaffoldModel
+			integrationModel = sawCfg.Agent.IntegrationModel
 		}
 	} else if fallbackSAWConfig != nil {
 		waveModel = fallbackSAWConfig.Agent.WaveModel
 		scaffoldModel = fallbackSAWConfig.Agent.ScaffoldModel
+		integrationModel = fallbackSAWConfig.Agent.IntegrationModel
 	}
 
 	// Load the YAML manifest to get wave structure.
@@ -172,10 +175,11 @@ func runWaveLoop(
 		waveNum := wave.Number
 
 		opts := engine.RunWaveOpts{
-			IMPLPath:  implPath,
-			RepoPath:  repoPath,
-			Slug:      slug,
-			WaveModel: waveModel,
+			IMPLPath:         implPath,
+			RepoPath:         repoPath,
+			Slug:             slug,
+			WaveModel:        waveModel,
+			IntegrationModel: integrationModel,
 		}
 
 		enginePublisher := func(ev engine.Event) {
@@ -354,20 +358,23 @@ func (s *Server) handleWaveAgentRerun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read wave model from saw.config.json if present.
+	// Read wave model and integration model from saw.config.json if present.
 	waveModel := ""
+	integrationModel := ""
 	if cfgData, err := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); err == nil {
 		var sawCfg SAWConfig
 		if json.Unmarshal(cfgData, &sawCfg) == nil {
 			waveModel = sawCfg.Agent.WaveModel
+			integrationModel = sawCfg.Agent.IntegrationModel
 		}
 	}
 
 	opts := engine.RunWaveOpts{
-		IMPLPath:  implPath,
-		RepoPath:  repoPath,
-		Slug:      slug,
-		WaveModel: waveModel,
+		IMPLPath:         implPath,
+		RepoPath:         repoPath,
+		Slug:             slug,
+		WaveModel:        waveModel,
+		IntegrationModel: integrationModel,
 	}
 	enginePublisher := s.makeEnginePublisher(slug)
 
