@@ -2,7 +2,10 @@ module github.com/blackwell-systems/scout-and-wave-web
 
 go 1.25.0
 
-require github.com/fsnotify/fsnotify v1.9.0
+require (
+	github.com/fsnotify/fsnotify v1.9.0
+	gopkg.in/yaml.v3 v3.0.1
+)
 
 require (
 	github.com/anthropics/anthropic-sdk-go v1.26.0 // indirect
@@ -29,11 +32,10 @@ require (
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	golang.org/x/sync v0.16.0 // indirect
 	golang.org/x/sys v0.34.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )
 
 require (
-	github.com/blackwell-systems/scout-and-wave-go v0.1.1
+	github.com/blackwell-systems/scout-and-wave-go v0.0.0-20260316001616-c2dd50be925c
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
