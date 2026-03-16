@@ -34,4 +34,6 @@ Thumbs.db
 # SAW artifacts
 .claude/
 .claire/
+.saw-state/
 web/dist/
+node_modules/
