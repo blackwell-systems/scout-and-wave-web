@@ -27,6 +27,16 @@ export default function ManifestValidation({ slug, onClose }: ManifestValidation
     handleValidate()
   }, [slug])
 
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && onClose) {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [onClose])
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">

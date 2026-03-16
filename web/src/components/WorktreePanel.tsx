@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { Button } from './ui/button'
 import { Badge } from './ui/badge'
@@ -30,6 +30,16 @@ export default function WorktreePanel({ slug, onClose, onWorktreeDeleted }: { sl
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [confirmUnmerged, setConfirmUnmerged] = useState(false)
   const [deleting, setDeleting] = useState(false)
+
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && onClose) {
+        onClose()
+      }
+    }
+    window.addEventListener('keydown', handleEscape)
+    return () => window.removeEventListener('keydown', handleEscape)
+  }, [onClose])
 
   const allSelected =
     worktrees.length > 0 && worktrees.every((w) => selected.has(w.branch))
