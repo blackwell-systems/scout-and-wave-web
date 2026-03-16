@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sync"
 	"time"
@@ -172,13 +173,24 @@ func runWaveLoop(
 			publish(ev.Event, ev.Data)
 		}
 
-		onStage(StageWaveExecute, StageStatusRunning, waveNum, "")
-		if err := engine.RunSingleWave(ctx, opts, waveNum, enginePublisher); err != nil {
-			onStage(StageWaveExecute, StageStatusFailed, waveNum, err.Error())
-			publish("run_failed", map[string]string{"error": err.Error()})
-			return
+		// If all agents in this wave already have commits on their branches
+		// (e.g. agents ran in a previous server session but merge was not reached),
+		// skip re-launching them and go straight to FinalizeWave.
+		if waveAgentsHaveCommits(repoPath, waveNum, wave.Agents) {
+			publish("wave_resumed", map[string]interface{}{
+				"wave":   waveNum,
+				"reason": "agent branches already have commits from previous session; skipping to merge",
+			})
+			onStage(StageWaveExecute, StageStatusComplete, waveNum, "")
+		} else {
+			onStage(StageWaveExecute, StageStatusRunning, waveNum, "")
+			if err := engine.RunSingleWave(ctx, opts, waveNum, enginePublisher); err != nil {
+				onStage(StageWaveExecute, StageStatusFailed, waveNum, err.Error())
+				publish("run_failed", map[string]string{"error": err.Error()})
+				return
+			}
+			onStage(StageWaveExecute, StageStatusComplete, waveNum, "")
 		}
-		onStage(StageWaveExecute, StageStatusComplete, waveNum, "")
 
 		// FinalizeWave: verify commits (I5), scan stubs (E20), run gates (E21),
 		// merge agents, verify build, and cleanup — matching CLI finalize-wave pipeline.
@@ -437,4 +449,33 @@ func (s *Server) makeStageCallback(slug string, publish func(string, interface{}
 			"message":  msg,
 		})
 	}
+}
+
+// waveAgentsHaveCommits returns true when every agent in the wave already has
+// a branch with at least one commit ahead of HEAD in repoPath. This indicates
+// that the agents ran in a previous server session and only the merge step
+// remains — the wave execution step can be safely skipped.
+func waveAgentsHaveCommits(repoPath string, waveNum int, agents []protocol.Agent) bool {
+	if len(agents) == 0 {
+		return false
+	}
+	for _, agent := range agents {
+		branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
+		// Check that the branch ref exists
+		refCheck := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", branch)
+		if refCheck.Run() != nil {
+			return false // branch doesn't exist
+		}
+		// Check that the branch has at least one commit ahead of HEAD
+		countOut, err := exec.Command("git", "-C", repoPath, "rev-list", "--count", "HEAD.."+branch).Output()
+		if err != nil {
+			return false
+		}
+		count := 0
+		fmt.Sscanf(string(countOut), "%d", &count)
+		if count == 0 {
+			return false // branch exists but no new commits
+		}
+	}
+	return true
 }
