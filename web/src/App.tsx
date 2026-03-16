@@ -282,7 +282,7 @@ export default function App() {
                       className="fixed inset-0 z-40"
                       onClick={() => setPickerOpen(null)}
                     />
-                    <div className="absolute top-full left-0 mt-2 z-50 bg-popover/95 backdrop-blur-xl border border-border rounded-lg shadow-2xl p-4 w-[480px] animate-in fade-in slide-in-from-top-2 duration-200">
+                    <div className="absolute top-full left-0 mt-2 z-50 bg-popover border border-border rounded-lg shadow-2xl p-4 w-[480px] animate-in fade-in slide-in-from-top-2 duration-200">
                       <ModelPicker
                         id={`header-${field}-model`}
                         label={`${label} Model`}

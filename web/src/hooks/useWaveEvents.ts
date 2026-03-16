@@ -34,6 +34,7 @@ export interface StaleBranchesInfo {
 export interface AppWaveState {
   agents: AgentStatus[]
   scaffoldStatus: 'idle' | 'running' | 'complete' | 'failed'
+  scaffoldOutput: string
   runComplete: boolean
   runStatus?: string
   runFailed?: string
@@ -55,6 +56,7 @@ export function useWaveEvents(slug: string): AppWaveState {
   const [state, setState] = useState<AppWaveState>({
     agents: [],
     scaffoldStatus: 'idle',
+    scaffoldOutput: '',
     runComplete: false,
     connected: false,
     waves: [],
@@ -117,7 +119,12 @@ export function useWaveEvents(slug: string): AppWaveState {
     }
 
     es.addEventListener('scaffold_started', () => {
-      setState(prev => ({ ...prev, scaffoldStatus: 'running' }))
+      setState(prev => ({ ...prev, scaffoldStatus: 'running', scaffoldOutput: '' }))
+    })
+
+    es.addEventListener('scaffold_output', (event: MessageEvent) => {
+      const data = JSON.parse(event.data) as { chunk: string }
+      setState(prev => ({ ...prev, scaffoldOutput: prev.scaffoldOutput + data.chunk }))
     })
 
     es.addEventListener('scaffold_complete', () => {

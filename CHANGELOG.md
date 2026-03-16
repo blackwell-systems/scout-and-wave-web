@@ -2,10 +2,40 @@
 
 All notable changes to this project will be documented in this file.
 
+| [0.59.0] | 2026-03-15 | Scaffold streaming output, unified model dropdowns, scaffold model picker in top bar |
+| [0.58.0] | 2026-03-15 | Provider-aware backend routing for scaffold/scout agents, scaffold_model config support |
 | [0.57.0] | 2026-03-14 | File browser fixes — JSON field name mismatch (tree not rendering), full-height viewer, .claire worktree handling, skip .claude/.claire in tree |
 | [0.56.0] | 2026-03-14 | File browser (waves 1-2) — 4 backend API endpoints + 7 frontend components for in-app codebase exploration with syntax highlighting |
 | [0.55.0] | 2026-03-14 | UI improvements — Fixed stale IMPL list, added collapsible repo sections, improved repo context visibility |
 | [0.54.0] | 2026-03-14 | Scout automation integration — 5 automation command wrappers added to web CLI (analyze-deps, analyze-suitability, detect-cascades, detect-scaffolds, extract-commands) |
+
+---
+
+## [0.59.0] - 2026-03-15
+
+### Added
+
+- **Scaffold streaming output** — WaveBoard now shows live scaffold agent output in the same expandable terminal view as wave agents. Listens for `scaffold_output` SSE events (backend was already publishing them).
+- **Unified model dropdowns** — Provider and model selectors in the top bar now use the same custom dropdown component instead of mixing native `<select>` (provider) and `<datalist>` (model). Model dropdown includes a search/custom input at the top.
+- **Scaffold model picker** — Added 4th model picker to the top bar (Scout → Scaffold → Wave → Chat). Reads/writes `scaffold_model` in `saw.config.json`.
+
+### Fixed
+
+- **Dropdown transparency** — Model picker dropdowns now use solid `bg-popover` instead of transparent `bg-popover/95 backdrop-blur-xl`.
+- **scaffoldStatus type** — Added `'failed'` to the TypeScript union type for `scaffoldStatus` (was missing, causing TS build error).
+
+---
+
+## [0.58.0] - 2026-03-15
+
+### Fixed
+
+- **Scaffold agent model routing** — `RunScaffold` and `RunScout` now use `orchestrator.NewBackendFromModel()` instead of hardcoding `cli.New()`. This correctly routes `bedrock:`, `openai:`, and other provider-prefixed model strings to the appropriate backend. Previously, `bedrock:claude-sonnet-4-6` was passed as `--model` to the claude CLI, which doesn't understand provider prefixes.
+- **cli.New argument order** — Fixed `cli.New(model, backend.Config{})` → `cli.New("", backend.Config{Model: model})`. The first arg is the binary path, not the model string.
+
+### Added
+
+- **`scaffold_model` config field** — `SAWConfig.agent` now includes `scaffold_model` for independent scaffold agent model configuration.
 
 ---
 

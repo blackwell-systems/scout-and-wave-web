@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useWaveEvents } from '../hooks/useWaveEvents'
 import type { AppWaveState } from '../hooks/useWaveEvents'
 import { WaveMergeState, WaveTestState } from '../hooks/useWaveEvents'
@@ -45,6 +45,61 @@ function dominantRepo(files: string[], repos: RepoEntry[]): string {
 // Key for the optimistic agent status override map
 function agentKey(agent: string, wave: number): string {
   return `${wave}:${agent}`
+}
+
+/** Scaffold card — matches AgentCard styling with streaming output. */
+function ScaffoldCard({ status, output, error }: { status: string; output: string; error?: string }) {
+  const preRef = useRef<HTMLPreElement>(null)
+  const [expanded, setExpanded] = useState(false)
+
+  useEffect(() => {
+    if (!expanded && preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight
+  }, [output, expanded])
+
+  const borderStyle = status === 'complete'
+    ? { borderColor: 'rgb(63, 185, 80)', boxShadow: '0 0 10px rgba(63, 185, 80, 0.3)' }
+    : status === 'failed'
+    ? { borderColor: 'rgb(248, 81, 73)', boxShadow: '0 0 12px rgba(248, 81, 73, 0.5)' }
+    : { borderColor: 'rgb(88, 166, 255)', boxShadow: '0 0 12px rgba(88, 166, 255, 0.4)' }
+
+  return (
+    <div className="flex flex-col w-full overflow-hidden transition-all duration-200" style={{ borderRadius: '12px', border: '3px solid', ...borderStyle }}>
+      <div className="flex items-center justify-between p-3 bg-black/20 dark:bg-white/5 border-b border-white/10">
+        <div className="flex items-center gap-2">
+          <div className="flex items-center justify-center w-8 h-8 rounded-lg font-bold text-sm" style={{ backgroundColor: '#6b728020', color: '#6b7280', border: '2px solid #6b728050' }}>
+            Sc
+          </div>
+          <div className="text-xs font-medium text-white/90">
+            {status === 'complete' ? 'Complete' : status === 'failed' ? 'Failed' : 'Running'}
+          </div>
+        </div>
+        {status === 'running' && (
+          <div className="flex items-center gap-1">
+            <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+            <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" style={{ animationDelay: '0.2s' }} />
+            <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" style={{ animationDelay: '0.4s' }} />
+          </div>
+        )}
+      </div>
+      {output.length > 0 && (
+        <div className="p-3">
+          {output.length > 200 && (
+            <button onClick={() => setExpanded(prev => !prev)} className="text-xs text-white/50 hover:text-white/80 cursor-pointer mb-1 block">
+              {expanded ? '▲ Show less' : '▼ Show more'}
+            </button>
+          )}
+          <pre ref={preRef} className={`text-xs font-mono text-white/70 bg-black/30 rounded p-2 overflow-y-auto whitespace-pre-wrap break-all ${expanded ? 'max-h-96' : 'max-h-32'}`}>
+            {output}
+          </pre>
+        </div>
+      )}
+      {status === 'failed' && error && (
+        <div className="p-3 pt-0">
+          <div className="text-xs text-red-400 bg-red-500/10 rounded p-2 break-words">{error}</div>
+        </div>
+      )}
+    </div>
+  )
 }
 
 export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoardProps): JSX.Element {
@@ -263,20 +318,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
         {/* Scaffold row */}
         {state.scaffoldStatus !== 'idle' && (
-          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm">
-            <div className="flex items-center gap-3">
-              <span className="font-semibold text-gray-700 dark:text-gray-300 text-sm">Scaffold</span>
-              <span
-                className={`text-xs font-medium px-2 py-0.5 rounded-full ${
-                  state.scaffoldStatus === 'complete'
-                    ? 'bg-green-100 text-green-700'
-                    : 'bg-blue-100 text-blue-700 animate-pulse'
-                }`}
-              >
-                {state.scaffoldStatus === 'complete' ? 'Complete' : 'Running'}
-              </span>
-            </div>
-          </div>
+          <ScaffoldCard status={state.scaffoldStatus} output={state.scaffoldOutput} error={state.error} />
         )}
 
         {/* Empty state — no waves loaded yet */}
