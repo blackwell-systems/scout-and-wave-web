@@ -389,7 +389,14 @@ func TestHandleListImpls_DocStatusLowercase(t *testing.T) {
 func TestHandleListImpls_DocStatusComplete(t *testing.T) {
 	s, dir := makeTestServer(t)
 	completeIMPL := minimalIMPL + "state: COMPLETE\n"
-	writeIMPLDoc(t, dir, "done-feature", completeIMPL)
+	// Write to the complete/ subdirectory — handleListImpls determines status by directory location
+	completeDir := filepath.Join(dir, "docs", "IMPL", "complete")
+	if err := os.MkdirAll(completeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(completeDir, "IMPL-done-feature.yaml"), []byte(completeIMPL), 0644); err != nil {
+		t.Fatal(err)
+	}
 
 	req := httptest.NewRequest(http.MethodGet, "/api/impl", nil)
 	rr := httptest.NewRecorder()
