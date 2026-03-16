@@ -264,3 +264,18 @@ type AgentToolCallPayload struct {
 	IsError    bool   `json:"is_error"`
 	DurationMs int64  `json:"duration_ms"`
 }
+
+// AgentProgressPayload is the Data payload for the "agent_progress" SSE event.
+type AgentProgressPayload struct {
+	Agent         string `json:"agent"`
+	Wave          int    `json:"wave"`
+	CurrentFile   string `json:"current_file"`
+	CurrentAction string `json:"current_action"`
+	PercentDone   int    `json:"percent_done"`
+}
+
+// WaveStatusResponse is the JSON body for GET /api/wave/{slug}/status.
+type WaveStatusResponse struct {
+	Slug   string           `json:"slug"`
+	Agents []*AgentProgress `json:"agents"`
+}
