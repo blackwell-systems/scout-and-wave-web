@@ -2,9 +2,11 @@ import { useState } from 'react'
 import { IMPLDocResponse } from '../../types'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { getAgentColor, getAgentColorWithOpacity } from '../../lib/agentColors'
+import { ExecutionSyncState } from '../../hooks/useExecutionSync'
 
 interface WaveStructurePanelProps {
   impl: IMPLDocResponse
+  executionState?: ExecutionSyncState
 }
 
 type NodeType = 'orchestrator' | 'wave' | 'scaffold' | 'merge' | 'complete'
@@ -16,6 +18,7 @@ interface TimelineNode {
   agents?: string[]
   agentCount?: number
   scaffoldFiles?: number
+  waveNum?: number
 }
 
 const JEWEL_CONFIGS: Record<NodeType, { size: number; colors: [string, string, string] }> = {
@@ -28,14 +31,19 @@ const JEWEL_CONFIGS: Record<NodeType, { size: number; colors: [string, string, s
 
 let jewelCounter = 0
 
-function Jewel({ type, filled }: { type: NodeType; filled: boolean }) {
+function Jewel({ type, filled, filling }: { type: NodeType; filled: boolean; filling?: boolean }) {
   const [uid] = useState(() => `jewel-${++jewelCounter}`)
   const config = JEWEL_CONFIGS[type]
   const { size, colors } = config
   const r = size / 2
 
   return (
-    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="flex-shrink-0">
+    <svg
+      width={size}
+      height={size}
+      viewBox={`0 0 ${size} ${size}`}
+      className={`flex-shrink-0${filling ? ' exec-jewel-filling' : ''}`}
+    >
       <defs>
         <radialGradient id={`${uid}-grad`} cx="35%" cy="35%" r="65%">
           <stop offset="0%" stopColor={colors[0]} stopOpacity={filled ? 1 : 0.6} />
@@ -70,9 +78,59 @@ function Jewel({ type, filled }: { type: NodeType; filled: boolean }) {
   )
 }
 
-export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): JSX.Element {
+function getAgentBoxStyle(
+  letter: string,
+  waveNum: number,
+  executionState: ExecutionSyncState | undefined
+): React.CSSProperties {
+  if (!executionState?.isLive) return {}
+  const exec = executionState.agents.get(`${waveNum}:${letter}`)
+  if (!exec) return {}
+  switch (exec.status) {
+    case 'running':
+      return {
+        borderColor: 'rgb(88, 166, 255)',
+        boxShadow: '0 0 12px rgba(88, 166, 255, 0.4)',
+      }
+    case 'complete':
+      return {
+        borderColor: 'rgb(63, 185, 80)',
+        boxShadow: '0 0 10px rgba(63, 185, 80, 0.3)',
+      }
+    case 'failed':
+      return {
+        borderColor: 'rgb(248, 81, 73)',
+        boxShadow: '0 0 12px rgba(248, 81, 73, 0.5)',
+      }
+    default:
+      return {}
+  }
+}
+
+function getAgentBoxClassName(
+  letter: string,
+  waveNum: number,
+  executionState: ExecutionSyncState | undefined
+): string {
+  if (!executionState?.isLive) return ''
+  const exec = executionState.agents.get(`${waveNum}:${letter}`)
+  if (!exec) return ''
+  switch (exec.status) {
+    case 'running':
+      return 'exec-node-running'
+    case 'complete':
+      return 'exec-node-complete'
+    case 'failed':
+      return 'exec-node-failed'
+    default:
+      return ''
+  }
+}
+
+export default function WaveStructurePanel({ impl, executionState }: WaveStructurePanelProps): JSX.Element {
   const sortedWaves = [...impl.waves].sort((a, b) => a.number - b.number)
   const isComplete = impl.doc_status === 'COMPLETE'
+  const isLive = executionState?.isLive ?? false
 
   // Build timeline nodes
   const nodes: TimelineNode[] = []
@@ -94,6 +152,7 @@ export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): J
       label: `Wave ${wave.number}`,
       agents,
       agentCount: agents.length,
+      waveNum: wave.number,
     })
     nodes.push({
       type: 'merge',
@@ -101,10 +160,49 @@ export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): J
       description: i < sortedWaves.length - 1
         ? `Merge ${wave.agents.length} branches, verify, gate Wave ${wave.number + 1}`
         : `Merge ${wave.agents.length} branches, final verification`,
+      waveNum: wave.number,
     })
   })
 
   nodes.push({ type: 'complete', label: 'Complete', description: 'All waves merged and verified' })
+
+  // Compute filled state per node
+  function isNodeFilled(node: TimelineNode): boolean {
+    if (!isLive) {
+      // Static mode: all filled when doc is complete
+      return isComplete
+    }
+
+    switch (node.type) {
+      case 'orchestrator':
+        // Scout always ran before execution started
+        return true
+
+      case 'scaffold':
+        return executionState?.scaffoldStatus === 'complete' || (!isLive && isComplete)
+
+      case 'wave': {
+        const waveNum = node.waveNum!
+        const progress = executionState?.waveProgress.get(waveNum)
+        if (!progress) return false
+        return progress.total > 0 && progress.complete === progress.total
+      }
+
+      case 'merge': {
+        const waveNum = node.waveNum!
+        const progress = executionState?.waveProgress.get(waveNum)
+        if (!progress) return false
+        return progress.mergeStatus === 'success'
+      }
+
+      case 'complete':
+        // Complete jewel: filled when execution is done (not live) and complete
+        return !isLive && isComplete
+
+      default:
+        return isComplete
+    }
+  }
 
   return (
     <Card>
@@ -116,70 +214,85 @@ export default function WaveStructurePanel({ impl }: WaveStructurePanelProps): J
           {/* Vertical rail */}
           <div className="absolute left-[9px] top-2 bottom-2 w-px bg-border" />
 
-          {nodes.map((node, i) => (
-            <div key={i} className={`relative ${i > 0 ? (node.type === 'wave' || node.type === 'scaffold' ? 'mt-6' : 'mt-4') : ''}`}>
-              {/* Dot on rail */}
-              <div className="absolute -left-8 flex items-center justify-center w-5" style={{ top: node.type === 'wave' || node.type === 'scaffold' ? 14 : 2 }}>
-                <Jewel type={node.type} filled={isComplete} />
-              </div>
+          {nodes.map((node, i) => {
+            const filled = isNodeFilled(node)
+            // filling = live transition to filled
+            const filling = isLive && filled
 
-              {node.type === 'wave' ? (
-                <div>
-                  <div className="text-sm font-semibold text-foreground mb-2">{node.label}</div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    {node.agents?.map(agentLetter => {
-                      const color = getAgentColor(agentLetter)
-                      const bgColor = getAgentColorWithOpacity(agentLetter, 0.1)
-                      return (
-                        <div
-                          key={agentLetter}
-                          className="flex items-center justify-center w-12 h-12 rounded-lg font-semibold text-base border-2"
-                          style={{
-                            backgroundColor: bgColor,
-                            borderColor: `${color}50`,
-                            color: color,
-                          }}
-                        >
-                          {agentLetter}
-                        </div>
-                      )
-                    })}
-                    <span className="text-xs text-muted-foreground ml-1">
-                      {node.agentCount} parallel
-                    </span>
-                  </div>
+            return (
+              <div key={i} className={`relative ${i > 0 ? (node.type === 'wave' || node.type === 'scaffold' ? 'mt-6' : 'mt-4') : ''}`}>
+                {/* Dot on rail */}
+                <div className="absolute -left-8 flex items-center justify-center w-5" style={{ top: node.type === 'wave' || node.type === 'scaffold' ? 14 : 2 }}>
+                  <Jewel type={node.type} filled={filled} filling={filling} />
                 </div>
-              ) : node.type === 'scaffold' ? (
-                <div>
-                  <div className="text-sm font-semibold text-foreground mb-2">{node.label}</div>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <div
-                      className="flex items-center justify-center w-12 h-12 rounded-lg font-semibold text-base border-2"
-                      style={{
-                        backgroundColor: 'rgba(100,116,139,0.08)',
-                        borderColor: 'rgba(100,116,139,0.3)',
-                        color: '#64748b',
-                      }}
-                    >
-                      S
+
+                {node.type === 'wave' ? (
+                  <div>
+                    <div className="text-sm font-semibold text-foreground mb-2">{node.label}</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {node.agents?.map(agentLetter => {
+                        const color = getAgentColor(agentLetter)
+                        const bgColor = getAgentColorWithOpacity(agentLetter, 0.1)
+                        const statusStyle = getAgentBoxStyle(agentLetter, node.waveNum!, executionState)
+                        const statusClass = getAgentBoxClassName(agentLetter, node.waveNum!, executionState)
+                        return (
+                          <div
+                            key={agentLetter}
+                            className={`flex items-center justify-center w-12 h-12 rounded-lg font-semibold text-base border-2${statusClass ? ` ${statusClass}` : ''}`}
+                            style={{
+                              backgroundColor: bgColor,
+                              borderColor: `${color}50`,
+                              color: color,
+                              ...statusStyle,
+                            }}
+                          >
+                            {agentLetter}
+                          </div>
+                        )
+                      })}
+                      <span className="text-xs text-muted-foreground ml-1">
+                        {isLive && node.waveNum !== undefined ? (() => {
+                          const progress = executionState?.waveProgress.get(node.waveNum)
+                          if (progress) {
+                            return `${progress.complete}/${progress.total} complete`
+                          }
+                          return `${node.agentCount} parallel`
+                        })() : `${node.agentCount} parallel`}
+                      </span>
                     </div>
-                    <span className="text-xs text-muted-foreground ml-1">
-                      {node.scaffoldFiles} interface {node.scaffoldFiles === 1 ? 'file' : 'files'}
-                    </span>
                   </div>
-                </div>
-              ) : (
-                <div className="flex items-baseline gap-2">
-                  <span className={`text-sm font-semibold ${node.type === 'complete' ? 'text-foreground' : 'text-muted-foreground'}`}>
-                    {node.label}
-                  </span>
-                  {node.description && (
-                    <span className="text-xs text-muted-foreground">{node.description}</span>
-                  )}
-                </div>
-              )}
-            </div>
-          ))}
+                ) : node.type === 'scaffold' ? (
+                  <div>
+                    <div className="text-sm font-semibold text-foreground mb-2">{node.label}</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div
+                        className="flex items-center justify-center w-12 h-12 rounded-lg font-semibold text-base border-2"
+                        style={{
+                          backgroundColor: 'rgba(100,116,139,0.08)',
+                          borderColor: 'rgba(100,116,139,0.3)',
+                          color: '#64748b',
+                        }}
+                      >
+                        S
+                      </div>
+                      <span className="text-xs text-muted-foreground ml-1">
+                        {node.scaffoldFiles} interface {node.scaffoldFiles === 1 ? 'file' : 'files'}
+                      </span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-baseline gap-2">
+                    <span className={`text-sm font-semibold ${node.type === 'complete' ? 'text-foreground' : 'text-muted-foreground'}`}>
+                      {node.label}
+                    </span>
+                    {node.description && (
+                      <span className="text-xs text-muted-foreground">{node.description}</span>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       </CardContent>
     </Card>
