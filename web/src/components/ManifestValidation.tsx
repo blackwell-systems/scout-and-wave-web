@@ -8,12 +8,10 @@ interface ManifestValidationProps {
 }
 
 export default function ManifestValidation({ slug, onClose }: ManifestValidationProps): JSX.Element {
-  const [validating, setValidating] = useState(false)
   const [result, setResult] = useState<{ valid: boolean; errors: ValidationError[] } | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const handleValidate = async () => {
-    setValidating(true)
     setError(null)
     setResult(null)
 
@@ -22,8 +20,6 @@ export default function ManifestValidation({ slug, onClose }: ManifestValidation
       setResult(validationResult)
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Validation failed')
-    } finally {
-      setValidating(false)
     }
   }
 
