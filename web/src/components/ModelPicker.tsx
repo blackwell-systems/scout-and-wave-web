@@ -71,18 +71,17 @@ function Dropdown({ trigger, children, open, onToggle, keepOpenOnSelect = false 
   )
 }
 
-function DropdownItem({ selected, onClick, children }: {
+function DropdownItem({ selected, onClick, children, keepOpen = false }: {
   selected?: boolean
   onClick: () => void
   children: React.ReactNode
+  keepOpen?: boolean
 }) {
   return (
     <button
       type="button"
-      onClick={(e) => {
-        e.stopPropagation()
-        onClick()
-      }}
+      onClick={onClick}
+      onMouseDown={(e) => { if (keepOpen) e.stopPropagation() }}
       className={`flex items-center gap-2 w-full text-left text-sm px-3 py-1.5 hover:bg-muted/80 hover:text-foreground transition-colors ${selected ? 'bg-muted/60 font-medium' : ''}`}
     >
       <span className="w-4 shrink-0">{selected && <Check size={14} className="text-primary" />}</span>
@@ -150,7 +149,7 @@ export default function ModelPicker({ value, onChange, label, id }: ModelPickerP
             {PROVIDERS.map(p => {
               const Icon = p.icon
               return (
-                <DropdownItem key={p.value} selected={p.value === selectedProvider} onClick={() => handleProviderSelect(p.value)}>
+                <DropdownItem key={p.value} selected={p.value === selectedProvider} onClick={() => handleProviderSelect(p.value)} keepOpen={true}>
                   <Icon size={15} className={`shrink-0 ${p.color}`} />
                   <span>{p.label}</span>
                 </DropdownItem>
