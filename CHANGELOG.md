@@ -2,6 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
+| [0.61.0] | 2026-03-16 | Integration Agent UI + h2c HTTP/2 + SSE agent cache — integration model selector, cleartext HTTP/2, late-subscriber animation fix, cross-repo config fallback |
 | [0.60.0] | 2026-03-15 | Fix popover/card/destructive Tailwind color tokens, archive cobra-migration IMPL |
 | [0.59.0] | 2026-03-15 | Scaffold streaming output, unified model dropdowns, scaffold model picker in top bar |
 | [0.58.0] | 2026-03-15 | Provider-aware backend routing for scaffold/scout agents, scaffold_model config support |
@@ -9,6 +10,17 @@ All notable changes to this project will be documented in this file.
 | [0.56.0] | 2026-03-14 | File browser (waves 1-2) — 4 backend API endpoints + 7 frontend components for in-app codebase exploration with syntax highlighting |
 | [0.55.0] | 2026-03-14 | UI improvements — Fixed stale IMPL list, added collapsible repo sections, improved repo context visibility |
 | [0.54.0] | 2026-03-14 | Scout automation integration — 5 automation command wrappers added to web CLI (analyze-deps, analyze-suitability, detect-cascades, detect-scaffolds, extract-commands) |
+
+---
+
+## [0.61.0] - 2026-03-16
+
+### Added
+
+- **Integration model selector** — `integration_model` field in backend `AgentConfig`, TypeScript types, Settings screen ModelPicker, and top bar pill button (5 pills: Scout, Scaffold, Wave, Integration, Chat)
+- **SSE agent status cache** — Late-connecting clients receive current agent state on connect (fixes missing animations on page reload mid-execution)
+- **h2c cleartext HTTP/2** — Eliminates browser 6-connection-per-domain limit that caused UI hangs with multiple SSE streams
+- **Cross-repo config fallback** — `fallbackSAWConfig` populated at startup so cross-repo IMPLs without their own `saw.config.json` use the default config for model routing
 
 ---
 
