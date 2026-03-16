@@ -179,31 +179,28 @@ func runWaveLoop(
 		}
 		onStage(StageWaveExecute, StageStatusComplete, waveNum, "")
 
+		// FinalizeWave: verify commits (I5), scan stubs (E20), run gates (E21),
+		// merge agents, verify build, and cleanup — matching CLI finalize-wave pipeline.
 		onStage(StageWaveMerge, StageStatusRunning, waveNum, "")
-		if err := engine.MergeWave(ctx, engine.RunMergeOpts{
+		finalizeResult, err := engine.FinalizeWave(ctx, engine.FinalizeWaveOpts{
 			IMPLPath: implPath,
 			RepoPath: repoPath,
 			WaveNum:  waveNum,
-		}); err != nil {
+		})
+		if err != nil {
 			onStage(StageWaveMerge, StageStatusFailed, waveNum, err.Error())
 			publish("run_failed", map[string]string{"error": err.Error()})
 			return
 		}
-		onStage(StageWaveMerge, StageStatusComplete, waveNum, "")
-
-		testCmd := manifest.TestCommand
-		if testCmd != "" {
-			onStage(StageWaveVerify, StageStatusRunning, waveNum, "")
-			if err := engine.RunVerification(ctx, engine.RunVerificationOpts{
-				RepoPath:    repoPath,
-				TestCommand: testCmd,
-			}); err != nil {
-				onStage(StageWaveVerify, StageStatusFailed, waveNum, err.Error())
-				publish("run_failed", map[string]string{"error": err.Error()})
-				return
-			}
-			onStage(StageWaveVerify, StageStatusComplete, waveNum, "")
+		// Publish stub report if any stubs found (informational)
+		if finalizeResult.StubReport != nil && len(finalizeResult.StubReport.Hits) > 0 {
+			publish("stub_report", finalizeResult.StubReport)
 		}
+		// Publish gate results for UI visibility
+		for _, gate := range finalizeResult.GateResults {
+			publish("quality_gate_result", gate)
+		}
+		onStage(StageWaveMerge, StageStatusComplete, waveNum, "")
 
 		completedLetters := make([]string, 0, len(wave.Agents))
 		for _, ag := range wave.Agents {
@@ -259,6 +256,16 @@ func runWaveLoop(
 				return
 			}
 		}
+	}
+
+	// After all waves complete — mark IMPL done (E15 + E18)
+	if err := engine.MarkIMPLComplete(ctx, engine.MarkIMPLCompleteOpts{
+		IMPLPath: implPath,
+		RepoPath: repoPath,
+		Date:     time.Now().Format("2006-01-02"),
+	}); err != nil {
+		// Non-fatal: log but don't fail the run
+		publish("mark_complete_warning", map[string]string{"error": err.Error()})
 	}
 
 	onStage(StageComplete, StageStatusComplete, 0, "")
