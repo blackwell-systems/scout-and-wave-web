@@ -4,7 +4,6 @@ import { THEMES, ThemeDef, varToHsl } from '../lib/themes'
 import { getConfig, saveConfig } from '../api'
 
 const ALL_THEME_CLASSES = THEMES.map(t => `theme-${t.id}`)
-const STORAGE_KEY = 'saw-theme'
 
 function isDarkMode(): boolean {
   return document.documentElement.classList.contains('dark')
