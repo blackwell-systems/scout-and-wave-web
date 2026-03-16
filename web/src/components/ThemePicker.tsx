@@ -93,11 +93,17 @@ export default function ThemePicker(): JSX.Element {
     return () => obs.disconnect()
   }, [])
 
-  // Reset on mode flip if current theme doesn't match new mode
+  // Reload theme from config on mode flip
   useEffect(() => {
-    const mode = themeMode(theme)
-    if (mode === 'default') return
-    if ((mode === 'light' && dark) || (mode === 'dark' && !dark)) setTheme('default')
+    getConfig().then(config => {
+      const savedTheme = config.appearance?.color_theme ?? 'default'
+      const mode = themeMode(savedTheme)
+      if (mode === 'default') return
+      if ((mode === 'light' && dark) || (mode === 'dark' && !dark)) {
+        setTheme(savedTheme)
+        applyTheme(savedTheme)
+      }
+    }).catch(() => {})
   }, [dark])
 
   // Apply theme
