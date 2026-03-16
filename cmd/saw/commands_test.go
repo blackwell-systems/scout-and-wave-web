@@ -150,26 +150,52 @@ func TestFindRepoRoot_NotFound(t *testing.T) {
 	}
 }
 
-// TestPrintUsage verifies that printUsage writes expected strings to the
-// provided writer.
-func TestPrintUsage(t *testing.T) {
+// TestRootCmdHelp verifies that the root cobra command help output contains
+// expected strings for all major subcommands.
+func TestRootCmdHelp(t *testing.T) {
 	var buf bytes.Buffer
-	printUsage(&buf)
+	rootCmd := newRootCmd()
+	rootCmd.AddCommand(
+		newServeCmd(),
+		newWaveCmd(),
+		newStatusCmd(),
+		newScoutCmd(),
+		newScaffoldCmd(),
+		newValidateCmd(),
+		newMergeCmd(),
+		newMergeWaveCmd(),
+		newCurrentWaveCmd(),
+		newRenderCmd(),
+		newExtractContextCmd(),
+		newSetCompletionCmd(),
+		newCheckConflictsCmd(),
+		newFreezeCheckCmd(),
+		newMarkCompleteCmd(),
+		newRunGatesCmd(),
+		newValidateScaffoldsCmd(),
+		newUpdateAgentPromptCmd(),
+		newAnalyzeDepsCmd(),
+		newAnalyzeSuitabilityCmd(),
+		newDetectCascadesCmd(),
+		newDetectScaffoldsCmd(),
+		newExtractCommandsCmd(),
+	)
+	rootCmd.SetOut(&buf)
+	rootCmd.SetArgs([]string{"--help"})
+	// Help exits with status 0; ignore the error cobra returns for --help.
+	_ = rootCmd.Execute()
 	output := buf.String()
 
 	expectedStrings := []string{
-		"Usage: saw <command> [flags]",
+		"saw",
 		"wave",
 		"status",
 		"scout",
 		"scaffold",
-		"--version",
-		"--help",
-		"Run 'saw <command> --help' for per-command flags",
 	}
 	for _, s := range expectedStrings {
 		if !strings.Contains(output, s) {
-			t.Errorf("printUsage output missing %q; full output:\n%s", s, output)
+			t.Errorf("root cmd help output missing %q; full output:\n%s", s, output)
 		}
 	}
 }
@@ -325,15 +351,19 @@ func TestRunScaffold_PromptFileMissing(t *testing.T) {
 	}
 }
 
-// TestPrintUsage_IncludesMerge verifies that printUsage includes the merge
-// subcommand description after the merge dispatch was added to main.go.
-func TestPrintUsage_IncludesMerge(t *testing.T) {
+// TestRootCmdHelp_IncludesMerge verifies that the root cobra command help
+// output includes the merge subcommand.
+func TestRootCmdHelp_IncludesMerge(t *testing.T) {
 	var buf bytes.Buffer
-	printUsage(&buf)
+	rootCmd := newRootCmd()
+	rootCmd.AddCommand(newMergeCmd())
+	rootCmd.SetOut(&buf)
+	rootCmd.SetArgs([]string{"--help"})
+	_ = rootCmd.Execute()
 	output := buf.String()
 
 	if !strings.Contains(output, "merge") {
-		t.Errorf("printUsage output missing 'merge' subcommand; full output:\n%s", output)
+		t.Errorf("root cmd help output missing 'merge' subcommand; full output:\n%s", output)
 	}
 }
 
