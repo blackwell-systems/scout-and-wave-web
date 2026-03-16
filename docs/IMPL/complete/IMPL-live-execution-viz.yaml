@@ -1,0 +1,751 @@
+completion_date: "2026-03-16"
+title: Animate Dependency Graph and Wave Structure During Live Execution
+feature_slug: live-execution-viz
+verdict: SUITABLE
+suitability_assessment: |
+    SUITABLE. 7 files across 4 agents with disjoint ownership. The shared hook
+    (useExecutionSync) is the single cross-agent interface contract, fully
+    definable upfront from existing types. All work is additive - no investigation
+    needed. Wave 1 (3 agents: hook, CSS, prop threading) is fully parallel.
+    Wave 2 (1 agent: both panel modifications) depends on Wave 1 delivering the
+    hook contract and CSS classes.
+test_command: cd web && npx vitest run
+lint_command: cd web && npx tsc --noEmit
+file_ownership:
+    - file: web/src/hooks/useExecutionSync.ts
+      agent: A
+      wave: 1
+      action: new
+    - file: web/src/index.css
+      agent: B
+      wave: 1
+      action: modify
+    - file: web/src/components/ReviewScreen.tsx
+      agent: C
+      wave: 1
+      action: modify
+    - file: web/src/components/review/DependencyGraphPanel.tsx
+      agent: D
+      wave: 2
+      action: modify
+    - file: web/src/components/review/WaveStructurePanel.tsx
+      agent: E
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: ExecutionSyncState
+      description: |
+        Return type of useExecutionSync hook. Provides O(1) lookup of agent
+        execution status by "wave:agent" key, wave-level progress summaries,
+        and scaffold status. Both DependencyGraphPanel and WaveStructurePanel
+        consume this type independently.
+      definition: |
+        export interface AgentExecStatus {
+          status: 'pending' | 'running' | 'complete' | 'failed'
+          agent: string
+          wave: number
+          failureType?: string
+        }
+
+        export interface WaveProgress {
+          complete: number
+          total: number
+          mergeStatus?: 'idle' | 'merging' | 'success' | 'failed'
+        }
+
+        export interface ExecutionSyncState {
+          /** O(1) lookup by "wave:agent" key, e.g. "1:A" */
+          agents: Map<string, AgentExecStatus>
+          /** Per-wave progress: complete/total counts */
+          waveProgress: Map<number, WaveProgress>
+          /** Scaffold lifecycle status */
+          scaffoldStatus: 'idle' | 'running' | 'complete'
+          /** Whether any execution is active (SSE connected + not run_complete) */
+          isLive: boolean
+        }
+      location: web/src/hooks/useExecutionSync.ts
+    - name: useExecutionSync
+      description: |
+        Hook that wraps useWaveEvents and transforms AppWaveState into the
+        ExecutionSyncState shape optimized for panel consumption. Returns
+        stable references (useMemo) so panels don't re-render on unrelated
+        SSE events. When slug is empty string or undefined, returns idle state
+        with empty maps.
+      definition: |
+        export function useExecutionSync(slug: string | undefined): ExecutionSyncState
+      location: web/src/hooks/useExecutionSync.ts
+    - name: CSS animation classes
+      description: |
+        CSS keyframe animations and utility classes applied by panels to
+        SVG/HTML elements based on agent execution status. These are pure
+        CSS — no JS runtime dependency.
+      definition: |
+        /* Node pulse for running agents */
+        @keyframes exec-node-pulse {
+          0%, 100% { filter: drop-shadow(0 0 4px var(--pulse-color)); }
+          50% { filter: drop-shadow(0 0 12px var(--pulse-color)); }
+        }
+        .exec-node-running { animation: exec-node-pulse 2s ease-in-out infinite; }
+
+        /* Shake for failed agents */
+        @keyframes exec-node-shake {
+          0%, 100% { transform: translateX(0); }
+          20%, 60% { transform: translateX(-2px); }
+          40%, 80% { transform: translateX(2px); }
+        }
+        .exec-node-failed { animation: exec-node-shake 0.4s ease-in-out; }
+
+        /* Scale flourish for completion */
+        @keyframes exec-node-complete {
+          0% { transform: scale(1); }
+          50% { transform: scale(1.15); }
+          100% { transform: scale(1); }
+        }
+        .exec-node-complete { animation: exec-node-complete 0.3s ease-out; }
+
+        /* Edge brightening for completed upstream */
+        .exec-edge-active { opacity: 0.9; transition: opacity 0.3s ease; }
+        .exec-edge-inactive { opacity: 0.25; transition: opacity 0.3s ease; }
+
+        /* Jewel progressive fill */
+        @keyframes exec-jewel-fill {
+          from { opacity: 0.3; }
+          to { opacity: 1; }
+        }
+        .exec-jewel-filling { animation: exec-jewel-fill 0.5s ease-out forwards; }
+      location: web/src/index.css
+    - name: DependencyGraphPanel extended props
+      description: |
+        New optional prop on DependencyGraphPanel to receive execution state.
+        When executionState is provided and isLive is true, nodes and edges
+        render with status-based CSS classes. When absent, panel renders
+        statically as before (backward compatible).
+      definition: |
+        interface DependencyGraphPanelProps {
+          dependencyGraphText?: string
+          executionState?: ExecutionSyncState  // NEW optional prop
+        }
+      location: web/src/components/review/DependencyGraphPanel.tsx
+    - name: WaveStructurePanel extended props
+      description: |
+        New optional prop on WaveStructurePanel to receive execution state.
+        When present and isLive, jewels fill progressively and agent boxes
+        show status-based styling. When absent, renders statically as before.
+      definition: |
+        interface WaveStructurePanelProps {
+          impl: IMPLDocResponse
+          executionState?: ExecutionSyncState  // NEW optional prop
+        }
+      location: web/src/components/review/WaveStructurePanel.tsx
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Create the `useExecutionSync` hook in `web/src/hooks/useExecutionSync.ts`.
+            This hook wraps the existing `useWaveEvents(slug)` hook and transforms its
+            `AppWaveState` output into an `ExecutionSyncState` shape optimized for
+            panel consumption with O(1) lookups.
+
+            ## Interfaces to Implement
+
+            Export these types and the hook function from the new file:
+
+            ```typescript
+            export interface AgentExecStatus {
+              status: 'pending' | 'running' | 'complete' | 'failed'
+              agent: string
+              wave: number
+              failureType?: string
+            }
+
+            export interface WaveProgress {
+              complete: number
+              total: number
+              mergeStatus?: 'idle' | 'merging' | 'success' | 'failed'
+            }
+
+            export interface ExecutionSyncState {
+              agents: Map<string, AgentExecStatus>
+              waveProgress: Map<number, WaveProgress>
+              scaffoldStatus: 'idle' | 'running' | 'complete'
+              isLive: boolean
+            }
+
+            export function useExecutionSync(slug: string | undefined): ExecutionSyncState
+            ```
+
+            ## Interfaces to Call
+
+            - `useWaveEvents(slug: string)` from `../hooks/useWaveEvents` — returns `AppWaveState`
+            - `AgentStatus` type from `../types` — the per-agent status in `AppWaveState.agents[]`
+
+            ## Implementation Details
+
+            1. Call `useWaveEvents(slug ?? '')` to get the raw SSE state.
+            2. Use `useMemo` to derive `agents` Map from `AppWaveState.agents[]`:
+               - Key: `"${agent.wave}:${agent.agent}"` (e.g. `"1:A"`)
+               - Value: `AgentExecStatus` mapped from `AgentStatus`
+            3. Use `useMemo` to derive `waveProgress` Map from `AppWaveState.waves[]`:
+               - Key: wave number
+               - Value: `{ complete: count of complete agents, total: agents.length, mergeStatus }`
+               - Map merge status from `AppWaveState.wavesMergeState`
+            4. Pass through `scaffoldStatus` directly.
+            5. `isLive` = `state.connected && !state.runComplete`
+            6. When `slug` is undefined or empty, return a static idle state with empty maps.
+
+            ## Tests to Write
+
+            Create `web/src/hooks/useExecutionSync.test.ts`:
+
+            1. TestIdleState — when slug is empty, returns empty maps and isLive=false
+            2. TestAgentMapping — given mock AppWaveState with 2 agents across 2 waves,
+               verify Map keys are "1:A", "2:B" with correct statuses
+            3. TestWaveProgress — given 3 agents in wave 1 (1 complete, 2 running),
+               verify waveProgress.get(1) returns {complete: 1, total: 3}
+            4. TestScaffoldPassthrough — scaffoldStatus from useWaveEvents flows through
+            5. TestIsLive — connected + not runComplete = true; runComplete = false
+
+            Note: You will need to mock useWaveEvents. Use vitest `vi.mock` to mock
+            the module and return controlled AppWaveState values.
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web
+            npx tsc --noEmit
+            npx vitest run hooks/useExecutionSync
+            ```
+
+            ## Constraints
+
+            - Do NOT modify useWaveEvents.ts — it is not in your file ownership.
+            - Return stable Map references via useMemo to prevent unnecessary re-renders.
+            - The hook must work when slug is undefined (ReviewScreen may render without
+              an active execution). Return idle defaults in that case.
+            - Import types from useWaveEvents.ts (AppWaveState) but do not re-export them.
+          files:
+            - web/src/hooks/useExecutionSync.ts
+        - id: B
+          task: |
+            ## What to Implement
+
+            Add CSS animation keyframes and utility classes to `web/src/index.css`
+            for execution status visualization. These are consumed by SVG and HTML
+            elements in DependencyGraphPanel and WaveStructurePanel (Wave 2 agents).
+
+            ## Interfaces to Implement
+
+            Add these CSS rules AFTER the existing `.panel-animate` block at the end
+            of index.css (after line 107). Do NOT modify any existing CSS rules.
+
+            ```css
+            /* ── Live execution animations ──────────────────────────────── */
+
+            /* Pulse glow for running agent nodes */
+            @keyframes exec-node-pulse {
+              0%, 100% { filter: drop-shadow(0 0 4px var(--exec-pulse-color, rgba(88, 166, 255, 0.6))); }
+              50% { filter: drop-shadow(0 0 14px var(--exec-pulse-color, rgba(88, 166, 255, 0.6))); }
+            }
+            .exec-node-running {
+              animation: exec-node-pulse 2s ease-in-out infinite;
+            }
+
+            /* Shake for failed agent nodes */
+            @keyframes exec-node-shake {
+              0%, 100% { transform: translateX(0); }
+              20%, 60% { transform: translateX(-2px); }
+              40%, 80% { transform: translateX(2px); }
+            }
+            .exec-node-failed {
+              animation: exec-node-shake 0.4s ease-in-out;
+            }
+
+            /* Scale flourish on completion */
+            @keyframes exec-node-complete {
+              0% { transform: scale(1); }
+              50% { transform: scale(1.12); }
+              100% { transform: scale(1); }
+            }
+            .exec-node-complete {
+              animation: exec-node-complete 0.35s ease-out;
+            }
+
+            /* Edge brightness transitions */
+            .exec-edge-active {
+              opacity: 0.85;
+              transition: opacity 0.3s ease;
+            }
+            .exec-edge-inactive {
+              opacity: 0.2;
+              transition: opacity 0.3s ease;
+            }
+
+            /* Jewel progressive fill */
+            @keyframes exec-jewel-fill {
+              from { opacity: 0.3; transform: scale(0.9); }
+              to { opacity: 1; transform: scale(1); }
+            }
+            .exec-jewel-filling {
+              animation: exec-jewel-fill 0.5s ease-out forwards;
+            }
+
+            /* Check mark fade-in for complete nodes */
+            @keyframes exec-check-in {
+              from { opacity: 0; transform: scale(0.5); }
+              to { opacity: 1; transform: scale(1); }
+            }
+            .exec-check-overlay {
+              animation: exec-check-in 0.3s ease-out 0.1s forwards;
+              opacity: 0;
+            }
+            ```
+
+            ## Interfaces to Call
+
+            None — pure CSS, no JavaScript dependencies.
+
+            ## Tests to Write
+
+            No unit tests for CSS. Verification is via build gate (Vite processes CSS
+            through PostCSS/Tailwind without errors).
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web
+            npx vite build
+            ```
+
+            ## Constraints
+
+            - ONLY append new rules after the existing `.panel-animate` block.
+            - Do NOT modify any existing CSS rules (theme vars, scrollbar styles, etc.).
+            - Use CSS custom properties (--exec-pulse-color) so panels can set
+              agent-specific colors via inline style.
+            - All animations must use `transform` and `opacity`/`filter` only
+              (GPU-composited properties) for performance.
+            - Do NOT use `@layer` for these rules — place them at top level so
+              Tailwind's purge cannot remove them.
+          files:
+            - web/src/index.css
+        - id: C
+          task: |
+            ## What to Implement
+
+            Modify `ReviewScreen.tsx` to:
+            1. Import and call `useExecutionSync(slug)` when execution is active
+            2. Pass the `executionState` prop down to WaveStructurePanel and
+               DependencyGraphPanel
+
+            ## Interfaces to Implement
+
+            No new interfaces — this agent modifies an existing component's internal
+            wiring only.
+
+            ## Interfaces to Call
+
+            - `useExecutionSync(slug)` from `../../hooks/useExecutionSync`
+              Returns `ExecutionSyncState` (see interface contract above)
+            - Existing `WaveStructurePanel` and `DependencyGraphPanel` components
+              (their prop types will be extended by Wave 2 agents, but passing an
+              extra prop that the current type doesn't declare is safe in TypeScript
+              when spreading — use explicit prop passing)
+
+            ## Implementation Details
+
+            In `ReviewScreen.tsx`:
+
+            1. Add import at top:
+               ```typescript
+               import { useExecutionSync } from '../hooks/useExecutionSync'
+               ```
+
+            2. Inside the component function, after the existing hooks, add:
+               ```typescript
+               const executionState = useExecutionSync(slug)
+               ```
+
+            3. Where WaveStructurePanel is rendered (~line 220), add the prop:
+               ```tsx
+               <WaveStructurePanel impl={impl} executionState={executionState} />
+               ```
+
+            4. Where DependencyGraphPanel is rendered (~line 221), add the prop:
+               ```tsx
+               <DependencyGraphPanel
+                 dependencyGraphText={(impl as any).dependency_graph_text}
+                 executionState={executionState}
+               />
+               ```
+
+            Note: The panels won't consume this prop until Wave 2 agents modify them,
+            but TypeScript won't error because the prop is optional in the extended
+            interface. If tsc does complain (because Wave 2 hasn't run yet), use a
+            type assertion: `{...(executionState.isLive ? { executionState } : {})}`
+            spread pattern, or cast the prop via `as any`. Prefer the spread pattern.
+
+            ## Tests to Write
+
+            No new test file needed. The existing ReviewScreen.test.tsx covers
+            rendering. This change is purely wiring — the hook returns idle state
+            when no execution is active, so existing tests remain unaffected.
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web
+            npx tsc --noEmit
+            npx vitest run ReviewScreen
+            ```
+
+            ## Constraints
+
+            - Do NOT modify any other aspect of ReviewScreen behavior.
+            - Do NOT add execution-related visual changes to ReviewScreen itself.
+            - The hook call must be unconditional (React rules of hooks).
+            - Keep the existing ReviewScreenProps interface unchanged — no new
+              external props. The execution state comes from the hook, not from App.
+          files:
+            - web/src/components/ReviewScreen.tsx
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## What to Implement
+
+            Modify `DependencyGraphPanel.tsx` to animate nodes and edges during
+            live wave execution. When `executionState` prop is provided and
+            `isLive` is true, apply status-based CSS classes and visual overlays
+            to agent nodes and dependency edges.
+
+            ## Interfaces to Implement
+
+            Extend the existing `DependencyGraphPanelProps` interface:
+
+            ```typescript
+            import { ExecutionSyncState } from '../../hooks/useExecutionSync'
+
+            interface DependencyGraphPanelProps {
+              dependencyGraphText?: string
+              executionState?: ExecutionSyncState  // NEW
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `ExecutionSyncState` from `../../hooks/useExecutionSync`
+            - `AgentExecStatus` from `../../hooks/useExecutionSync`
+            - `getAgentColor(letter)` from `../../lib/agentColors` (already imported)
+            - CSS classes: `exec-node-running`, `exec-node-failed`, `exec-node-complete`,
+              `exec-edge-active`, `exec-edge-inactive`, `exec-check-overlay`
+              (defined by Agent B in index.css)
+
+            ## Implementation Details
+
+            1. Accept the new `executionState` prop in the component signature.
+
+            2. Create a helper function to look up agent status:
+               ```typescript
+               function getExecStatus(letter: string, wave: number): AgentExecStatus | undefined {
+                 if (!executionState?.isLive) return undefined
+                 return executionState.agents.get(`${wave}:${letter}`)
+               }
+               ```
+
+            3. **Node rendering** (in the `{nodes.map(node => ...)}` block):
+               - Look up exec status: `const exec = getExecStatus(node.agent.letter, node.agent.wave)`
+               - If `exec` exists, wrap the `<g>` element with a CSS class:
+                 - `exec?.status === 'running'` -> add class `exec-node-running` and
+                   set `--exec-pulse-color` CSS var to the agent's color
+                 - `exec?.status === 'failed'` -> add class `exec-node-failed`, change
+                   stroke to red (`#f85149`)
+                 - `exec?.status === 'complete'` -> add class `exec-node-complete`, add
+                   a small SVG check mark overlay (path inside a `<g>` with class
+                   `exec-check-overlay`):
+                   ```svg
+                   <path d="M-4,0 L-1,3 L4,-3" stroke="currentColor" strokeWidth="2"
+                         fill="none" transform="translate(cx, cy)" />
+                   ```
+                   where cx/cy is the node center
+               - For running: increase fill opacity from `20` to `40` (e.g. `${color}40`)
+               - For complete: solid fill at `60` opacity
+
+            4. **Edge rendering** (in the `{edges.map(...)}` block):
+               - Look up the source node's exec status
+               - If source is `complete`, add class `exec-edge-active`
+               - Otherwise when live, add class `exec-edge-inactive`
+               - Remove the static `opacity={0.6}` when live (let CSS handle it)
+
+            5. **Backward compatibility**: When `executionState` is undefined or
+               `isLive` is false, render exactly as before — no CSS classes, static
+               opacity values. This is the default path.
+
+            ## Tests to Write
+
+            Create `web/src/components/review/DependencyGraphPanel.test.tsx`:
+
+            1. TestStaticRendering — renders nodes without execution state (existing behavior)
+            2. TestRunningNodeHasClass — when executionState has agent "1:A" running,
+               the node group for A has class containing "exec-node-running"
+            3. TestCompleteNodeShowsCheck — when agent "1:B" is complete, a check
+               path element exists within B's node group
+            4. TestFailedNodeHasClass — when agent "1:C" is failed, node has
+               "exec-node-failed" class
+            5. TestEdgeBrightensOnComplete — when source agent is complete, edge
+               element has "exec-edge-active" class
+
+            Use React Testing Library with a mock executionState containing a Map
+            with the test entries.
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web
+            npx tsc --noEmit
+            npx vitest run DependencyGraphPanel
+            ```
+
+            ## Constraints
+
+            - Do NOT change the layout algorithm (layoutNodes, parseDependencyGraph).
+            - Do NOT change tooltip behavior.
+            - Do NOT modify the node size constants (NODE_W, NODE_H, etc.).
+            - SVG class names must be applied to `<g>` wrapper elements, not directly
+              on `<rect>` or `<text>` (SVG class-based animations apply to the group).
+            - Use CSS custom property `--exec-pulse-color` set via inline `style` on the
+              `<g>` element so each agent pulses in its own color.
+            - The check overlay SVG must be simple (5-6 path commands max) and use
+              `currentColor` for theming.
+          files:
+            - web/src/components/review/DependencyGraphPanel.tsx
+          dependencies:
+            - A
+            - B
+            - C
+        - id: E
+          task: |
+            ## What to Implement
+
+            Modify `WaveStructurePanel.tsx` to animate jewels and agent boxes
+            during live wave execution. When `executionState` prop is provided
+            and `isLive` is true, jewels fill progressively as agents complete,
+            and agent boxes show status-based glow styling matching AgentCard.
+
+            ## Interfaces to Implement
+
+            Extend the existing `WaveStructurePanelProps` interface:
+
+            ```typescript
+            import { ExecutionSyncState } from '../../hooks/useExecutionSync'
+
+            interface WaveStructurePanelProps {
+              impl: IMPLDocResponse
+              executionState?: ExecutionSyncState  // NEW
+            }
+            ```
+
+            ## Interfaces to Call
+
+            - `ExecutionSyncState`, `AgentExecStatus` from `../../hooks/useExecutionSync`
+            - `getAgentColor(letter)` from `../../lib/agentColors` (already imported)
+            - `getAgentColorWithOpacity(letter, opacity)` from `../../lib/agentColors`
+            - CSS classes: `exec-jewel-filling`, `exec-node-running`, `exec-node-failed`,
+              `exec-node-complete` (defined by Agent B in index.css)
+
+            ## Implementation Details
+
+            1. Accept the new `executionState` prop in the component signature.
+
+            2. **Jewel filled state** — currently `filled` is a boolean based on
+               `doc_status === 'COMPLETE'`. Change to determine filled state per-node:
+
+               - Scout jewel: always filled (it ran before execution started)
+               - Scaffold jewel: filled when `executionState.scaffoldStatus === 'complete'`
+                 OR when `!isLive` and `isComplete`
+               - Wave jewel: filled when ALL agents in that wave are complete
+                 (`waveProgress.get(waveNum).complete === waveProgress.get(waveNum).total`)
+                 OR when `!isLive` and `isComplete`
+               - Merge jewel after wave N: filled when wave N merge status is 'success'
+                 OR when `!isLive` and `isComplete`
+               - Complete jewel: filled when `executionState` shows `runComplete`...
+                 actually, check `!executionState?.isLive && isComplete` (run finished)
+
+               When transitioning from unfilled to filled, add class `exec-jewel-filling`
+               for the animation.
+
+            3. **Agent box status styling** — the agent letter boxes inside wave nodes
+               currently have static styling. When live, apply status-based styles
+               matching AgentCard's `getStatusStyle`:
+
+               ```typescript
+               function getAgentBoxStyle(letter: string, waveNum: number) {
+                 if (!executionState?.isLive) return {} // static mode
+                 const exec = executionState.agents.get(`${waveNum}:${letter}`)
+                 if (!exec) return {}
+                 switch (exec.status) {
+                   case 'running':
+                     return {
+                       borderColor: 'rgb(88, 166, 255)',
+                       boxShadow: '0 0 12px rgba(88, 166, 255, 0.4)',
+                     }
+                   case 'complete':
+                     return {
+                       borderColor: 'rgb(63, 185, 80)',
+                       boxShadow: '0 0 10px rgba(63, 185, 80, 0.3)',
+                     }
+                   case 'failed':
+                     return {
+                       borderColor: 'rgb(248, 81, 73)',
+                       boxShadow: '0 0 12px rgba(248, 81, 73, 0.5)',
+                     }
+                   default:
+                     return {}
+                 }
+               }
+               ```
+
+               Merge the returned style with the existing inline style on agent boxes.
+               Also add the corresponding CSS class (`exec-node-running`, etc.) for
+               the animation.
+
+            4. **Wave progress indicator** — next to the "{N} parallel" text, when live,
+               show progress: "{complete}/{total} complete" instead.
+
+            5. **Backward compatibility**: When `executionState` is undefined or
+               `isLive` is false, render exactly as before. The `isComplete` flag
+               from `doc_status` drives the static filled state as it does now.
+
+            ## Tests to Write
+
+            Create `web/src/components/review/WaveStructurePanel.test.tsx`:
+
+            1. TestStaticRendering — renders with impl data, no executionState (existing behavior)
+            2. TestAgentBoxRunningGlow — when executionState has "1:A" running, agent A's
+               box has running border/shadow styles
+            3. TestJewelFillsOnWaveComplete — when all agents in wave 1 are complete,
+               the wave 1 jewel is filled
+            4. TestProgressText — when live with 1/3 complete, shows "1/3 complete"
+            5. TestScaffoldJewelFills — when scaffoldStatus is 'complete', scaffold jewel filled
+
+            Mock `IMPLDocResponse` with 2 waves, 3 agents in wave 1.
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web
+            npx tsc --noEmit
+            npx vitest run WaveStructurePanel
+            ```
+
+            ## Constraints
+
+            - Do NOT change the Jewel SVG component's internal rendering for static mode.
+            - Pass `filled` as a computed value per-node, not globally.
+            - Reuse the same status colors as AgentCard (rgb values above) for visual
+              consistency across the app.
+            - The "N parallel" vs "M/N complete" text switch must be based on `isLive`,
+              not on whether any agent has a non-pending status.
+            - Do NOT import from AgentCard.tsx directly — copy the style values.
+              AgentCard is in a different component tree and its getStatusStyle is
+              not exported.
+          files:
+            - web/src/components/review/WaveStructurePanel.tsx
+          dependencies:
+            - A
+            - B
+            - C
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+          required: true
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx vitest run
+          required: true
+        - type: custom
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx vite build
+          required: true
+          description: Vite production build (catches import errors tsc misses)
+completion_reports:
+    A:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-A
+        branch: wave1-agent-A
+        commit: f4948e2b71de2505ae614bfa4c79d46adc637336
+        files_changed:
+            - web/src/hooks/useExecutionSync.test.ts
+            - web/src/hooks/useExecutionSync.ts
+        notes: auto-committed by orchestrator (API agent)
+    B:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-B
+        branch: wave1-agent-B
+        commit: 766267b697a7b5784c35d3904599e22f177d97d4
+        files_changed:
+            - web/src/index.css
+        notes: auto-committed by orchestrator (API agent)
+    C:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-C
+        branch: wave1-agent-C
+        commit: 4ebdf24ffb6038daef8402bdc0a08ac2890acc45
+        files_changed:
+            - web/src/components/ReviewScreen.test.tsx
+            - web/src/components/ReviewScreen.tsx
+            - web/src/hooks/useExecutionSync.ts
+        notes: auto-committed by orchestrator (API agent)
+    D:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave2-agent-D
+        branch: wave2-agent-D
+        commit: 9230ffae940e6ff26f262d7efe859fe0d967c51d
+        files_changed:
+            - web/src/components/review/DependencyGraphPanel.test.tsx
+            - web/src/components/review/DependencyGraphPanel.tsx
+        notes: auto-committed by orchestrator (API agent)
+    E:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave2-agent-E
+        branch: wave2-agent-E
+        commit: a220092f5f340e1a8a0eddd12378b20ba5340869
+        files_changed:
+            - web/node_modules
+            - web/src/components/review/WaveStructurePanel.test.tsx
+            - web/src/components/review/WaveStructurePanel.tsx
+        notes: auto-committed by orchestrator (API agent)
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: tsc errors in Wave 2 because Wave 1 hook types not yet visible in worktree
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Wave 2 agents run after Wave 1 merge. The hook file will be on the
+            base branch before D and E start. If isolated worktrees miss it,
+            agents can reference the interface contract types directly.
+        - scenario: CSS animation classes purged by Tailwind because no JS references found at build time
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent B places rules OUTSIDE @layer blocks (top-level CSS) which
+            Tailwind JIT cannot purge. This follows the existing pattern in
+            the codebase (dot-grid background is outside @layer for same reason).
+        - scenario: SVG class-based animations don't work as expected (SVG vs HTML CSS differences)
+          likelihood: low
+          impact: low
+          mitigation: |
+            Use filter (drop-shadow) and transform on <g> elements which are
+            well-supported in SVG. Avoid CSS properties that only work on HTML
+            elements (box-shadow, background, etc.).
+        - scenario: useExecutionSync causes excessive re-renders in both panels on every SSE event
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Agent A must use useMemo to derive Maps, so reference equality is
+            preserved when the underlying data hasn't changed. Panels should
+            compare their specific agent lookups, not the whole Map.
+state: "COMPLETE"
