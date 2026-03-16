@@ -48,6 +48,7 @@ func (s *Server) handleWaveStart(w http.ResponseWriter, r *http.Request) {
 
 	// Clear previous stage state so the timeline starts fresh for this run.
 	s.stages.Clear(slug)
+	s.progressTracker.Clear(slug)
 	onStage := s.makeStageCallback(slug, publish)
 
 	go func() {

@@ -106,6 +106,9 @@ func New(cfg Config) *Server {
 	// v0.19.0 — Stage state machine
 	s.mux.HandleFunc("GET /api/wave/{slug}/state", s.handleWaveState)
 
+	// Agent progress tracking
+	s.mux.HandleFunc("GET /api/wave/{slug}/status", s.handleWaveStatus)
+
 	// v0.32.0 — Manifest routes (validate, load, wave, completion)
 	s.RegisterManifestRoutes()
 
