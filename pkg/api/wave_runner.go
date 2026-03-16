@@ -19,6 +19,10 @@ import (
 // between waves. Keys are slugs (string), values are chan bool (buffered 1).
 var gateChannels sync.Map
 
+// fallbackSAWConfig is populated once from the server's default repo path.
+// runWaveLoop uses it when the target repo has no saw.config.json of its own.
+var fallbackSAWConfig *SAWConfig
+
 // runWaveLoopFunc is the seam used by handleWaveStart. Tests can replace this
 // to inject a no-op and avoid real git/API calls in unit tests.
 var runWaveLoopFunc = runWaveLoop
@@ -90,6 +94,8 @@ func runWaveLoop(
 	}
 
 	// Read saw.config.json to pick up configured models.
+	// Try the target repo first; fall back to the server's default config
+	// for cross-repo IMPLs that don't have their own saw.config.json.
 	waveModel := ""
 	scaffoldModel := ""
 	if cfgData, err := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); err == nil {
@@ -98,6 +104,9 @@ func runWaveLoop(
 			waveModel = sawCfg.Agent.WaveModel
 			scaffoldModel = sawCfg.Agent.ScaffoldModel
 		}
+	} else if fallbackSAWConfig != nil {
+		waveModel = fallbackSAWConfig.Agent.WaveModel
+		scaffoldModel = fallbackSAWConfig.Agent.ScaffoldModel
 	}
 
 	// Load the YAML manifest to get wave structure.

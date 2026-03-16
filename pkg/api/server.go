@@ -2,11 +2,17 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
+
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 // Config holds server configuration for saw serve.
@@ -46,6 +52,15 @@ func New(cfg Config) *Server {
 		globalBroker:    newGlobalBroker(),
 		stages:          newStageManager(cfg.IMPLDir),
 		progressTracker: NewProgressTracker(),
+	}
+
+	// Populate fallback config so runWaveLoop can use it for cross-repo IMPLs
+	// that don't have their own saw.config.json.
+	if cfgData, err := os.ReadFile(filepath.Join(cfg.RepoPath, "saw.config.json")); err == nil {
+		var sawCfg SAWConfig
+		if json.Unmarshal(cfgData, &sawCfg) == nil {
+			fallbackSAWConfig = &sawCfg
+		}
 	}
 
 	// Watch the IMPL directory for new/changed docs so connected clients
@@ -145,12 +160,21 @@ func (s *Server) Start(ctx context.Context) error {
 // serves HTTPS (enabling HTTP/2 automatically via Go's stdlib). When they are
 // empty it falls back to plain HTTP/1.1.
 func (s *Server) StartTLS(ctx context.Context, certFile, keyFile string) error {
-	srv := &http.Server{
-		Addr:    s.cfg.Addr,
-		Handler: s.mux,
+	useTLS := certFile != "" && keyFile != ""
+
+	// For plain HTTP, wrap with h2c to enable cleartext HTTP/2.
+	// This eliminates the browser's 6-connection-per-domain limit that
+	// causes UI hangs when multiple SSE EventSource streams are open.
+	var handler http.Handler = s.mux
+	if !useTLS {
+		h2s := &http2.Server{}
+		handler = h2c.NewHandler(s.mux, h2s)
 	}
 
-	useTLS := certFile != "" && keyFile != ""
+	srv := &http.Server{
+		Addr:    s.cfg.Addr,
+		Handler: handler,
+	}
 
 	errCh := make(chan error, 1)
 	go func() {
