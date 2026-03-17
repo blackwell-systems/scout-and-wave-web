@@ -1,40 +1,49 @@
-import { PipelineResponse, QueueItem, AutonomyConfig, DaemonState } from './types/autonomy'
+import {
+  PipelineResponse,
+  QueueItem,
+  AddQueueItemRequest,
+  AutonomyConfig,
+  DaemonState,
+} from './types/autonomy'
 
 /**
  * Autonomy API client for pipeline, queue, and daemon management.
  * Created by Agent F (wave 2).
+ *
+ * Follows the same error-handling pattern as api.ts:
+ *   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
  */
 
-// Pipeline endpoint - returns combined view of completed + executing + queued IMPLs
+// --- Pipeline ---
+
+// GET /api/pipeline
 export async function fetchPipeline(): Promise<PipelineResponse> {
   const r = await fetch('/api/pipeline')
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
   return r.json() as Promise<PipelineResponse>
 }
 
-// Queue endpoints
-export async function listQueue(): Promise<QueueItem[]> {
+// --- Queue ---
+
+// GET /api/queue
+export async function fetchQueue(): Promise<QueueItem[]> {
   const r = await fetch('/api/queue')
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
   return r.json() as Promise<QueueItem[]>
 }
 
-export async function addQueueItem(item: {
-  title: string
-  priority: number
-  feature_description: string
-  depends_on?: string[]
-  autonomy_override?: string
-  require_review?: boolean
-}): Promise<void> {
+// POST /api/queue
+export async function addQueueItem(req: AddQueueItemRequest): Promise<QueueItem> {
   const r = await fetch('/api/queue', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(item),
+    body: JSON.stringify(req),
   })
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
+  return r.json() as Promise<QueueItem>
 }
 
+// DELETE /api/queue/{slug}
 export async function deleteQueueItem(slug: string): Promise<void> {
   const r = await fetch(`/api/queue/${encodeURIComponent(slug)}`, {
     method: 'DELETE',
@@ -42,7 +51,8 @@ export async function deleteQueueItem(slug: string): Promise<void> {
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
 }
 
-export async function reorderQueueItem(slug: string, priority: number): Promise<void> {
+// PUT /api/queue/{slug}/priority
+export async function updateQueuePriority(slug: string, priority: number): Promise<void> {
   const r = await fetch(`/api/queue/${encodeURIComponent(slug)}/priority`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
@@ -51,13 +61,16 @@ export async function reorderQueueItem(slug: string, priority: number): Promise<
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
 }
 
-// Autonomy config endpoints
-export async function getAutonomy(): Promise<AutonomyConfig> {
+// --- Autonomy config ---
+
+// GET /api/autonomy
+export async function fetchAutonomy(): Promise<AutonomyConfig> {
   const r = await fetch('/api/autonomy')
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
   return r.json() as Promise<AutonomyConfig>
 }
 
+// PUT /api/autonomy
 export async function saveAutonomy(config: AutonomyConfig): Promise<void> {
   const r = await fetch('/api/autonomy', {
     method: 'PUT',
@@ -67,24 +80,30 @@ export async function saveAutonomy(config: AutonomyConfig): Promise<void> {
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
 }
 
-// Daemon control endpoints
-export async function startDaemon(): Promise<void> {
+// --- Daemon control ---
+
+// POST /api/daemon/start
+export async function startDaemon(): Promise<DaemonState> {
   const r = await fetch('/api/daemon/start', { method: 'POST' })
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
+  return r.json() as Promise<DaemonState>
 }
 
+// POST /api/daemon/stop
 export async function stopDaemon(): Promise<void> {
   const r = await fetch('/api/daemon/stop', { method: 'POST' })
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
 }
 
-export async function getDaemonStatus(): Promise<DaemonState> {
+// GET /api/daemon/status
+export async function fetchDaemonStatus(): Promise<DaemonState> {
   const r = await fetch('/api/daemon/status')
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
   return r.json() as Promise<DaemonState>
 }
 
-// SSE stream for daemon events (pipeline_updated, impl_list_updated, etc.)
+// GET /api/daemon/events — SSE stream for daemon events
+// (pipeline_updated events are broadcast by queue and daemon handlers when state changes)
 export function subscribeDaemonEvents(): EventSource {
   return new EventSource('/api/daemon/events')
 }

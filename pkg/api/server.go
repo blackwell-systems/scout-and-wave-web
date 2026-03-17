@@ -147,6 +147,7 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("POST /api/journal/{wave}/{agent}/restore", s.handleJournalRestore)
 
 	// Autonomy layer (v0.58.0)
+	// Note: pipeline_updated is broadcast by queue and daemon handlers when state changes.
 	s.mux.HandleFunc("GET /api/pipeline", s.handleGetPipeline)
 	s.mux.HandleFunc("GET /api/queue", s.handleListQueue)
 	s.mux.HandleFunc("POST /api/queue", s.handleAddQueue)
