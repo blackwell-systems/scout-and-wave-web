@@ -497,6 +497,35 @@ completion_reports:
         files_changed:
             - web/src/components/ConflictResolutionPanel.tsx
         notes: auto-committed by orchestrator (API agent)
+    C:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave2-agent-C
+        branch: wave2-agent-C
+        commit: 0b3322ebf56acb34caaffce03dab799bc01b92f0
+        files_changed:
+            - IMPLEMENTATION_SUMMARY.md
+            - pkg/api/merge_test_handlers.go
+            - pkg/api/merge_test_handlers_test.go
+        notes: auto-committed by orchestrator (API agent)
+    D:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave2-agent-D
+        branch: wave2-agent-D
+        commit: 3c8eb83e3938ec3ca32b7ed2991720651d43b305
+        files_changed:
+            - web/src/api.ts
+            - web/src/components/ConflictResolutionPanel.tsx
+            - web/src/components/WaveBoard.tsx
+            - web/src/hooks/useExecutionSync.ts
+            - web/src/hooks/useWaveEvents.ts
+            - web/src/types.ts
+        notes: auto-committed by orchestrator (API agent)
+integration_reports:
+    wave2:
+        wave: 2
+        gaps: []
+        valid: true
+        summary: 'Wave 2: all exports are integrated (no gaps detected)'
 pre_mortem:
     overall_risk: medium
     rows:
@@ -525,4 +554,4 @@ known_issues:
       description: The existing test seam pattern uses package-level vars which are not goroutine-safe across parallel tests.
       status: Pre-existing
       workaround: Agent C should follow the same pattern for consistency, using a new resolveConflictsFunc var.
-state: SCOUT_PENDING
+state: "COMPLETE"
