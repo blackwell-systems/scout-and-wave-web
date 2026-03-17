@@ -8,7 +8,7 @@ import ImplEditor from './ImplEditor'
 import StageTimeline from './StageTimeline'
 import ConflictResolutionPanel from './ConflictResolutionPanel'
 import { AgentStatus, RepoEntry } from '../types'
-import { mergeWave, runWaveTests, rerunAgent, resolveConflicts, batchDeleteWorktrees, startWave } from '../api'
+import { mergeWave, runWaveTests, rerunAgent, resolveConflicts, batchDeleteWorktrees, startWave, retryFinalize } from '../api'
 
 interface WaveBoardProps {
   slug: string
@@ -169,6 +169,15 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
     void nextWave
   }
 
+  async function handleRetryFinalize(): Promise<void> {
+    const maxWave = Math.max(...state.waves.map(w => w.wave), 1)
+    try {
+      await retryFinalize(slug, maxWave)
+    } catch (err) {
+      console.error('retryFinalize request failed:', err)
+    }
+  }
+
   async function handleMergeWave(waveNum: number): Promise<void> {
     try {
       await mergeWave(slug, waveNum)
@@ -320,13 +329,29 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
             </div>
             <h2 className="text-base font-semibold text-red-800 dark:text-red-300 mb-2">Wave Execution Failed</h2>
             <p className="text-sm text-red-700 dark:text-red-400 max-w-md break-words">{state.runFailed}</p>
+            {state.runFailed.includes('FinalizeWave') && (
+              <button
+                onClick={() => void handleRetryFinalize()}
+                className="mt-4 text-sm font-medium px-4 py-2 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+              >
+                &#x21BA; Retry Finalization
+              </button>
+            )}
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">Press Escape to close this panel</p>
           </div>
         )}
         {/* Run failed banner — inline when waves are also showing */}
         {state.runFailed && state.waves.length > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-800 text-sm dark:bg-red-950 dark:border-red-800 dark:text-red-400">
-            <span className="font-medium">Wave failed:</span> {state.runFailed}
+          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-800 text-sm dark:bg-red-950 dark:border-red-800 dark:text-red-400 flex items-center justify-between gap-2">
+            <span><span className="font-medium">Wave failed:</span> {state.runFailed}</span>
+            {state.runFailed.includes('FinalizeWave') && (
+              <button
+                onClick={() => void handleRetryFinalize()}
+                className="shrink-0 text-xs font-medium px-3 py-1.5 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+              >
+                &#x21BA; Retry Finalization
+              </button>
+            )}
           </div>
         )}
 

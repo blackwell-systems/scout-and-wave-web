@@ -369,6 +369,34 @@ func (s *Server) handleWaveAgentRerun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Build failure context from previous completion report (if any).
+	promptPrefix := body.ScopeHint
+	if manifest, loadErr := protocol.Load(implPath); loadErr == nil {
+		if report, ok := manifest.CompletionReports[letter]; ok {
+			var ctx string
+			if report.Status != "complete" {
+				ctx = fmt.Sprintf("## Previous Attempt Failed\nStatus: %s\n", report.Status)
+				if report.FailureType != "" {
+					ctx += fmt.Sprintf("Failure type: %s\n", report.FailureType)
+				}
+				if report.Notes != "" {
+					ctx += fmt.Sprintf("Agent notes: %s\n", report.Notes)
+				}
+				if report.Verification != "" {
+					ctx += fmt.Sprintf("Verification output: %s\n", report.Verification)
+				}
+				ctx += "\nFix the issues described above, then complete your original task.\n\n"
+			}
+			if ctx != "" {
+				if promptPrefix != "" {
+					promptPrefix = ctx + promptPrefix
+				} else {
+					promptPrefix = ctx
+				}
+			}
+		}
+	}
+
 	// Read wave model and integration model from saw.config.json if present.
 	waveModel := ""
 	integrationModel := ""
@@ -390,7 +418,7 @@ func (s *Server) handleWaveAgentRerun(w http.ResponseWriter, r *http.Request) {
 	enginePublisher := s.makeEnginePublisher(slug)
 
 	go func() {
-		if err := engine.RunSingleAgent(context.Background(), opts, body.Wave, letter, body.ScopeHint, enginePublisher); err != nil {
+		if err := engine.RunSingleAgent(context.Background(), opts, body.Wave, letter, promptPrefix, enginePublisher); err != nil {
 			publish := s.makePublisher(slug)
 			publish("agent_failed", map[string]interface{}{
 				"agent":        letter,
@@ -405,6 +433,91 @@ func (s *Server) handleWaveAgentRerun(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
 	fmt.Fprintf(w, `{"status":"accepted","slug":%q,"agent":%q,"wave":%d}`, slug, letter, body.Wave)
+}
+
+// handleWaveFinalize handles POST /api/wave/{slug}/finalize.
+// Retries the finalization pipeline (verify commits, gates, merge, build, cleanup)
+// for a wave whose agents completed but finalization previously failed (e.g. gate failure).
+func (s *Server) handleWaveFinalize(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+
+	var body struct {
+		Wave int `json:"wave"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Wave < 1 {
+		http.Error(w, "wave must be >= 1", http.StatusBadRequest)
+		return
+	}
+
+	implPath, repoPath, err := s.resolveIMPLPath(slug)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Guard against concurrent merges (reuses the same lock as handleWaveMerge)
+	if _, loaded := s.mergingRuns.LoadOrStore(slug, struct{}{}); loaded {
+		http.Error(w, "merge/finalize already in progress for this slug", http.StatusConflict)
+		return
+	}
+
+	publish := s.makePublisher(slug)
+	wave := body.Wave
+
+	w.WriteHeader(http.StatusAccepted)
+
+	go func() {
+		defer s.mergingRuns.Delete(slug)
+
+		publish("merge_started", map[string]interface{}{
+			"slug": slug,
+			"wave": wave,
+		})
+		publish("merge_output", map[string]interface{}{
+			"slug":  slug,
+			"wave":  wave,
+			"chunk": fmt.Sprintf("Retrying finalization for wave %d...\n", wave),
+		})
+
+		finalizeResult, err := engine.FinalizeWave(context.Background(), engine.FinalizeWaveOpts{
+			IMPLPath: implPath,
+			RepoPath: repoPath,
+			WaveNum:  wave,
+		})
+
+		// Publish gate results for UI visibility
+		if finalizeResult != nil {
+			for _, gate := range finalizeResult.GateResults {
+				publish("quality_gate_result", gate)
+			}
+		}
+
+		if err != nil {
+			publish("merge_failed", map[string]interface{}{
+				"slug":  slug,
+				"wave":  wave,
+				"error": err.Error(),
+			})
+			return
+		}
+
+		// Post-finalize: go.mod fixup
+		if fixed, fixErr := protocol.FixGoModReplacePaths(repoPath); fixErr != nil {
+			publish("merge_output", map[string]interface{}{"slug": slug, "wave": wave, "chunk": fmt.Sprintf("go.mod fixup warning: %v\n", fixErr)})
+		} else if fixed {
+			publish("merge_output", map[string]interface{}{"slug": slug, "wave": wave, "chunk": "Auto-corrected go.mod replace paths\n"})
+		}
+
+		publish("merge_complete", map[string]interface{}{
+			"slug":   slug,
+			"wave":   wave,
+			"status": "success",
+		})
+	}()
 }
 
 // resolveIMPLPath searches all configured repositories for the IMPL doc with the given slug.

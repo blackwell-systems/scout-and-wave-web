@@ -160,6 +160,15 @@ export async function rerunAgent(slug: string, wave: number, agentLetter: string
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
 }
 
+export async function retryFinalize(slug: string, wave: number): Promise<void> {
+  const r = await fetch(`/api/wave/${encodeURIComponent(slug)}/finalize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wave }),
+  })
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+}
+
 // Disk-based wave status (survives server restarts)
 export interface DiskAgentStatus {
   agent: string

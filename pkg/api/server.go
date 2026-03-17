@@ -83,6 +83,7 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("POST /api/wave/{slug}/gate/proceed", s.handleWaveGateProceed)
 	s.mux.HandleFunc("POST /api/wave/{slug}/agent/{letter}/rerun", s.handleWaveAgentRerun)
 	s.mux.HandleFunc("POST /api/wave/{slug}/merge", s.handleWaveMerge)
+	s.mux.HandleFunc("POST /api/wave/{slug}/finalize", s.handleWaveFinalize)
 	s.mux.HandleFunc("POST /api/wave/{slug}/merge-abort", s.handleMergeAbort)
 	s.RegisterConflictRoutes()
 	s.mux.HandleFunc("POST /api/wave/{slug}/test", s.handleWaveTest)
