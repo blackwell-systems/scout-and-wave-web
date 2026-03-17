@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { fetchDiskWaveStatus } from '../api'
 import { AgentOutputData, AgentStatus, AgentToolCallData, ToolCallEntry, WaveState } from '../types'
 
 export interface WaveMergeState {
@@ -70,6 +71,24 @@ export function useWaveEvents(slug: string): AppWaveState {
   })
 
   const esRef = useRef<EventSource | null>(null)
+
+  // Seed merge state from disk status on mount — covers waves merged in
+  // previous sessions whose SSE events are no longer available.
+  useEffect(() => {
+    fetchDiskWaveStatus(slug).then(disk => {
+      if (disk.waves_merged && disk.waves_merged.length > 0) {
+        setState(prev => {
+          const next = new Map(prev.wavesMergeState)
+          for (const w of disk.waves_merged!) {
+            if (!next.has(w)) {
+              next.set(w, { status: 'success', output: '', conflictingFiles: [], resolvedFiles: [] })
+            }
+          }
+          return { ...prev, wavesMergeState: next }
+        })
+      }
+    }).catch(() => { /* disk status unavailable — SSE will provide state */ })
+  }, [slug])
 
   useEffect(() => {
     const es = new EventSource(`/api/wave/${slug}/events`)
