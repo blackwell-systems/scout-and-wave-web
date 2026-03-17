@@ -10,12 +10,14 @@ import {
 } from './ui/table'
 import { Badge } from './ui/badge'
 import { getAgentColor, getAgentColorWithOpacity } from '../lib/agentColors'
+import type { FileActivityEntry } from '../types/fileActivity'
 
 interface FileOwnershipTableProps {
   fileOwnership: FileOwnershipEntry[]
   col4Name?: string
   onFileClick?: (file: string, agent: string, wave: number) => void
   renderViewButton?: (entry: FileOwnershipEntry) => React.ReactNode
+  liveStatus?: Map<string, FileActivityEntry>
 }
 
 // Wave-level colors (border wrapper + badge) - middle hierarchy
@@ -45,7 +47,44 @@ function getRepoColor(repoIndex: number) {
   return REPO_COLORS[repoIndex % REPO_COLORS.length]
 }
 
-export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileClick: _onFileClick, renderViewButton }: FileOwnershipTableProps): JSX.Element {
+/** Render a status indicator (colored dot + label) for a file activity entry. */
+function renderStatusIndicator(entry: FileActivityEntry): JSX.Element {
+  let dotColor: string
+  let label: string
+  let isPulsing = false
+
+  switch (entry.status) {
+    case 'idle':
+      dotColor = '#6b7280' // gray
+      label = 'Idle'
+      break
+    case 'reading':
+      dotColor = '#3b82f6' // blue
+      label = 'Reading'
+      break
+    case 'writing':
+      dotColor = '#f59e0b' // amber
+      label = 'Writing'
+      isPulsing = true
+      break
+    case 'committed':
+      dotColor = '#22c55e' // green
+      label = 'Committed'
+      break
+  }
+
+  return (
+    <div className="flex items-center gap-1.5">
+      <div
+        className={`w-2 h-2 rounded-full ${isPulsing ? 'animate-pulse' : ''}`}
+        style={{ backgroundColor: dotColor }}
+      />
+      <span className="text-xs opacity-70">{label}</span>
+    </div>
+  )
+}
+
+export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileClick: _onFileClick, renderViewButton, liveStatus }: FileOwnershipTableProps): JSX.Element {
   // Build agent color map (excluding Scaffold which gets grey)
   const agents = Array.from(new Set(fileOwnership.map(e => e.agent))).sort()
   const nonScaffoldAgents = agents.filter(a => a.toLowerCase() !== 'scaffold')
@@ -63,6 +102,9 @@ export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileC
   const repos = Array.from(new Set(fileOwnership.map(e => e.repo || '').filter(r => r !== '')))
   const hasMultipleRepos = repos.length > 1
   const hasRepo = hasMultipleRepos // Only show Repo column if multiple repos
+  
+  // Show status column only when liveStatus is provided
+  const hasStatus = liveStatus !== undefined
 
   const sorted = [...fileOwnership].sort((a, b) => {
     const isAScaffold = a.agent.toLowerCase() === 'scaffold'
@@ -169,6 +211,7 @@ export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileC
                             {hasWaves && <TableHead className={`w-[80px] ${isScaffoldGroup ? 'opacity-0' : ''}`}>Wave</TableHead>}
                             {hasCol4 && <TableHead>{col4Label}</TableHead>}
                             {hasRepo && <TableHead>Repo</TableHead>}
+                            {hasStatus && <TableHead>Status</TableHead>}
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -178,6 +221,7 @@ export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileC
                               ? '#6b7280' // gray fallback for Scaffold
                               : agentColorMap.get(entry.agent) ?? '#6b7280'
                             const bgColor = getAgentColorWithOpacity(isScaffold ? 'scaffold' : entry.agent, 0.15)
+                            const status = liveStatus?.get(entry.file)
                             return (
                               <TableRow
                                 key={idx}
@@ -210,6 +254,11 @@ export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileC
                                 {hasRepo && (
                                   <TableCell className="text-sm opacity-70">
                                     {entry.repo || ""}
+                                  </TableCell>
+                                )}
+                                {hasStatus && (
+                                  <TableCell>
+                                    {status ? renderStatusIndicator(status) : null}
                                   </TableCell>
                                 )}
                               </TableRow>

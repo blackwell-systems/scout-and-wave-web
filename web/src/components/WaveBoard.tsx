@@ -2,12 +2,14 @@ import { useState, useRef, useEffect } from 'react'
 import { useWaveEvents } from '../hooks/useWaveEvents'
 import type { AppWaveState } from '../hooks/useWaveEvents'
 import { WaveMergeState, WaveTestState } from '../hooks/useWaveEvents'
+import { useFileActivity } from '../hooks/useFileActivity'
 import AgentCard from './AgentCard'
 import ProgressBar from './ProgressBar'
 import ImplEditor from './ImplEditor'
 import StageTimeline from './StageTimeline'
 import ConflictResolutionPanel from './ConflictResolutionPanel'
-import { AgentStatus, RepoEntry } from '../types'
+import FileOwnershipTable from './FileOwnershipTable'
+import { AgentStatus, RepoEntry, FileOwnershipEntry } from '../types'
 import { mergeWave, runWaveTests, rerunAgent, resolveConflicts, batchDeleteWorktrees, startWave, retryFinalize, fixBuild } from '../api'
 
 interface WaveBoardProps {
@@ -107,8 +109,10 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
   // Optimistic status overrides — keyed by "wave:agent"
   const [statusOverrides, setStatusOverrides] = useState<Map<string, 'pending'>>(new Map())
   const [staleDismissed, setStaleDismissed] = useState(false)
+  const [fileActivityExpanded, setFileActivityExpanded] = useState(false)
 
   const state = useWaveEvents(slug)
+  const liveStatus = useFileActivity(state)
 
   // Merge optimistic overrides on top of SSE-driven agent state
   function applyOverrides(agent: AgentStatus): AgentStatus {
@@ -683,6 +687,49 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
             </div>
           )
         })}
+
+        {/* File Activity section — only shown when there are running agents */}
+        {(() => {
+          const hasRunningAgents = displayAgents.some(a => a.status === 'running')
+          if (!hasRunningAgents) return null
+
+          // Build FileOwnershipEntry[] from running agents
+          const fileEntries: FileOwnershipEntry[] = displayAgents
+            .filter(a => a.status === 'running')
+            .flatMap(a =>
+              (a.files ?? []).map(f => ({
+                file: f,
+                agent: a.agent,
+                wave: a.wave,
+                action: '',
+                depends_on: '',
+              }))
+            )
+
+          if (fileEntries.length === 0) return null
+
+          return (
+            <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm">
+              <button
+                onClick={() => setFileActivityExpanded(prev => !prev)}
+                className="flex items-center justify-between w-full text-left mb-3"
+              >
+                <span className="font-semibold text-gray-700 dark:text-gray-300 text-sm">
+                  File Activity
+                </span>
+                <span className="text-gray-500 dark:text-gray-400 text-xs">
+                  {fileActivityExpanded ? '▼' : '▶'}
+                </span>
+              </button>
+              {fileActivityExpanded && (
+                <FileOwnershipTable
+                  fileOwnership={fileEntries}
+                  liveStatus={liveStatus}
+                />
+              )}
+            </div>
+          )
+        })()}
 
       </div>
     </div>
