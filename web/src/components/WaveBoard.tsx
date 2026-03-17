@@ -375,11 +375,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                   pipelineSteps={state.pipelineSteps ?? {}}
                   onRetryStep={async (step, wave) => { await retryStep(slug, step, wave) }}
                   onSkipStep={async (step, wave, reason) => { await skipStep(slug, step, wave, reason) }}
-                  onForceComplete={async () => {
-                    if (window.confirm('Force mark this IMPL as complete? This skips remaining pipeline steps.')) {
-                      await forceMarkComplete(slug)
-                    }
-                  }}
+                  onForceComplete={async () => { await forceMarkComplete(slug) }}
                   onRetryFinalize={async () => { await handleRetryFinalize() }}
                 />
               </div>
@@ -417,11 +413,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
             pipelineSteps={state.pipelineSteps ?? {}}
             onRetryStep={async (step, wave) => { await retryStep(slug, step, wave) }}
             onSkipStep={async (step, wave, reason) => { await skipStep(slug, step, wave, reason) }}
-            onForceComplete={async () => {
-              if (window.confirm('Force mark this IMPL as complete? This skips remaining pipeline steps.')) {
-                await forceMarkComplete(slug)
-              }
-            }}
+            onForceComplete={async () => { await forceMarkComplete(slug) }}
             onRetryFinalize={async () => { await handleRetryFinalize() }}
           />
         )}
