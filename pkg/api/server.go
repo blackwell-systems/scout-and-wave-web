@@ -41,6 +41,23 @@ type Server struct {
 	agentSnapshots   sync.Map        // slug -> *agentSnapshot; latest agent lifecycle event per agent for SSE replay
 }
 
+// getConfiguredRepos reads saw.config.json and returns the list of configured
+// repos. Falls back to a single entry using s.cfg.RepoPath if no config or
+// no repos are configured.
+func (s *Server) getConfiguredRepos() []RepoEntry {
+	configPath := filepath.Join(s.cfg.RepoPath, "saw.config.json")
+	if data, err := os.ReadFile(configPath); err == nil {
+		var cfg SAWConfig
+		if json.Unmarshal(data, &cfg) == nil && len(cfg.Repos) > 0 {
+			return cfg.Repos
+		}
+	}
+	return []RepoEntry{{
+		Name: filepath.Base(s.cfg.RepoPath),
+		Path: s.cfg.RepoPath,
+	}}
+}
+
 // New creates a Server with the given Config and registers all routes.
 func New(cfg Config) *Server {
 	s := &Server{

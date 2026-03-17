@@ -40,6 +40,7 @@ export interface PipelineEntry {
   slug: string
   title: string
   status: 'complete' | 'executing' | 'blocked' | 'queued'
+  repo?: string                 // repo name from saw.config.json
   wave_progress?: string        // e.g. "Wave 2/3"
   active_agent?: string         // e.g. "Agent B"
   blocked_reason?: string

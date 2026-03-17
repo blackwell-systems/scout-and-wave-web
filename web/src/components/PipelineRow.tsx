@@ -118,6 +118,11 @@ export default function PipelineRow({ entry, onSelect }: PipelineRowProps): JSX.
           {entry.title}
         </div>
         <div className="flex items-center gap-2 mt-1">
+          {entry.repo && (
+            <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+              {entry.repo}
+            </span>
+          )}
           {statusDetail()}
         </div>
       </div>
