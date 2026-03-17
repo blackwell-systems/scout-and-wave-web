@@ -6,10 +6,6 @@ import "net/http"
 // These will be implemented by agents A, B, C in Wave 2.
 // Agent F only wires the routes; these stubs allow compilation.
 
-func (s *Server) handleGetPipeline(w http.ResponseWriter, r *http.Request) {
-	http.Error(w, "Not implemented", http.StatusNotImplemented)
-}
-
 func (s *Server) handleListQueue(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "Not implemented", http.StatusNotImplemented)
 }
