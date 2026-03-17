@@ -361,3 +361,25 @@ export async function fetchGitStatus(repo: string): Promise<GitStatusResponse> {
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
   return r.json() as Promise<GitStatusResponse>
 }
+
+// Pipeline recovery controls
+export async function retryStep(slug: string, step: string, wave: number): Promise<void> {
+  const res = await fetch(`/api/wave/${encodeURIComponent(slug)}/step/${step}/retry`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wave }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+}
+
+export async function skipStep(slug: string, step: string, wave: number, reason: string): Promise<void> {
+  const res = await fetch(`/api/wave/${encodeURIComponent(slug)}/step/${step}/skip`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wave, reason }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+}
+
+export async function forceMarkComplete(slug: string): Promise<void> {
+  const res = await fetch(`/api/wave/${encodeURIComponent(slug)}/mark-complete`, { method: 'POST' })
+  if (!res.ok) throw new Error(await res.text())
+}

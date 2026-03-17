@@ -251,6 +251,19 @@ export function useWaveEvents(slug: string): AppWaveState {
       dispatch({ type: 'STAGE_TRANSITION', entry })
     })
 
+    es.addEventListener('pipeline_step', (event: MessageEvent) => {
+      const data = JSON.parse(event.data) as {
+        step: string; status: string; wave: number; error?: string
+      }
+      dispatch({
+        type: 'PIPELINE_STEP',
+        step: data.step,
+        status: data.status,
+        wave: data.wave,
+        error: data.error,
+      })
+    })
+
     es.addEventListener('fix_build_started', () => {
       dispatch({ type: 'FIX_BUILD_STARTED' })
     })

@@ -10,7 +10,8 @@ import StageTimeline from './StageTimeline'
 import ConflictResolutionPanel from './ConflictResolutionPanel'
 import FileOwnershipTable from './FileOwnershipTable'
 import { AgentStatus, RepoEntry, FileOwnershipEntry } from '../types'
-import { mergeWave, runWaveTests, rerunAgent, resolveConflicts, batchDeleteWorktrees, startWave, retryFinalize, fixBuild } from '../api'
+import { mergeWave, runWaveTests, rerunAgent, resolveConflicts, batchDeleteWorktrees, startWave, retryFinalize, fixBuild, retryStep, skipStep, forceMarkComplete } from '../api'
+import RecoveryControlsPanel from './RecoveryControlsPanel'
 
 interface WaveBoardProps {
   slug: string
@@ -366,6 +367,23 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                 </button>
               </div>
             )}
+            {Object.keys(state.pipelineSteps ?? {}).length > 0 && (
+              <div className="mt-4 w-full max-w-md">
+                <RecoveryControlsPanel
+                  slug={slug}
+                  wave={Math.max(...state.waves.map(w => w.wave), 1)}
+                  pipelineSteps={state.pipelineSteps ?? {}}
+                  onRetryStep={async (step, wave) => { await retryStep(slug, step, wave) }}
+                  onSkipStep={async (step, wave, reason) => { await skipStep(slug, step, wave, reason) }}
+                  onForceComplete={async () => {
+                    if (window.confirm('Force mark this IMPL as complete? This skips remaining pipeline steps.')) {
+                      await forceMarkComplete(slug)
+                    }
+                  }}
+                  onRetryFinalize={async () => { await handleRetryFinalize() }}
+                />
+              </div>
+            )}
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">Press Escape to close this panel</p>
           </div>
         )}
@@ -391,6 +409,21 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
               </div>
             )}
           </div>
+        )}
+        {state.runFailed && state.waves.length > 0 && Object.keys(state.pipelineSteps ?? {}).length > 0 && (
+          <RecoveryControlsPanel
+            slug={slug}
+            wave={Math.max(...state.waves.map(w => w.wave), 1)}
+            pipelineSteps={state.pipelineSteps ?? {}}
+            onRetryStep={async (step, wave) => { await retryStep(slug, step, wave) }}
+            onSkipStep={async (step, wave, reason) => { await skipStep(slug, step, wave, reason) }}
+            onForceComplete={async () => {
+              if (window.confirm('Force mark this IMPL as complete? This skips remaining pipeline steps.')) {
+                await forceMarkComplete(slug)
+              }
+            }}
+            onRetryFinalize={async () => { await handleRetryFinalize() }}
+          />
         )}
 
         {/* AI build fixer output */}

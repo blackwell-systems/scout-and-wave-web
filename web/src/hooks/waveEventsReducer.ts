@@ -50,6 +50,7 @@ export interface AppWaveState {
   fixBuildStatus: 'idle' | 'running' | 'complete' | 'failed'
   fixBuildOutput: string
   fixBuildError?: string
+  pipelineSteps?: Record<string, { status: string; error?: string }>
 }
 
 // Action types
@@ -88,6 +89,7 @@ export type WaveAction =
   | { type: 'FIX_BUILD_OUTPUT'; chunk: string }
   | { type: 'FIX_BUILD_COMPLETE' }
   | { type: 'FIX_BUILD_FAILED'; error: string }
+  | { type: 'PIPELINE_STEP'; step: string; status: string; wave: number; error?: string }
 
 // Initial state
 export const initialWaveState: AppWaveState = {
@@ -102,6 +104,7 @@ export const initialWaveState: AppWaveState = {
   stageEntries: [],
   fixBuildStatus: 'idle',
   fixBuildOutput: '',
+  pipelineSteps: {},
 }
 
 // Helper function: rebuild waves from agents list
@@ -380,6 +383,15 @@ export function waveEventsReducer(state: AppWaveState, action: WaveAction): AppW
 
     case 'FIX_BUILD_FAILED':
       return { ...state, fixBuildStatus: 'failed', fixBuildError: action.error }
+
+    case 'PIPELINE_STEP':
+      return {
+        ...state,
+        pipelineSteps: {
+          ...state.pipelineSteps,
+          [action.step]: { status: action.status, error: action.error },
+        },
+      }
 
     default:
       return state
