@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
 )
@@ -54,6 +56,9 @@ func (s *Server) handleWaveStart(w http.ResponseWriter, r *http.Request) {
 
 	// Clear previous stage state so the timeline starts fresh for this run.
 	s.stages.Clear(slug)
+	if s.pipelineTracker != nil {
+		s.pipelineTracker.Clear(slug)
+	}
 	s.progressTracker.Clear(slug)
 	onStage := s.makeStageCallback(slug, publish)
 
@@ -217,26 +222,34 @@ func runWaveLoop(
 			onStage(StageWaveExecute, StageStatusComplete, waveNum, "")
 		}
 
-		// FinalizeWave: verify commits (I5), scan stubs (E20), run gates (E21),
-		// merge agents, verify build, and cleanup — matching CLI finalize-wave pipeline.
+		// FinalizeWave: decomposed pipeline with step-level tracking.
+		// Uses pipelineTracker for state persistence and resume support.
+		// Falls back to monolithic engine.FinalizeWave if tracker is nil.
 		onStage(StageWaveMerge, StageStatusRunning, waveNum, "")
-		finalizeResult, err := engine.FinalizeWave(ctx, engine.FinalizeWaveOpts{
-			IMPLPath: implPath,
-			RepoPath: repoPath,
-			WaveNum:  waveNum,
-		})
-		if err != nil {
-			onStage(StageWaveMerge, StageStatusFailed, waveNum, err.Error())
-			publish("run_failed", map[string]string{"error": err.Error()})
-			return
-		}
-		// Publish stub report if any stubs found (informational)
-		if finalizeResult.StubReport != nil && len(finalizeResult.StubReport.Hits) > 0 {
-			publish("stub_report", finalizeResult.StubReport)
-		}
-		// Publish gate results for UI visibility
-		for _, gate := range finalizeResult.GateResults {
-			publish("quality_gate_result", gate)
+		if defaultPipelineTracker != nil {
+			if err := runFinalizeSteps(slug, waveNum, implPath, repoPath, publish); err != nil {
+				onStage(StageWaveMerge, StageStatusFailed, waveNum, err.Error())
+				publish("run_failed", map[string]string{"error": err.Error()})
+				return
+			}
+		} else {
+			// Backward compatibility: monolithic finalize when no tracker.
+			finalizeResult, err := engine.FinalizeWave(ctx, engine.FinalizeWaveOpts{
+				IMPLPath: implPath,
+				RepoPath: repoPath,
+				WaveNum:  waveNum,
+			})
+			if err != nil {
+				onStage(StageWaveMerge, StageStatusFailed, waveNum, err.Error())
+				publish("run_failed", map[string]string{"error": err.Error()})
+				return
+			}
+			if finalizeResult.StubReport != nil && len(finalizeResult.StubReport.Hits) > 0 {
+				publish("stub_report", finalizeResult.StubReport)
+			}
+			for _, gate := range finalizeResult.GateResults {
+				publish("quality_gate_result", gate)
+			}
 		}
 		onStage(StageWaveMerge, StageStatusComplete, waveNum, "")
 
@@ -312,6 +325,228 @@ func runWaveLoop(
 		"waves":  len(waves),
 		"agents": totalAgents,
 	})
+}
+
+// publishPipelineStep emits a pipeline_step SSE event for UI consumption.
+func publishPipelineStep(publish func(string, interface{}), slug string, waveNum int, step PipelineStep, status StepStatus, errMsg string) {
+	publish("pipeline_step", map[string]interface{}{
+		"slug":   slug,
+		"wave":   waveNum,
+		"step":   string(step),
+		"status": string(status),
+		"error":  errMsg,
+	})
+}
+
+// runFinalizeSteps executes the decomposed finalization pipeline with
+// step-level tracking via defaultPipelineTracker. Both runWaveLoop and
+// handleWaveFinalize call this to avoid duplicating step logic.
+//
+// On resume, steps that already completed or were skipped are skipped.
+// Non-fatal steps (scan_stubs, validate_integration, fix_go_mod, cleanup)
+// log errors but continue. Fatal step failures return an error.
+func runFinalizeSteps(slug string, waveNum int, implPath, repoPath string, publish func(string, interface{})) error {
+	tracker := defaultPipelineTracker
+
+	// Determine resume point: skip steps already completed/skipped.
+	resumeAfter := tracker.LastSuccessfulStep(slug)
+
+	shouldSkip := func(step PipelineStep) bool {
+		if resumeAfter == "" {
+			return false
+		}
+		for _, s := range PipelineStepOrder {
+			if s == step {
+				return true // this step is at or before resumeAfter
+			}
+			if s == resumeAfter {
+				return false // past resumeAfter, don't skip
+			}
+		}
+		return false
+	}
+
+	// Load manifest once for steps that need it.
+	manifest, err := protocol.Load(implPath)
+	if err != nil {
+		return fmt.Errorf("runFinalizeSteps: load manifest: %w", err)
+	}
+
+	// --- Step 1: VerifyCommits ---
+	if shouldSkip(StepVerifyCommits) {
+		publishPipelineStep(publish, slug, waveNum, StepVerifyCommits, StepSkipped, "")
+	} else {
+		_ = tracker.Start(slug, waveNum, StepVerifyCommits)
+		publishPipelineStep(publish, slug, waveNum, StepVerifyCommits, StepRunning, "")
+
+		verifyResult, err := protocol.VerifyCommits(implPath, waveNum, repoPath)
+		if err != nil {
+			_ = tracker.Fail(slug, waveNum, StepVerifyCommits, err)
+			publishPipelineStep(publish, slug, waveNum, StepVerifyCommits, StepFailed, err.Error())
+			return fmt.Errorf("verify-commits: %w", err)
+		}
+		if !verifyResult.AllValid {
+			err := fmt.Errorf("verify-commits found agents with no commits")
+			_ = tracker.Fail(slug, waveNum, StepVerifyCommits, err)
+			publishPipelineStep(publish, slug, waveNum, StepVerifyCommits, StepFailed, err.Error())
+			return err
+		}
+		_ = tracker.Complete(slug, waveNum, StepVerifyCommits)
+		publishPipelineStep(publish, slug, waveNum, StepVerifyCommits, StepComplete, "")
+	}
+
+	// --- Step 2: ScanStubs (non-fatal) ---
+	if shouldSkip(StepScanStubs) {
+		publishPipelineStep(publish, slug, waveNum, StepScanStubs, StepSkipped, "")
+	} else {
+		_ = tracker.Start(slug, waveNum, StepScanStubs)
+		publishPipelineStep(publish, slug, waveNum, StepScanStubs, StepRunning, "")
+
+		var changedFiles []string
+		if waveNum > 0 && waveNum <= len(manifest.Waves) {
+			for _, agent := range manifest.Waves[waveNum-1].Agents {
+				if report, ok := manifest.CompletionReports[agent.ID]; ok {
+					changedFiles = append(changedFiles, report.FilesChanged...)
+					changedFiles = append(changedFiles, report.FilesCreated...)
+				}
+			}
+		}
+		if len(changedFiles) > 0 {
+			stubResult, err := protocol.ScanStubs(changedFiles)
+			if err != nil {
+				log.Printf("runFinalizeSteps: scan-stubs non-fatal error: %v", err)
+			} else if stubResult != nil && len(stubResult.Hits) > 0 {
+				publish("stub_report", stubResult)
+			}
+		}
+		_ = tracker.Complete(slug, waveNum, StepScanStubs)
+		publishPipelineStep(publish, slug, waveNum, StepScanStubs, StepComplete, "")
+	}
+
+	// --- Step 3: RunGates ---
+	if shouldSkip(StepRunGates) {
+		publishPipelineStep(publish, slug, waveNum, StepRunGates, StepSkipped, "")
+	} else {
+		_ = tracker.Start(slug, waveNum, StepRunGates)
+		publishPipelineStep(publish, slug, waveNum, StepRunGates, StepRunning, "")
+
+		stateDir := filepath.Join(repoPath, ".saw-state")
+		cache := gatecache.New(stateDir, 5*time.Minute)
+		gateResults, err := protocol.RunGatesWithCache(manifest, waveNum, repoPath, cache)
+		if err != nil {
+			_ = tracker.Fail(slug, waveNum, StepRunGates, err)
+			publishPipelineStep(publish, slug, waveNum, StepRunGates, StepFailed, err.Error())
+			return fmt.Errorf("run-gates: %w", err)
+		}
+		for _, gate := range gateResults {
+			publish("quality_gate_result", gate)
+			if gate.Required && !gate.Passed {
+				err := fmt.Errorf("required gate %q failed", gate.Type)
+				_ = tracker.Fail(slug, waveNum, StepRunGates, err)
+				publishPipelineStep(publish, slug, waveNum, StepRunGates, StepFailed, err.Error())
+				return err
+			}
+		}
+		_ = tracker.Complete(slug, waveNum, StepRunGates)
+		publishPipelineStep(publish, slug, waveNum, StepRunGates, StepComplete, "")
+	}
+
+	// --- Step 4: ValidateIntegration (non-fatal) ---
+	if shouldSkip(StepValidateIntegration) {
+		publishPipelineStep(publish, slug, waveNum, StepValidateIntegration, StepSkipped, "")
+	} else {
+		_ = tracker.Start(slug, waveNum, StepValidateIntegration)
+		publishPipelineStep(publish, slug, waveNum, StepValidateIntegration, StepRunning, "")
+
+		integrationReport, err := protocol.ValidateIntegration(manifest, waveNum, repoPath)
+		if err != nil {
+			log.Printf("runFinalizeSteps: validate-integration non-fatal error: %v", err)
+		} else if integrationReport != nil {
+			waveKey := fmt.Sprintf("wave%d", waveNum)
+			_ = protocol.AppendIntegrationReport(implPath, waveKey, integrationReport)
+		}
+		_ = tracker.Complete(slug, waveNum, StepValidateIntegration)
+		publishPipelineStep(publish, slug, waveNum, StepValidateIntegration, StepComplete, "")
+	}
+
+	// --- Step 5: MergeAgents ---
+	if shouldSkip(StepMergeAgents) {
+		publishPipelineStep(publish, slug, waveNum, StepMergeAgents, StepSkipped, "")
+	} else {
+		_ = tracker.Start(slug, waveNum, StepMergeAgents)
+		publishPipelineStep(publish, slug, waveNum, StepMergeAgents, StepRunning, "")
+
+		mergeResult, err := protocol.MergeAgents(implPath, waveNum, repoPath)
+		if err != nil {
+			_ = tracker.Fail(slug, waveNum, StepMergeAgents, err)
+			publishPipelineStep(publish, slug, waveNum, StepMergeAgents, StepFailed, err.Error())
+			return fmt.Errorf("merge-agents: %w", err)
+		}
+		if !mergeResult.Success {
+			err := fmt.Errorf("merge-agents encountered conflicts")
+			_ = tracker.Fail(slug, waveNum, StepMergeAgents, err)
+			publishPipelineStep(publish, slug, waveNum, StepMergeAgents, StepFailed, err.Error())
+			return err
+		}
+		_ = tracker.Complete(slug, waveNum, StepMergeAgents)
+		publishPipelineStep(publish, slug, waveNum, StepMergeAgents, StepComplete, "")
+	}
+
+	// --- Step 6: FixGoMod (non-fatal) ---
+	if shouldSkip(StepFixGoMod) {
+		publishPipelineStep(publish, slug, waveNum, StepFixGoMod, StepSkipped, "")
+	} else {
+		_ = tracker.Start(slug, waveNum, StepFixGoMod)
+		publishPipelineStep(publish, slug, waveNum, StepFixGoMod, StepRunning, "")
+
+		if fixed, err := protocol.FixGoModReplacePaths(repoPath); err != nil {
+			log.Printf("runFinalizeSteps: fix-go-mod non-fatal error: %v", err)
+		} else if fixed {
+			log.Printf("runFinalizeSteps: auto-corrected go.mod replace paths")
+		}
+		_ = tracker.Complete(slug, waveNum, StepFixGoMod)
+		publishPipelineStep(publish, slug, waveNum, StepFixGoMod, StepComplete, "")
+	}
+
+	// --- Step 7: VerifyBuild ---
+	if shouldSkip(StepVerifyBuild) {
+		publishPipelineStep(publish, slug, waveNum, StepVerifyBuild, StepSkipped, "")
+	} else {
+		_ = tracker.Start(slug, waveNum, StepVerifyBuild)
+		publishPipelineStep(publish, slug, waveNum, StepVerifyBuild, StepRunning, "")
+
+		verifyBuildResult, err := protocol.VerifyBuild(implPath, repoPath)
+		if err != nil {
+			_ = tracker.Fail(slug, waveNum, StepVerifyBuild, err)
+			publishPipelineStep(publish, slug, waveNum, StepVerifyBuild, StepFailed, err.Error())
+			return fmt.Errorf("verify-build: %w", err)
+		}
+		if !verifyBuildResult.TestPassed || !verifyBuildResult.LintPassed {
+			err := fmt.Errorf("verify-build failed (test_passed=%v, lint_passed=%v)",
+				verifyBuildResult.TestPassed, verifyBuildResult.LintPassed)
+			_ = tracker.Fail(slug, waveNum, StepVerifyBuild, err)
+			publishPipelineStep(publish, slug, waveNum, StepVerifyBuild, StepFailed, err.Error())
+			return err
+		}
+		_ = tracker.Complete(slug, waveNum, StepVerifyBuild)
+		publishPipelineStep(publish, slug, waveNum, StepVerifyBuild, StepComplete, "")
+	}
+
+	// --- Step 8: Cleanup (non-fatal) ---
+	if shouldSkip(StepCleanup) {
+		publishPipelineStep(publish, slug, waveNum, StepCleanup, StepSkipped, "")
+	} else {
+		_ = tracker.Start(slug, waveNum, StepCleanup)
+		publishPipelineStep(publish, slug, waveNum, StepCleanup, StepRunning, "")
+
+		if _, err := protocol.Cleanup(implPath, waveNum, repoPath); err != nil {
+			log.Printf("runFinalizeSteps: cleanup non-fatal error: %v", err)
+		}
+		_ = tracker.Complete(slug, waveNum, StepCleanup)
+		publishPipelineStep(publish, slug, waveNum, StepCleanup, StepComplete, "")
+	}
+
+	return nil
 }
 
 // handleWaveGateProceed handles POST /api/wave/{slug}/gate/proceed.
@@ -468,33 +703,45 @@ func (s *Server) handleWaveFinalize(w http.ResponseWriter, r *http.Request) {
 			"chunk": fmt.Sprintf("Retrying finalization for wave %d...\n", wave),
 		})
 
-		finalizeResult, err := engine.FinalizeWave(context.Background(), engine.FinalizeWaveOpts{
-			IMPLPath: implPath,
-			RepoPath: repoPath,
-			WaveNum:  wave,
-		})
-
-		// Publish gate results for UI visibility
-		if finalizeResult != nil {
-			for _, gate := range finalizeResult.GateResults {
-				publish("quality_gate_result", gate)
+		if defaultPipelineTracker != nil {
+			// Use decomposed pipeline with step tracking.
+			if err := runFinalizeSteps(slug, wave, implPath, repoPath, publish); err != nil {
+				publish("merge_failed", map[string]interface{}{
+					"slug":  slug,
+					"wave":  wave,
+					"error": err.Error(),
+				})
+				return
 			}
-		}
-
-		if err != nil {
-			publish("merge_failed", map[string]interface{}{
-				"slug":  slug,
-				"wave":  wave,
-				"error": err.Error(),
+		} else {
+			// Backward compatibility: monolithic finalize when no tracker.
+			finalizeResult, err := engine.FinalizeWave(context.Background(), engine.FinalizeWaveOpts{
+				IMPLPath: implPath,
+				RepoPath: repoPath,
+				WaveNum:  wave,
 			})
-			return
-		}
 
-		// Post-finalize: go.mod fixup
-		if fixed, fixErr := protocol.FixGoModReplacePaths(repoPath); fixErr != nil {
-			publish("merge_output", map[string]interface{}{"slug": slug, "wave": wave, "chunk": fmt.Sprintf("go.mod fixup warning: %v\n", fixErr)})
-		} else if fixed {
-			publish("merge_output", map[string]interface{}{"slug": slug, "wave": wave, "chunk": "Auto-corrected go.mod replace paths\n"})
+			if finalizeResult != nil {
+				for _, gate := range finalizeResult.GateResults {
+					publish("quality_gate_result", gate)
+				}
+			}
+
+			if err != nil {
+				publish("merge_failed", map[string]interface{}{
+					"slug":  slug,
+					"wave":  wave,
+					"error": err.Error(),
+				})
+				return
+			}
+
+			// Post-finalize: go.mod fixup
+			if fixed, fixErr := protocol.FixGoModReplacePaths(repoPath); fixErr != nil {
+				publish("merge_output", map[string]interface{}{"slug": slug, "wave": wave, "chunk": fmt.Sprintf("go.mod fixup warning: %v\n", fixErr)})
+			} else if fixed {
+				publish("merge_output", map[string]interface{}{"slug": slug, "wave": wave, "chunk": "Auto-corrected go.mod replace paths\n"})
+			}
 		}
 
 		publish("merge_complete", map[string]interface{}{

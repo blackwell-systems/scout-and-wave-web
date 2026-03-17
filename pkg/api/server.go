@@ -34,7 +34,8 @@ type Server struct {
 	mergingRuns      sync.Map        // slug -> struct{}; tracks in-progress merge operations
 	testingRuns      sync.Map        // slug -> struct{}; tracks in-progress test runs
 	scaffoldRuns     sync.Map        // runID -> context.CancelFunc; tracks in-progress scaffold reruns
-	stages           *stageManager   // per-slug stage state persistence
+	stages           *stageManager    // per-slug stage state persistence
+	pipelineTracker  *pipelineTracker // per-slug pipeline step state persistence
 	progressTracker  *ProgressTracker // tracks per-agent progress
 	commitCounts     sync.Map        // "slug/wave/agent" -> int; tracks git commit counts per agent
 	filesOwnedCache  sync.Map        // "slug/wave/agent" -> []string; caches files owned per agent
@@ -68,6 +69,7 @@ func New(cfg Config) *Server {
 		},
 		globalBroker:    newGlobalBroker(),
 		stages:          newStageManager(cfg.IMPLDir),
+		pipelineTracker: newPipelineTracker(cfg.IMPLDir),
 		progressTracker: NewProgressTracker(),
 	}
 
@@ -79,6 +81,9 @@ func New(cfg Config) *Server {
 			fallbackSAWConfig = &sawCfg
 		}
 	}
+
+	// Set the package-level pipeline tracker so runFinalizeSteps can use it.
+	defaultPipelineTracker = s.pipelineTracker
 
 	// Watch the IMPL directory for new/changed docs so connected clients
 	// get an impl_list_updated event without needing to poll or refresh.
@@ -112,6 +117,9 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("POST /api/scout/{runID}/cancel", s.handleScoutCancel)
 	s.mux.HandleFunc("DELETE /api/impl/{slug}", s.handleDeleteImpl)
 	s.mux.HandleFunc("POST /api/impl/{slug}/archive", s.handleArchiveImpl)
+
+	// Recovery control routes — step-level retry, skip, force-complete, pipeline state
+	s.RegisterRecoveryRoutes()
 
 	// v0.17.0-C — File diff viewer
 	s.mux.HandleFunc("GET /api/impl/{slug}/diff/{agent}", s.handleImplDiff)
