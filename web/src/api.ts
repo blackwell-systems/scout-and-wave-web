@@ -169,6 +169,15 @@ export async function retryFinalize(slug: string, wave: number): Promise<void> {
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
 }
 
+export async function fixBuild(slug: string, wave: number, errorLog: string, gateType: string): Promise<void> {
+  const r = await fetch(`/api/wave/${encodeURIComponent(slug)}/fix-build`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ wave, error_log: errorLog, gate_type: gateType }),
+  })
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+}
+
 // Disk-based wave status (survives server restarts)
 export interface DiskAgentStatus {
   agent: string

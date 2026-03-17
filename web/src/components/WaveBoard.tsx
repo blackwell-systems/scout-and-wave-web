@@ -8,7 +8,7 @@ import ImplEditor from './ImplEditor'
 import StageTimeline from './StageTimeline'
 import ConflictResolutionPanel from './ConflictResolutionPanel'
 import { AgentStatus, RepoEntry } from '../types'
-import { mergeWave, runWaveTests, rerunAgent, resolveConflicts, batchDeleteWorktrees, startWave, retryFinalize } from '../api'
+import { mergeWave, runWaveTests, rerunAgent, resolveConflicts, batchDeleteWorktrees, startWave, retryFinalize, fixBuild } from '../api'
 
 interface WaveBoardProps {
   slug: string
@@ -178,6 +178,18 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
     }
   }
 
+  async function handleFixBuild(): Promise<void> {
+    const maxWave = Math.max(...state.waves.map(w => w.wave), 1)
+    // Extract gate type from error message (e.g. 'required gate "typecheck" failed')
+    const gateMatch = state.runFailed?.match(/gate "(\w+)"/)
+    const gateType = gateMatch ? gateMatch[1] : 'build'
+    try {
+      await fixBuild(slug, maxWave, state.runFailed || '', gateType)
+    } catch (err) {
+      console.error('fixBuild request failed:', err)
+    }
+  }
+
   async function handleMergeWave(waveNum: number): Promise<void> {
     try {
       await mergeWave(slug, waveNum)
@@ -330,12 +342,21 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
             <h2 className="text-base font-semibold text-red-800 dark:text-red-300 mb-2">Wave Execution Failed</h2>
             <p className="text-sm text-red-700 dark:text-red-400 max-w-md break-words">{state.runFailed}</p>
             {state.runFailed.includes('FinalizeWave') && (
-              <button
-                onClick={() => void handleRetryFinalize()}
-                className="mt-4 text-sm font-medium px-4 py-2 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
-              >
-                &#x21BA; Retry Finalization
-              </button>
+              <div className="flex gap-2 mt-4">
+                <button
+                  onClick={() => void handleRetryFinalize()}
+                  className="text-sm font-medium px-4 py-2 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+                >
+                  &#x21BA; Retry Finalization
+                </button>
+                <button
+                  onClick={() => void handleFixBuild()}
+                  disabled={state.fixBuildStatus === 'running'}
+                  className="text-sm font-medium px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {state.fixBuildStatus === 'running' ? 'Fixing…' : '✦ Fix with AI'}
+                </button>
+              </div>
             )}
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">Press Escape to close this panel</p>
           </div>
@@ -345,12 +366,50 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
           <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-800 text-sm dark:bg-red-950 dark:border-red-800 dark:text-red-400 flex items-center justify-between gap-2">
             <span><span className="font-medium">Wave failed:</span> {state.runFailed}</span>
             {state.runFailed.includes('FinalizeWave') && (
-              <button
-                onClick={() => void handleRetryFinalize()}
-                className="shrink-0 text-xs font-medium px-3 py-1.5 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
-              >
-                &#x21BA; Retry Finalization
-              </button>
+              <div className="flex gap-2 shrink-0">
+                <button
+                  onClick={() => void handleRetryFinalize()}
+                  className="text-xs font-medium px-3 py-1.5 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+                >
+                  &#x21BA; Retry
+                </button>
+                <button
+                  onClick={() => void handleFixBuild()}
+                  disabled={state.fixBuildStatus === 'running'}
+                  className="text-xs font-medium px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                >
+                  {state.fixBuildStatus === 'running' ? 'Fixing…' : '✦ Fix with AI'}
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* AI build fixer output */}
+        {state.fixBuildStatus !== 'idle' && (
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-blue-50 dark:bg-blue-950">
+              <span className="text-xs font-medium text-blue-800 dark:text-blue-300">
+                {state.fixBuildStatus === 'running' ? '✦ AI fixing build…' :
+                 state.fixBuildStatus === 'complete' ? '✦ AI fix complete' :
+                 '✦ AI fix failed'}
+              </span>
+              {state.fixBuildStatus === 'complete' && (
+                <button
+                  onClick={() => void handleRetryFinalize()}
+                  className="text-xs font-medium px-2 py-1 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
+                >
+                  &#x21BA; Retry Finalization
+                </button>
+              )}
+            </div>
+            {state.fixBuildOutput && (
+              <pre className="p-3 text-xs font-mono whitespace-pre-wrap max-h-64 overflow-y-auto text-gray-700 dark:text-gray-300 bg-gray-50 dark:bg-gray-950">
+                {state.fixBuildOutput}
+              </pre>
+            )}
+            {state.fixBuildError && (
+              <p className="px-4 py-2 text-xs text-red-700 dark:text-red-400">{state.fixBuildError}</p>
             )}
           </div>
         )}

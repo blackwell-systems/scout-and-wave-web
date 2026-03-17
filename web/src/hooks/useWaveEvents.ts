@@ -51,6 +51,9 @@ export interface AppWaveState {
   wavesTestState: Map<number, WaveTestState>
   stageEntries: StageEntry[]
   staleBranches?: StaleBranchesInfo
+  fixBuildStatus: 'idle' | 'running' | 'complete' | 'failed'
+  fixBuildOutput: string
+  fixBuildError?: string
 }
 
 // useWaveEvents subscribes to the SSE stream for a given slug and returns
@@ -68,6 +71,8 @@ export function useWaveEvents(slug: string): AppWaveState {
     wavesMergeState: new Map(),
     wavesTestState: new Map(),
     stageEntries: [],
+    fixBuildStatus: 'idle',
+    fixBuildOutput: '',
   })
 
   const esRef = useRef<EventSource | null>(null)
@@ -445,6 +450,24 @@ export function useWaveEvents(slug: string): AppWaveState {
         }
         return { ...prev, stageEntries: [...prev.stageEntries, entry] }
       })
+    })
+
+    es.addEventListener('fix_build_started', () => {
+      setState(prev => ({ ...prev, fixBuildStatus: 'running', fixBuildOutput: '', fixBuildError: undefined }))
+    })
+
+    es.addEventListener('fix_build_output', (event: MessageEvent) => {
+      const data = JSON.parse(event.data) as { chunk: string }
+      setState(prev => ({ ...prev, fixBuildOutput: prev.fixBuildOutput + data.chunk }))
+    })
+
+    es.addEventListener('fix_build_complete', () => {
+      setState(prev => ({ ...prev, fixBuildStatus: 'complete' }))
+    })
+
+    es.addEventListener('fix_build_failed', (event: MessageEvent) => {
+      const data = JSON.parse(event.data) as { error: string }
+      setState(prev => ({ ...prev, fixBuildStatus: 'failed', fixBuildError: data.error }))
     })
 
     return () => {

@@ -7,9 +7,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
@@ -399,8 +402,103 @@ func (s *Server) handleResolveConflicts(w http.ResponseWriter, r *http.Request) 
 	}()
 }
 
-// RegisterConflictRoutes registers the conflict resolution endpoint.
+// RegisterConflictRoutes registers the conflict resolution and build fix endpoints.
 // This should be called from server.go's New() function.
 func (s *Server) RegisterConflictRoutes() {
 	s.mux.HandleFunc("POST /api/wave/{slug}/resolve-conflicts", s.handleResolveConflicts)
+	s.mux.HandleFunc("POST /api/wave/{slug}/fix-build", s.handleFixBuild)
+}
+
+// handleFixBuild handles POST /api/wave/{slug}/fix-build.
+// Uses AI to diagnose and fix a build/test/gate failure after merge.
+// Returns 202 immediately, streams progress via SSE (fix_build_output, fix_build_complete, fix_build_failed).
+func (s *Server) handleFixBuild(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+
+	var body struct {
+		Wave     int    `json:"wave"`
+		ErrorLog string `json:"error_log"`
+		GateType string `json:"gate_type"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if body.Wave < 1 {
+		http.Error(w, "wave must be >= 1", http.StatusBadRequest)
+		return
+	}
+	if body.ErrorLog == "" {
+		http.Error(w, "error_log is required", http.StatusBadRequest)
+		return
+	}
+
+	implPath, repoPath, err := s.resolveIMPLPath(slug)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusNotFound)
+		return
+	}
+
+	// Read chat model from saw.config.json
+	chatModel := ""
+	if cfgData, readErr := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); readErr == nil {
+		var sawCfg SAWConfig
+		if json.Unmarshal(cfgData, &sawCfg) == nil {
+			chatModel = sawCfg.Agent.ChatModel
+		}
+	}
+
+	publish := s.makePublisher(slug)
+
+	w.WriteHeader(http.StatusAccepted)
+
+	go func() {
+		publish("fix_build_started", map[string]interface{}{
+			"slug": slug,
+			"wave": body.Wave,
+			"gate": body.GateType,
+		})
+
+		err := engine.FixBuildFailure(context.Background(), engine.FixBuildOpts{
+			IMPLPath:  implPath,
+			RepoPath:  repoPath,
+			WaveNum:   body.Wave,
+			ErrorLog:  body.ErrorLog,
+			GateType:  body.GateType,
+			ChatModel: chatModel,
+			OnOutput: func(chunk string) {
+				publish("fix_build_output", map[string]interface{}{
+					"slug":  slug,
+					"wave":  body.Wave,
+					"chunk": chunk,
+				})
+			},
+			OnToolCall: func(ev backend.ToolCallEvent) {
+				publish("fix_build_tool_call", map[string]interface{}{
+					"slug":        slug,
+					"wave":        body.Wave,
+					"tool_id":     ev.ID,
+					"tool_name":   ev.Name,
+					"input":       ev.Input,
+					"is_result":   ev.IsResult,
+					"is_error":    ev.IsError,
+					"duration_ms": ev.DurationMs,
+				})
+			},
+		})
+
+		if err != nil {
+			publish("fix_build_failed", map[string]interface{}{
+				"slug":  slug,
+				"wave":  body.Wave,
+				"error": err.Error(),
+			})
+			return
+		}
+
+		publish("fix_build_complete", map[string]interface{}{
+			"slug": slug,
+			"wave": body.Wave,
+		})
+	}()
 }
