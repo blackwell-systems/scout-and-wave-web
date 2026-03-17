@@ -11,14 +11,18 @@
     {
       "name": "scout-and-wave",
       "path": "/Users/dayna.blackwell/code/scout-and-wave"
+    },
+    {
+      "name": "shelfctl",
+      "path": "/Users/dayna.blackwell/code/shelfctl"
     }
   ],
   "repo": {
     "path": ""
   },
   "agent": {
-    "scout_model": "claude-opus-4-6",
-    "wave_model": "bedrock:claude-sonnet-4-6",
+    "scout_model": "bedrock:claude-opus-4-6",
+    "wave_model": "bedrock:claude-sonnet-4-5",
     "chat_model": "bedrock:claude-haiku-4-5",
     "scaffold_model": "bedrock:claude-sonnet-4-5",
     "integration_model": "bedrock:claude-sonnet-4-5"
@@ -29,6 +33,7 @@
     "block_on_failure": false
   },
   "appearance": {
-    "theme": "dark"
+    "theme": "dark",
+    "color_theme_dark": "tokyo-night-dark"
   }
 }

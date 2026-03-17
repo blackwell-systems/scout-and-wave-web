@@ -408,6 +408,7 @@ func implDocResponseFromManifest(slug string, m *protocol.IMPLManifest) IMPLDocR
 		AgentPrompts:           agentPrompts,
 		QualityGates:           convertQualityGates(m.QualityGates),
 		PostMergeChecklist:     convertPostMergeChecklist(m.PostMergeChecklist),
+		StubReportText:         formatStubReports(m.StubReports),
 		KnownIssuesStructured:  convertKnownIssues(m.KnownIssues),
 	}
 }
@@ -481,6 +482,58 @@ func convertKnownIssues(issues []protocol.KnownIssue) []KnownIssue {
 	}
 
 	return apiIssues
+}
+
+// formatStubReports converts persisted stub scan results into a markdown string
+// for the StubReportPanel. Returns empty string if no reports exist.
+func formatStubReports(reports map[string]*protocol.ScanStubsResult) string {
+	if len(reports) == 0 {
+		return ""
+	}
+
+	var buf strings.Builder
+	totalHits := 0
+	for _, r := range reports {
+		if r != nil {
+			totalHits += len(r.Hits)
+		}
+	}
+
+	if totalHits == 0 {
+		buf.WriteString("No stubs detected — all agent-changed files are clean.\n")
+		return buf.String()
+	}
+
+	// Sort wave keys for deterministic output
+	keys := make([]string, 0, len(reports))
+	for k := range reports {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	for _, waveKey := range keys {
+		r := reports[waveKey]
+		if r == nil || len(r.Hits) == 0 {
+			continue
+		}
+		buf.WriteString(fmt.Sprintf("### %s — %d stub%s\n\n", waveKey, len(r.Hits), pluralS(len(r.Hits))))
+		buf.WriteString("| File | Line | Pattern | Context |\n")
+		buf.WriteString("|------|------|---------|---------|\n")
+		for _, hit := range r.Hits {
+			ctx := strings.ReplaceAll(hit.Context, "|", "\\|")
+			buf.WriteString(fmt.Sprintf("| `%s` | %d | %s | %s |\n", hit.File, hit.Line, hit.Pattern, ctx))
+		}
+		buf.WriteString("\n")
+	}
+
+	return buf.String()
+}
+
+func pluralS(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
 }
 
 // handleDeleteImpl handles DELETE /api/impl/{slug}.

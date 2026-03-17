@@ -170,7 +170,13 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
 
   // Helper to look up agent execution status
   function getExecStatus(letter: string, wave: number): AgentExecStatus | undefined {
-    if (!executionState?.isLive) return undefined
+    if (!executionState || executionState.agents.size === 0) return undefined
+    // Scaffold node uses separate scaffoldStatus field
+    if (letter === 'Scaffold' && wave === 0) {
+      const s = executionState.scaffoldStatus
+      if (s === 'idle') return undefined
+      return { status: s === 'complete' ? 'complete' : 'running' } as AgentExecStatus
+    }
     return executionState.agents.get(`${wave}:${letter}`)
   }
 
@@ -268,7 +274,7 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
     }
   }
 
-  const isLive = !!(executionState?.isLive)
+  const isLive = !!(executionState?.isLive) || (executionState?.agents?.size ?? 0) > 0
 
   return (
     <Card>
@@ -457,12 +463,21 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
                   </text>
                   {exec?.status === 'complete' && (
                     <g className="exec-check-overlay">
+                      <circle
+                        cx={node.x + NODE_W - 4}
+                        cy={node.y + NODE_H - 4}
+                        r={7}
+                        fill="#22c55e"
+                        opacity={0.9}
+                      />
                       <path
-                        d="M-4,0 L-1,3 L4,-3"
-                        stroke="currentColor"
-                        strokeWidth={2}
+                        d="M-3,0 L-1,2.5 L3,-2.5"
+                        stroke="white"
+                        strokeWidth={1.5}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                         fill="none"
-                        transform={`translate(${cx}, ${cy})`}
+                        transform={`translate(${node.x + NODE_W - 4}, ${node.y + NODE_H - 4})`}
                       />
                     </g>
                   )}

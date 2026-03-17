@@ -83,7 +83,7 @@ function getAgentBoxStyle(
   waveNum: number,
   executionState: ExecutionSyncState | undefined
 ): React.CSSProperties {
-  if (!executionState?.isLive) return {}
+  if (!executionState || executionState.agents.size === 0) return {}
   const exec = executionState.agents.get(`${waveNum}:${letter}`)
   if (!exec) return {}
   switch (exec.status) {
@@ -112,7 +112,7 @@ function getAgentBoxClassName(
   waveNum: number,
   executionState: ExecutionSyncState | undefined
 ): string {
-  if (!executionState?.isLive) return ''
+  if (!executionState || executionState.agents.size === 0) return ''
   const exec = executionState.agents.get(`${waveNum}:${letter}`)
   if (!exec) return ''
   switch (exec.status) {
@@ -130,7 +130,7 @@ function getAgentBoxClassName(
 export default function WaveStructurePanel({ impl, executionState }: WaveStructurePanelProps): JSX.Element {
   const sortedWaves = [...impl.waves].sort((a, b) => a.number - b.number)
   const isComplete = impl.doc_status === 'COMPLETE'
-  const isLive = executionState?.isLive ?? false
+  const isLive = (executionState?.isLive ?? false) || (executionState?.agents?.size ?? 0) > 0
 
   // Build timeline nodes
   const nodes: TimelineNode[] = []
@@ -266,17 +266,30 @@ export default function WaveStructurePanel({ impl, executionState }: WaveStructu
                     <div className="text-sm font-semibold text-foreground mb-2">{node.label}</div>
                     <div className="flex items-center gap-2 flex-wrap">
                       <div
-                        className="flex items-center justify-center w-12 h-12 rounded-lg font-semibold text-base border-2"
+                        className={`flex items-center justify-center w-12 h-12 rounded-lg font-semibold text-base border-2${
+                          isLive && executionState?.scaffoldStatus === 'running' ? ' exec-node-running' :
+                          isLive && executionState?.scaffoldStatus === 'complete' ? ' exec-node-complete' : ''
+                        }`}
                         style={{
-                          backgroundColor: 'rgba(100,116,139,0.08)',
-                          borderColor: 'rgba(100,116,139,0.3)',
-                          color: '#64748b',
-                        }}
+                          backgroundColor: isLive && executionState?.scaffoldStatus === 'running'
+                            ? 'rgba(245,158,11,0.15)' : 'rgba(100,116,139,0.08)',
+                          borderColor: isLive && executionState?.scaffoldStatus === 'running'
+                            ? 'rgb(245,158,11)' : isLive && executionState?.scaffoldStatus === 'complete'
+                            ? 'rgb(63,185,80)' : 'rgba(100,116,139,0.3)',
+                          color: isLive && executionState?.scaffoldStatus === 'running'
+                            ? '#f59e0b' : '#64748b',
+                          boxShadow: isLive && executionState?.scaffoldStatus === 'running'
+                            ? '0 0 12px rgba(245,158,11,0.4)' : isLive && executionState?.scaffoldStatus === 'complete'
+                            ? '0 0 10px rgba(63,185,80,0.3)' : undefined,
+                          '--exec-pulse-color': 'rgba(245,158,11,0.6)',
+                        } as React.CSSProperties}
                       >
                         S
                       </div>
                       <span className="text-xs text-muted-foreground ml-1">
-                        {node.scaffoldFiles} interface {node.scaffoldFiles === 1 ? 'file' : 'files'}
+                        {isLive && executionState?.scaffoldStatus === 'running' ? 'Running...' :
+                         isLive && executionState?.scaffoldStatus === 'complete' ? 'Done' :
+                         `${node.scaffoldFiles} interface ${node.scaffoldFiles === 1 ? 'file' : 'files'}`}
                       </span>
                     </div>
                   </div>

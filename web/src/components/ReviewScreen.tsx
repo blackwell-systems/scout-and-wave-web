@@ -1,7 +1,7 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { IMPLDocResponse } from '../types'
-import { listWorktrees, batchDeleteWorktrees } from '../api'
-import { useExecutionSync } from '../hooks/useExecutionSync'
+import { listWorktrees, batchDeleteWorktrees, fetchDiskWaveStatus, DiskWaveStatus } from '../api'
+import { useExecutionSync, ExecutionSyncState, AgentExecStatus } from '../hooks/useExecutionSync'
 import ActionButtons from './ActionButtons'
 import RevisePanel from './RevisePanel'
 import OverviewPanel from './review/OverviewPanel'
@@ -28,6 +28,7 @@ interface ReviewScreenProps {
   impl: IMPLDocResponse
   onApprove: () => void
   onReject: () => void
+  onViewWaves?: () => void
   onRefreshImpl?: (slug: string) => Promise<void>
   repos?: import('../types').RepoEntry[]
   chatModel?: string
@@ -56,7 +57,7 @@ const panels: Array<{ key: PanelKey; label: string }> = [
 ]
 
 export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
-  const { slug, impl, onApprove, onReject, onRefreshImpl, repos, chatModel = 'claude-sonnet-4-6' } = props
+  const { slug, impl, onApprove, onReject, onViewWaves, onRefreshImpl, repos, chatModel = 'claude-sonnet-4-6' } = props
   const isNotSuitable = impl.suitability.verdict === 'NOT SUITABLE'
 
   const executionState = useExecutionSync(slug)
@@ -130,6 +131,39 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
       es.close()
     }
   }, [slug, onRefreshImpl])
+
+  // Load disk-based wave status (survives server restarts)
+  const [diskStatus, setDiskStatus] = useState<DiskWaveStatus | null>(null)
+  useEffect(() => {
+    fetchDiskWaveStatus(slug)
+      .then(setDiskStatus)
+      .catch(() => setDiskStatus(null))
+  }, [slug])
+  const hasWaveWork = (diskStatus?.agents?.length ?? 0) > 0
+
+  // Synthesize execution state from disk status when no live SSE
+  const effectiveExecutionState = useMemo<ExecutionSyncState | null>(() => {
+    if (executionState.isLive && executionState.agents.size > 0) return executionState
+    if (!diskStatus || !hasWaveWork) return null
+    const agents = new Map<string, AgentExecStatus>()
+    const waveCounts = new Map<number, { complete: number; total: number }>()
+    for (const da of diskStatus.agents) {
+      const status = (da.status === 'complete' || da.status === 'failed') ? da.status : 'pending' as const
+      agents.set(`${da.wave}:${da.agent}`, { status, agent: da.agent, wave: da.wave, failureType: da.failure_type })
+      const wc = waveCounts.get(da.wave) ?? { complete: 0, total: 0 }
+      wc.total++
+      if (status === 'complete') wc.complete++
+      waveCounts.set(da.wave, wc)
+    }
+    const waveProgress = new Map<number, { complete: number; total: number }>()
+    for (const [w, c] of waveCounts) waveProgress.set(w, c)
+    return {
+      agents,
+      waveProgress,
+      scaffoldStatus: diskStatus.scaffold_status === 'committed' ? 'complete' as const : 'idle' as const,
+      isLive: false,
+    }
+  }, [executionState, diskStatus, hasWaveWork])
 
   // Worktree presence detection
   const [worktreeCount, setWorktreeCount] = useState(0)
@@ -264,8 +298,8 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
                       ? 'grid-cols-1 md:grid-cols-2'
                       : 'grid-cols-1'
                   }`}>
-                    {activePanels.includes('wave-structure') && <WaveStructurePanel impl={impl} {...(executionState.isLive ? { executionState } : {})} />}
-                    {activePanels.includes('dependency-graph') && <DependencyGraphPanel dependencyGraphText={(impl as any).dependency_graph_text} {...(executionState.isLive ? { executionState } : {})} />}
+                    {activePanels.includes('wave-structure') && <WaveStructurePanel impl={impl} {...(effectiveExecutionState ? { executionState: effectiveExecutionState } : {})} />}
+                    {activePanels.includes('dependency-graph') && <DependencyGraphPanel dependencyGraphText={(impl as any).dependency_graph_text} {...(effectiveExecutionState ? { executionState: effectiveExecutionState } : {})} />}
                   </div>
                 )}
 
@@ -322,7 +356,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
       {/* Sticky footer — inside scroll container so it respects center column width */}
       {!isNotSuitable && (
         <div className="sticky bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur-sm flex items-stretch justify-center">
-          <ActionButtons onApprove={handleApproveClick} onReject={onReject} onRequestChanges={() => setShowRevise(true)} />
+          <ActionButtons onApprove={handleApproveClick} onReject={onReject} onRequestChanges={() => setShowRevise(true)} onViewWaves={onViewWaves} hasWaveWork={hasWaveWork} />
           <button
             onClick={() => togglePanel('validation')}
             className={`flex items-center justify-center text-sm font-medium px-6 h-14 transition-all duration-150 border-t-2 ${

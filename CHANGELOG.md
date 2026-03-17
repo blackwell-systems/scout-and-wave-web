@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+| [0.64.0] | 2026-03-16 | Sidebar repo removal, View WaveBoard rename |
+| [0.63.0] | 2026-03-16 | Merge button persistence, cross-repo merge/test, completion report propagation, SSE/disk agent merge, Start Next Wave button |
+| [0.62.0] | 2026-03-16 | Wave recovery & execution UX — View Waves button, disk-based status recovery, worktree reuse for reruns, scaffold/wave animations, run_failed propagation |
 | [0.61.0] | 2026-03-16 | Integration Agent UI + h2c HTTP/2 + SSE agent cache — integration model selector, cleartext HTTP/2, late-subscriber animation fix, cross-repo config fallback |
 | [0.60.0] | 2026-03-15 | Fix popover/card/destructive Tailwind color tokens, archive cobra-migration IMPL |
 | [0.59.0] | 2026-03-15 | Scaffold streaming output, unified model dropdowns, scaffold model picker in top bar |
@@ -10,6 +13,55 @@ All notable changes to this project will be documented in this file.
 | [0.56.0] | 2026-03-14 | File browser (waves 1-2) — 4 backend API endpoints + 7 frontend components for in-app codebase exploration with syntax highlighting |
 | [0.55.0] | 2026-03-14 | UI improvements — Fixed stale IMPL list, added collapsible repo sections, improved repo context visibility |
 | [0.54.0] | 2026-03-14 | Scout automation integration — 5 automation command wrappers added to web CLI (analyze-deps, analyze-suitability, detect-cascades, detect-scaffolds, extract-commands) |
+
+---
+
+## [0.64.0] - 2026-03-16
+
+### Added
+
+- **Sidebar repo removal** — Hover over a repo header in the left sidebar to reveal a `✕` button that removes the repo from config without opening Settings. Persists immediately via `saveConfig`.
+
+### Changed
+
+- **"View Waves" → "View WaveBoard"** — Renamed the action button for clarity.
+
+---
+
+## [0.63.0] - 2026-03-16
+
+### Added
+
+- **Merge button persistence** — `disk-status` endpoint now returns `waves_merged` array detecting which waves' branches are already merged into HEAD via `git merge-base --is-ancestor`. Merge button hidden for already-merged waves, surviving server restarts.
+- **Start Next Wave button** — After all agents in a wave complete, shows a "Start Wave N" button to advance to the next wave without leaving WaveBoard.
+- **SSE/disk agent merging** — Rerunning one agent no longer erases other agents from WaveBoard. SSE agents overlay onto disk agents by key instead of replacing the full list.
+- **Theme-aware WaveBoard** — Replaced hardcoded gray colors with `bg-background`, `bg-card`, `border-border`, `text-foreground`, `text-muted-foreground` tokens.
+
+### Fixed
+
+- **Cross-repo merge/test handlers** — `handleWaveMerge` and `handleWaveTest` now use `resolveIMPLPath(slug)` to find the correct repo path instead of hardcoded `s.cfg.RepoPath`.
+- **Completion report propagation** — Agent-written completion reports in worktrees now always propagate to the main branch IMPL doc (previously only synthesized reports were written).
+- **Scaffold status detection** — Status check now uses `strings.HasPrefix(status, "committed")` to handle `"committed (0b4d77b)"` format.
+
+---
+
+## [0.62.0] - 2026-03-16
+
+### Added
+
+- **View Waves button** — New "View Waves" button in ReviewScreen footer opens WaveBoard without triggering Approve/startWave. Appears automatically when disk status detects existing wave work (completed, failed, or in-progress agents). Enables post-restart wave inspection and individual agent reruns.
+- **Disk-based wave status endpoint** — `GET /api/wave/{slug}/disk-status` reconstructs wave state from IMPL doc completion reports + git branch analysis. Survives server restarts. Falls back through: completion report → git branch commits → worktree existence.
+- **Scaffold execution animations** — Scaffold node pulses with amber glow during execution in both WaveStructurePanel and DependencyGraphPanel. Shows "Running..." / "Done" status text.
+- **Dep graph completion badge** — Agent completion checkmark moved from center overlay to bottom-right corner badge (no longer obscures agent letter).
+
+### Fixed
+
+- **ModelPicker dropdown stays open** — Root cause was `setPickerOpen(null)` in App.tsx onChange unmounting the component. Removed premature close; dropdown now stays open for provider+model selection. Added Escape key handler.
+- **ModelPicker hover highlighting** — Theme-aware hover states using `hover:bg-accent hover:text-accent-foreground`.
+- **run_failed SSE propagation** — `run_failed` event now marks all pending/running agents as failed in WaveBoard (previously left them stuck on "Pending").
+- **Disk-recovered execution state in panels** — WaveStructurePanel and DependencyGraphPanel now show agent checkmarks, green/red borders, and progress counts from disk-recovered status (not just live SSE). Fixes blank panels after server restart.
+- **Worktree reuse for reruns** — Agent rerun detects existing worktree via `os.Stat` and reuses it instead of failing with "branch already exists".
+- **maxTurns failure type** — Agents hitting maxTurns limit now emit `failure_type: "timeout"` instead of generic "execute".
 
 ---
 

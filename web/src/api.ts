@@ -99,6 +99,13 @@ export async function mergeWave(slug: string, wave: number): Promise<void> {
   if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
 }
 
+export async function mergeAbort(slug: string): Promise<void> {
+  const r = await fetch(`/api/wave/${encodeURIComponent(slug)}/merge-abort`, {
+    method: 'POST',
+  })
+  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
+}
+
 export async function runWaveTests(slug: string, wave: number): Promise<void> {
   const r = await fetch(`/api/wave/${encodeURIComponent(slug)}/test`, {
     method: 'POST',
@@ -142,6 +149,33 @@ export async function rerunAgent(slug: string, wave: number, agentLetter: string
     }),
   })
   if (!r.ok) throw new Error(`HTTP ${r.status}`)
+}
+
+// Disk-based wave status (survives server restarts)
+export interface DiskAgentStatus {
+  agent: string
+  wave: number
+  status: string
+  branch?: string
+  commit?: string
+  files?: string[]
+  failure_type?: string
+  message?: string
+}
+
+export interface DiskWaveStatus {
+  slug: string
+  current_wave: number
+  total_waves: number
+  scaffold_status: string
+  agents: DiskAgentStatus[]
+  waves_merged?: number[]
+}
+
+export async function fetchDiskWaveStatus(slug: string): Promise<DiskWaveStatus> {
+  const r = await fetch(`/api/wave/${encodeURIComponent(slug)}/disk-status`)
+  if (!r.ok) throw new Error(`HTTP ${r.status}`)
+  return r.json()
 }
 
 // Worktree manager

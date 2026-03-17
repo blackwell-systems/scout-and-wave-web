@@ -82,7 +82,7 @@ function DropdownItem({ selected, onClick, children, keepOpen = false }: {
       type="button"
       onClick={onClick}
       onMouseDown={(e) => { if (keepOpen) e.stopPropagation() }}
-      className={`flex items-center gap-2 w-full text-left text-sm px-3 py-1.5 hover:bg-muted/80 hover:text-foreground transition-colors ${selected ? 'bg-muted/60 font-medium' : ''}`}
+      className={`flex items-center gap-2 w-full text-left text-sm px-3 py-1.5 hover:bg-accent hover:text-accent-foreground transition-colors ${selected ? 'bg-muted font-medium' : ''}`}
     >
       <span className="w-4 shrink-0">{selected && <Check size={14} className="text-primary" />}</span>
       {children}

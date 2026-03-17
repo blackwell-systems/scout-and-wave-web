@@ -1,0 +1,528 @@
+title: AI-Powered Merge Conflict Resolution
+feature_slug: ai-conflict-resolution
+verdict: SUITABLE
+suitability_assessment: |
+    SUITABLE. 8 files across Go backend and TypeScript frontend with clean
+    agent boundaries. The existing merge failure infrastructure (SSE events,
+    conflicting_files array, merge-abort endpoint) provides a solid foundation.
+    The backend.Backend interface in scout-and-wave-go is established and the
+    chat_handler.go shows the exact pattern for reading saw.config.json and
+    selecting a model+backend. Wave 1 builds the engine function and frontend
+    UI skeleton in parallel. Wave 2 wires the API handler that connects them.
+test_command: go test ./... && cd web && npx vitest run --reporter=verbose 2>/dev/null || true
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/engine/resolve_conflicts.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/engine/resolve_conflicts_test.go
+      agent: A
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/engine/engine.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: web/src/components/ConflictResolutionPanel.tsx
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-web
+    - file: pkg/api/merge_test_handlers.go
+      agent: C
+      wave: 2
+      action: modify
+      repo: scout-and-wave-web
+    - file: pkg/api/merge_test_handlers_test.go
+      agent: C
+      wave: 2
+      action: modify
+      repo: scout-and-wave-web
+    - file: web/src/api.ts
+      agent: D
+      wave: 2
+      action: modify
+      repo: scout-and-wave-web
+    - file: web/src/hooks/useWaveEvents.ts
+      agent: D
+      wave: 2
+      action: modify
+      repo: scout-and-wave-web
+    - file: web/src/components/WaveBoard.tsx
+      agent: D
+      wave: 2
+      action: modify
+      repo: scout-and-wave-web
+    - file: web/src/types.ts
+      agent: D
+      wave: 2
+      action: modify
+      repo: scout-and-wave-web
+interface_contracts:
+    - name: ResolveConflictsOpts
+      description: |
+        Options struct for the engine-level conflict resolution function.
+        Lives in scout-and-wave-go engine package alongside RunMergeOpts.
+      definition: |
+        type ResolveConflictsOpts struct {
+            IMPLPath    string // path to IMPL YAML manifest
+            RepoPath    string // repo root (where git merge is in progress)
+            WaveNum     int    // which wave's merge is conflicted
+            OnProgress  func(file string, status string) // per-file progress callback
+        }
+      location: pkg/engine/engine.go
+    - name: ResolveConflicts
+      description: |
+        Engine function that resolves all conflicted files using Claude API.
+        Reads conflicted files from git, loads IMPL doc for agent context,
+        calls Claude per file, writes resolved content, git-adds, and commits.
+        Returns error on first file that cannot be resolved (partial failure aborts).
+      definition: |
+        func ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) error
+      location: pkg/engine/resolve_conflicts.go
+    - name: resolveConflicts API endpoint
+      description: |
+        POST /api/wave/{slug}/resolve-conflicts
+        Request body: {"wave": <int>}
+        Returns 202 immediately, runs resolution in background goroutine.
+        Publishes SSE events: conflict_resolving, conflict_resolved,
+        conflict_resolution_failed, merge_complete (on success).
+      definition: |
+        // No new Go types needed — reuses MergeWaveRequest for the body.
+        // SSE event payloads:
+        // conflict_resolving:        {"slug": str, "wave": int, "file": str}
+        // conflict_resolved:         {"slug": str, "wave": int, "file": str}
+        // conflict_resolution_failed: {"slug": str, "wave": int, "file": str, "error": str}
+      location: pkg/api/merge_test_handlers.go
+    - name: resolveConflicts frontend API
+      description: |
+        TypeScript function to call the resolve-conflicts endpoint.
+      definition: |
+        export async function resolveConflicts(slug: string, wave: number): Promise<void>
+      location: web/src/api.ts
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Create the engine-level conflict resolution function in scout-and-wave-go
+            at `/Users/dayna.blackwell/code/scout-and-wave-go`. This function is the
+            core AI logic: it reads conflicted files from git, builds a prompt with
+            IMPL context, calls Claude, and writes resolved content back.
+
+            **File: pkg/engine/resolve_conflicts.go** (new)
+
+            Implement `ResolveConflicts(ctx context.Context, opts ResolveConflictsOpts) error`:
+
+            1. Load the IMPL manifest via `protocol.Load(opts.IMPLPath)`.
+            2. Get list of conflicted files: run `git diff --name-only --diff-filter=U`
+               in opts.RepoPath.
+            3. For each conflicted file:
+               a. Call `opts.OnProgress(file, "resolving")` if non-nil.
+               b. Read the file content (it contains <<<<<<< ======= >>>>>>> markers).
+               c. Look up which agents own this file from manifest.FileOwnership.
+               d. Find those agents' task descriptions from manifest.Waves[].Agents[].
+               e. Find relevant interface contracts from manifest.InterfaceContracts.
+               f. Build a system prompt:
+                  - "You are resolving a git merge conflict. Output ONLY the resolved
+                    file content with no conflict markers, no explanation, no markdown
+                    fences."
+               g. Build a user message with:
+                  - The full conflicted file content
+                  - Which agents wrote each side (from file ownership)
+                  - Each agent's task description (what they were implementing)
+                  - Relevant interface contracts
+               h. Select backend using the same pattern as chat.go:
+                  - Read model from opts or fall back to environment
+                  - Use chatParseProviderPrefix for routing
+                  - Default model: "claude-sonnet-4-5" (not opus — cost matters here)
+               i. Call `backend.Run(ctx, systemPrompt, userMessage, opts.RepoPath)`
+                  with MaxTurns=1 (single-shot, no tool use needed).
+               j. Write the response to the file (os.WriteFile).
+               k. Run `git add <file>` in opts.RepoPath.
+               l. Call `opts.OnProgress(file, "resolved")` if non-nil.
+               m. On ANY error: return immediately with the error and the file name.
+                  Do NOT continue to other files. The caller will abort the merge.
+            4. After all files resolved: run `git commit --no-edit` to complete merge.
+            5. Return nil on success.
+
+            **File: pkg/engine/engine.go** (modify)
+
+            Add the `ResolveConflictsOpts` struct next to `RunMergeOpts`:
+
+            ```go
+            type ResolveConflictsOpts struct {
+                IMPLPath    string
+                RepoPath    string
+                WaveNum     int
+                ChatModel   string // optional model override
+                OnProgress  func(file string, status string)
+            }
+            ```
+
+            **Backend selection**: Reuse the pattern from `chat.go` lines 53-85.
+            Import the same backend packages. For the backend config, set:
+            - MaxTurns: 1 (no tool loop — single-shot text generation)
+            - MaxTokens: 16384 (conflict files can be large)
+            - ReadOnly: true (no file writes via tools)
+
+            **Prompt design**: The prompt must instruct Claude to output ONLY the
+            resolved file content. No markdown fences, no explanations. The response
+            is written directly to disk. Include clear instructions about preferring
+            the "intent" of both sides when possible (combine features, don't drop
+            either agent's work).
+
+            ## Tests to Write
+
+            **File: pkg/engine/resolve_conflicts_test.go** (new)
+
+            1. TestResolveConflicts_ParsesConflictMarkers - verify the function
+               can identify conflict regions in a file
+            2. TestResolveConflicts_BuildsPromptWithAgentContext - verify the prompt
+               includes agent briefs and file ownership information
+            3. TestResolveConflicts_OptsValidation - verify error on empty IMPLPath,
+               empty RepoPath
+
+            Use a mock backend (implement backend.Backend interface with canned
+            responses) rather than calling a real LLM.
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./... && go vet ./... && go test ./pkg/engine/ -run TestResolveConflict -count=1
+            ```
+
+            ## Constraints
+            - Do NOT use the CLI backend for conflict resolution — API backends only
+              (Anthropic or Bedrock) since we need single-shot text, not a tool loop.
+            - The function must be synchronous (blocking). The web handler will call
+              it from a goroutine.
+            - If git commands fail, wrap errors with context (which file, which step).
+            - Import cycle warning: do NOT import pkg/api or any web-specific package.
+          files:
+            - pkg/engine/resolve_conflicts.go
+            - pkg/engine/resolve_conflicts_test.go
+            - pkg/engine/engine.go
+        - id: B
+          task: |
+            ## What to Implement
+
+            Create a React component for the conflict resolution UI panel in
+            scout-and-wave-web at `/Users/dayna.blackwell/code/scout-and-wave-web`.
+            This is a self-contained presentational component that will be integrated
+            into WaveBoard by Agent D in Wave 2.
+
+            **File: web/src/components/ConflictResolutionPanel.tsx** (new)
+
+            Create a component with this interface:
+
+            ```tsx
+            interface ConflictResolutionPanelProps {
+              slug: string
+              wave: number
+              conflictingFiles: string[]
+              onResolveStart: () => void    // called when user clicks "Resolve with AI"
+              resolvingFile?: string        // currently resolving file (from SSE)
+              resolvedFiles: string[]       // files resolved so far (from SSE)
+              resolutionError?: string      // error message if resolution failed
+              failedFile?: string           // which file failed
+              isResolving: boolean          // true while resolution is in progress
+            }
+            ```
+
+            The component renders:
+
+            1. **File list with status indicators** — each conflicting file shows:
+               - Pending icon (gray circle) if not yet processed
+               - Spinning/pulse animation if currently being resolved
+               - Green checkmark if resolved
+               - Red X if failed
+            2. **"Resolve with AI" button** — primary action, calls onResolveStart.
+               Disabled while isResolving is true. Styled consistently with the
+               existing "Merge Wave" button (violet-600 bg, white text).
+            3. **Progress text** — "Resolving file 2 of 5..." style counter.
+            4. **Error display** — if resolutionError is set, show which file failed
+               and the error message in a red alert box matching the existing merge
+               failure styling (bg-red-50 border-red-200 etc).
+
+            Follow the existing component patterns in WaveBoard.tsx:
+            - Use Tailwind CSS classes (bg-card, text-foreground, etc.)
+            - Support dark mode via dark: prefixes
+            - Use the same color scheme as merge UI (violet for actions, green for
+              success, red for failure)
+            - Export as default function component
+
+            ## Tests to Write
+            No unit tests required for this presentational component — it will be
+            tested through integration in WaveBoard.
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+            ```
+
+            ## Constraints
+            - Do NOT import from api.ts — this component receives all data via props.
+            - Do NOT add any new npm dependencies.
+            - Keep the file under 150 lines — it is purely presentational.
+            - Use the same Tailwind patterns as WaveBoard.tsx (border-border,
+              bg-card, text-foreground, rounded-lg, etc).
+          files:
+            - web/src/components/ConflictResolutionPanel.tsx
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## What to Implement
+
+            Add the `POST /api/wave/{slug}/resolve-conflicts` endpoint to the web
+            server at `/Users/dayna.blackwell/code/scout-and-wave-web`.
+
+            **File: pkg/api/merge_test_handlers.go** (modify)
+
+            Add a new handler method `handleResolveConflicts` following the exact
+            pattern of `handleWaveMerge` (lines 37-101 of the existing file):
+
+            1. Parse slug from path, decode `MergeWaveRequest` body (reuse existing type).
+            2. Guard against concurrent resolution using a new `sync.Map` field on
+               Server. Add `resolvingRuns sync.Map` to the Server struct in server.go.
+               Actually — do NOT modify server.go (Agent D owns no server files, and
+               adding a field there would conflict). Instead, reuse `mergingRuns` —
+               conflict resolution IS a merge operation and they should be mutually
+               exclusive.
+            3. Resolve IMPL path via `s.resolveIMPLPath(slug)`.
+            4. Return 202 Accepted immediately.
+            5. In a background goroutine:
+               a. Read `saw.config.json` for model selection (same pattern as
+                  chat_handler.go lines 119-125).
+               b. Call `engine.ResolveConflicts(ctx, engine.ResolveConflictsOpts{...})`
+                  with an OnProgress callback that publishes SSE events:
+                  - "resolving" status -> publish `conflict_resolving` event
+                  - "resolved" status -> publish `conflict_resolved` event
+               c. On success: publish `merge_complete` event (same as handleWaveMerge).
+               d. On error: publish `conflict_resolution_failed` event with file + error.
+               e. Defer `s.mergingRuns.Delete(slug)`.
+
+            **Route registration**: The route must be registered in server.go. Since
+            you cannot modify server.go, add a comment at the top of your handler
+            noting the route. The integration step will wire it in. For now, also
+            add a func that registers the route:
+
+            ```go
+            func (s *Server) RegisterConflictRoutes() {
+                s.mux.HandleFunc("POST /api/wave/{slug}/resolve-conflicts", s.handleResolveConflicts)
+            }
+            ```
+
+            The integration agent will call this from server.go's New() function.
+
+            **File: pkg/api/merge_test_handlers_test.go** (modify or create)
+
+            Add a test for the handler:
+            1. TestHandleResolveConflicts_Returns202 - verify async dispatch
+            2. TestHandleResolveConflicts_409OnConcurrent - verify mutual exclusion
+               with merge (since both use mergingRuns)
+
+            Use the test seam pattern: create a `resolveConflictsFunc` package var
+            (like `mergeWaveFunc`) that tests can replace.
+
+            ## Interfaces to Call
+            - `engine.ResolveConflicts` from scout-and-wave-go (Agent A, Wave 1)
+            - `engine.ResolveConflictsOpts` struct (Agent A, Wave 1)
+            - `s.resolveIMPLPath(slug)` — existing
+            - `s.makePublisher(slug)` — existing
+            - `s.mergingRuns` — existing sync.Map for mutual exclusion
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./... && go vet ./... && go test ./pkg/api/ -run TestHandleResolveConflicts -count=1
+            ```
+
+            ## Constraints
+            - Reuse MergeWaveRequest type for the request body (same shape: {wave: int}).
+            - Reuse mergingRuns for concurrency guard — merge and resolve are
+              mutually exclusive operations on the same repo.
+            - The SSE event names MUST be exactly: conflict_resolving,
+              conflict_resolved, conflict_resolution_failed.
+            - Do NOT modify server.go — provide RegisterConflictRoutes() instead.
+          files:
+            - pkg/api/merge_test_handlers.go
+            - pkg/api/merge_test_handlers_test.go
+          dependencies:
+            - A
+        - id: D
+          task: |
+            ## What to Implement
+
+            Wire the conflict resolution feature into the frontend at
+            `/Users/dayna.blackwell/code/scout-and-wave-web`.
+
+            **File: web/src/api.ts** (modify)
+
+            Add the `resolveConflicts` API function:
+            ```typescript
+            export async function resolveConflicts(slug: string, wave: number): Promise<void> {
+              const r = await fetch(`/api/wave/${encodeURIComponent(slug)}/resolve-conflicts`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ wave }),
+              })
+              if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
+            }
+            ```
+
+            **File: web/src/types.ts** (modify)
+
+            No new types needed — the SSE events use inline object shapes already
+            handled by useWaveEvents. But add a comment documenting the new events.
+
+            **File: web/src/hooks/useWaveEvents.ts** (modify)
+
+            Add SSE event listeners for the three new conflict resolution events.
+            Extend the `WaveMergeState` interface to track resolution progress:
+
+            ```typescript
+            export interface WaveMergeState {
+              status: 'idle' | 'merging' | 'success' | 'failed' | 'resolving'  // ADD 'resolving'
+              output: string
+              conflictingFiles: string[]
+              error?: string
+              resolvingFile?: string      // NEW: currently resolving file
+              resolvedFiles: string[]     // NEW: files resolved so far
+              failedFile?: string         // NEW: file that failed resolution
+              resolutionError?: string    // NEW: error from failed resolution
+            }
+            ```
+
+            Initialize `resolvedFiles: []` in the default WaveMergeState.
+
+            Add event listeners:
+            - `conflict_resolving`: set status='resolving', update resolvingFile
+            - `conflict_resolved`: add file to resolvedFiles array
+            - `conflict_resolution_failed`: set resolutionError and failedFile,
+              revert status to 'failed'
+            - On `merge_complete` after resolution: status goes to 'success' (already handled)
+
+            **File: web/src/components/WaveBoard.tsx** (modify)
+
+            In the merge failure section (lines 535-573), add the "Resolve with AI"
+            button and integrate ConflictResolutionPanel:
+
+            1. Import ConflictResolutionPanel from './ConflictResolutionPanel'
+            2. Import resolveConflicts from '../api'
+            3. In the `mergeStatus === 'failed'` block, add a third button
+               "Resolve with AI" between "Abort Merge" and "Retry Merge":
+               ```tsx
+               <button
+                 onClick={() => void resolveConflicts(slug, wave.wave)}
+                 className="text-xs font-medium px-3 py-1.5 rounded-md bg-violet-600 text-white hover:bg-violet-700 transition-colors"
+               >
+                 Resolve with AI
+               </button>
+               ```
+            4. When mergeState.status === 'resolving', render the
+               ConflictResolutionPanel below the merge failure box:
+               ```tsx
+               {mergeStatus === 'resolving' && (
+                 <ConflictResolutionPanel
+                   slug={slug}
+                   wave={wave.wave}
+                   conflictingFiles={mergeState?.conflictingFiles ?? []}
+                   onResolveStart={() => void resolveConflicts(slug, wave.wave)}
+                   resolvingFile={mergeState?.resolvingFile}
+                   resolvedFiles={mergeState?.resolvedFiles ?? []}
+                   resolutionError={mergeState?.resolutionError}
+                   failedFile={mergeState?.failedFile}
+                   isResolving={true}
+                 />
+               )}
+               ```
+            5. Also show the panel in 'failed' status when there's a resolutionError
+               (so the user sees which file failed).
+
+            ## Interfaces to Call
+            - `resolveConflicts(slug, wave)` from api.ts (this agent adds it)
+            - `ConflictResolutionPanel` component (Agent B, Wave 1)
+            - Existing SSE event infrastructure in useWaveEvents.ts
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+            ```
+
+            ## Constraints
+            - The "Resolve with AI" button must ONLY appear when merge has failed
+              AND conflictingFiles is non-empty.
+            - Do NOT remove the existing "Abort Merge" or "Retry Merge" buttons.
+            - The resolving state must be visually distinct from merging (use a
+              different color or add a label like "AI Resolving...").
+            - Ensure resolvedFiles is initialized as empty array [] in all
+              WaveMergeState defaults to avoid undefined errors.
+          files:
+            - web/src/api.ts
+            - web/src/hooks/useWaveEvents.ts
+            - web/src/components/WaveBoard.tsx
+            - web/src/types.ts
+          dependencies:
+            - B
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/api/ -run TestResolveConflict -count=1
+          required: true
+completion_reports:
+    A:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-A
+        branch: wave1-agent-A
+        commit: 5f792abbfbfc688de9a0a59203170c098d14f7be
+        notes: no changes produced (API agent)
+    B:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-B
+        branch: wave1-agent-B
+        commit: ac337e8b44c588897ccd6a42ea28a887429bf9d3
+        files_changed:
+            - web/src/components/ConflictResolutionPanel.tsx
+        notes: auto-committed by orchestrator (API agent)
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Claude returns markdown-fenced response instead of raw file content
+          likelihood: medium
+          impact: high
+          mitigation: Agent A's system prompt must explicitly say 'no markdown fences, no explanation'. Add post-processing to strip ``` fences if present.
+        - scenario: Large conflicted files exceed Claude's output token limit
+          likelihood: low
+          impact: high
+          mitigation: Set MaxTokens to 16384. For files >500 lines, consider chunking (future enhancement, not in v1).
+        - scenario: Resolution produces syntactically invalid code
+          likelihood: medium
+          impact: medium
+          mitigation: After resolution and before git commit, run go vet or tsc --noEmit. If it fails, abort and report to user. This is a v2 enhancement — v1 commits and lets the test step catch issues.
+        - scenario: Cross-repo IMPL doc cannot resolve agent briefs for conflict context
+          likelihood: low
+          impact: low
+          mitigation: Fall back to resolving without agent context — just use the conflicted file content. Less intelligent but still useful.
+        - scenario: Agent C and Agent D both need to reference the new engine types
+          likelihood: high
+          impact: low
+          mitigation: Agent A delivers in Wave 1. Agent C imports from scout-and-wave-go. The go.mod replace directive already points to local checkout.
+known_issues:
+    - title: mergeWaveFunc test seam is package-level var
+      description: The existing test seam pattern uses package-level vars which are not goroutine-safe across parallel tests.
+      status: Pre-existing
+      workaround: Agent C should follow the same pattern for consistency, using a new resolveConflictsFunc var.
+state: SCOUT_PENDING

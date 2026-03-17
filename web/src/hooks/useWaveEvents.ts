@@ -237,7 +237,16 @@ export function useWaveEvents(slug: string): AppWaveState {
 
     es.addEventListener('run_failed', (event: MessageEvent) => {
       const data = JSON.parse(event.data) as { error: string }
-      setState(prev => ({ ...prev, runFailed: data.error }))
+      setState(prev => {
+        // Mark any agents still pending/running as failed
+        const updatedAgents = prev.agents.map(a =>
+          a.status === 'pending' || a.status === 'running'
+            ? { ...a, status: 'failed' as const, message: data.error }
+            : a
+        )
+        const waves = buildWaves(updatedAgents, prev.waves)
+        return { ...prev, agents: updatedAgents, waves, runFailed: data.error }
+      })
     })
 
     es.addEventListener('wave_gate_pending', (event: MessageEvent) => {

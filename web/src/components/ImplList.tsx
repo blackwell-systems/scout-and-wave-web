@@ -12,6 +12,7 @@ interface ImplListProps {
   loading: boolean
   repos?: RepoEntry[]
   onManageRepos?: () => void
+  onRemoveRepo?: (repoName: string) => void
 }
 
 interface DeleteModalProps {
@@ -176,8 +177,9 @@ function EntryRow({ e, selectedSlug, loading, onSelect, onRequestDelete }: Entry
 }
 
 export default function ImplList(props: ImplListProps): JSX.Element {
-  const { entries, selectedSlug, onSelect, onDelete, loading, repos, onManageRepos } = props
+  const { entries, selectedSlug, onSelect, onDelete, loading, repos, onManageRepos, onRemoveRepo } = props
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
+  const [pendingRemoveRepo, setPendingRemoveRepo] = useState<string | null>(null)
   const [collapsedRepos, setCollapsedRepos] = useState<Set<string>>(new Set())
   const [showCompleted, setShowCompleted] = useState(false)
 
@@ -210,6 +212,40 @@ export default function ImplList(props: ImplListProps): JSX.Element {
           onCancel={() => setPendingDelete(null)}
         />
       )}
+      {pendingRemoveRepo && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setPendingRemoveRepo(null)}
+        >
+          <div
+            className="bg-background border border-border rounded-lg shadow-lg p-5 w-80 flex flex-col gap-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex flex-col gap-1">
+              <span className="text-sm font-semibold">Remove repository?</span>
+              <span className="text-xs text-muted-foreground">
+                This will remove{' '}
+                <code className="font-mono text-destructive bg-destructive/10 px-1 rounded">{pendingRemoveRepo}</code>{' '}
+                from the sidebar. You can re-add it in Settings.
+              </span>
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setPendingRemoveRepo(null)}
+                className="text-xs px-3 py-1.5 rounded-md border border-border bg-background text-foreground hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { onRemoveRepo?.(pendingRemoveRepo); setPendingRemoveRepo(null) }}
+                className="text-xs px-3 py-1.5 rounded-md bg-destructive hover:bg-destructive/90 text-destructive-foreground font-medium transition-colors"
+              >
+                Remove
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex flex-col gap-1 p-2">
         {entries.length === 0 ? (
           <p className="text-muted-foreground text-xs px-2">
@@ -227,13 +263,24 @@ export default function ImplList(props: ImplListProps): JSX.Element {
 
               return (
                 <div key={repoName} className="mb-3">
-                  <button
-                    onClick={() => toggleRepo(repoName)}
-                    className="w-full flex items-center justify-between text-xs font-medium text-muted-foreground px-2 py-1.5 hover:bg-muted transition-colors"
-                  >
-                    <span>{repoName}</span>
-                    <span className="text-[10px]">{isCollapsed ? '▶' : '▼'}</span>
-                  </button>
+                  <div className="flex items-center">
+                    {onRemoveRepo && (
+                      <button
+                        onClick={() => setPendingRemoveRepo(repoName)}
+                        className="shrink-0 px-1.5 text-muted-foreground/40 hover:text-destructive transition-colors text-xs border-r border-border"
+                        title={`Remove ${repoName}`}
+                      >
+                        ✕
+                      </button>
+                    )}
+                    <button
+                      onClick={() => toggleRepo(repoName)}
+                      className="flex-1 flex items-center justify-between text-xs font-medium text-muted-foreground px-2 py-1.5 hover:bg-muted transition-colors"
+                    >
+                      <span>{repoName}</span>
+                      <span className="text-[10px]">{isCollapsed ? '▶' : '▼'}</span>
+                    </button>
+                  </div>
                   {!isCollapsed && (
                     <>
                       {activeEntries.map((e) => (

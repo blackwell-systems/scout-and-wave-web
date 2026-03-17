@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
@@ -50,7 +49,12 @@ func (s *Server) handleWaveMerge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
+	implPath, repoPath, resolveErr := s.resolveIMPLPath(slug)
+	if resolveErr != nil {
+		s.mergingRuns.Delete(slug)
+		http.Error(w, resolveErr.Error(), http.StatusNotFound)
+		return
+	}
 	publish := s.makePublisher(slug)
 	wave := req.Wave
 
@@ -74,7 +78,7 @@ func (s *Server) handleWaveMerge(w http.ResponseWriter, r *http.Request) {
 
 		err := mergeWaveFunc(ctx, engine.RunMergeOpts{
 			IMPLPath: implPath,
-			RepoPath: s.cfg.RepoPath,
+			RepoPath: repoPath,
 			WaveNum:  wave,
 		})
 		if err != nil {
@@ -115,7 +119,12 @@ func (s *Server) handleWaveTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
+	implPath, repoPath, resolveErr := s.resolveIMPLPath(slug)
+	if resolveErr != nil {
+		s.testingRuns.Delete(slug)
+		http.Error(w, resolveErr.Error(), http.StatusNotFound)
+		return
+	}
 	publish := s.makePublisher(slug)
 	wave := req.Wave
 
@@ -160,7 +169,7 @@ func (s *Server) handleWaveTest(w http.ResponseWriter, r *http.Request) {
 		// Run test command via sh -c to support compound commands like
 		// "go test ./... && cd web && npm test --watchAll=false".
 		cmd := exec.CommandContext(ctx, "sh", "-c", manifest.TestCommand)
-		cmd.Dir = s.cfg.RepoPath
+		cmd.Dir = repoPath
 
 		// Combine stdout and stderr into a single io.Pipe so we can stream
 		// output line-by-line. (Setting cmd.Stderr = cmd.Stdout is not valid
@@ -220,6 +229,29 @@ func (s *Server) handleWaveTest(w http.ResponseWriter, r *http.Request) {
 			"status": "pass",
 		})
 	}()
+}
+
+// handleMergeAbort handles POST /api/wave/{slug}/merge-abort.
+// Runs `git merge --abort` in the IMPL's repo to recover from a conflicted state.
+func (s *Server) handleMergeAbort(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+
+	_, repoPath, resolveErr := s.resolveIMPLPath(slug)
+	if resolveErr != nil {
+		http.Error(w, resolveErr.Error(), http.StatusNotFound)
+		return
+	}
+
+	cmd := exec.Command("git", "merge", "--abort")
+	cmd.Dir = repoPath
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		http.Error(w, fmt.Sprintf("git merge --abort failed: %s: %s", err, string(out)), http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "merge aborted successfully")
 }
 
 // extractConflictingFiles parses an error string from a failed merge and

@@ -39,8 +39,28 @@ export default function App() {
   const [sseConnected, setSseConnected] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
 
+  // Close model picker on Escape
+  useEffect(() => {
+    if (!pickerOpen) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setPickerOpen(null)
+    }
+    document.addEventListener('keydown', handler)
+    return () => document.removeEventListener('keydown', handler)
+  }, [pickerOpen])
+
   function handleReposChange(updated: RepoEntry[]): void {
     setRepos(updated)
+  }
+  async function handleRemoveRepo(repoName: string): Promise<void> {
+    const updated = repos.filter(r => (r.name || r.path) !== repoName)
+    try {
+      const cfg = await getConfig()
+      await saveConfig({ ...cfg, repos: updated })
+      setRepos(updated)
+    } catch (err) {
+      console.error('Failed to remove repo:', err)
+    }
   }
   function handleRepoSwitch(index: number): void {
     setActiveRepoIndex(index)
@@ -159,6 +179,10 @@ export default function App() {
     } finally {
       setLoading(false)
     }
+  }
+
+  function handleViewWaves() {
+    setLiveView('wave')
   }
 
   async function handleReject() {
@@ -293,7 +317,6 @@ export default function App() {
                         value={model}
                         onChange={value => {
                           saveModel(field, value)
-                          setPickerOpen(null)
                         }}
                       />
                     </div>
@@ -341,6 +364,7 @@ export default function App() {
                   loading={loading}
                   repos={repos}
                   onManageRepos={() => setShowSettings(true)}
+                  onRemoveRepo={(name) => void handleRemoveRepo(name)}
                 />
               </div>
               <button
@@ -371,7 +395,7 @@ export default function App() {
           )}
           {rejected && <p className="text-orange-600 text-sm p-4">Plan rejected.</p>}
           {!loading && impl !== null && selectedSlug !== null && (
-            <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onRefreshImpl={handleSelect} repos={repos} chatModel={chatModel} />
+            <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onViewWaves={handleViewWaves} onRefreshImpl={handleSelect} repos={repos} chatModel={chatModel} />
           )}
           {!loading && impl === null && !error && (
             <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
