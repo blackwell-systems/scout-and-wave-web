@@ -3,9 +3,11 @@ import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { getAgentColor, resetThemeCache } from '../../lib/agentColors'
 import { ExecutionSyncState, AgentExecStatus } from '../../hooks/useExecutionSync'
+import { WaveInfo, FileOwnershipEntry } from '../../types'
 
 interface DependencyGraphPanelProps {
   dependencyGraphText?: string
+  impl?: { waves: WaveInfo[]; file_ownership: FileOwnershipEntry[] }
   executionState?: ExecutionSyncState
 }
 
@@ -76,6 +78,36 @@ function parseDependencyGraph(text: string): ParsedWave[] {
   }
 
   return waves
+}
+
+function buildWavesFromImpl(impl: { waves: WaveInfo[]; file_ownership: FileOwnershipEntry[] }): ParsedWave[] {
+  return impl.waves.map(wave => ({
+    number: wave.number,
+    agents: wave.agents.map(agentId => {
+      // Find files owned by this agent in this wave
+      const ownedFiles = impl.file_ownership
+        .filter(f => f.agent === agentId && f.wave === wave.number)
+        .map(f => f.file)
+
+      // Dependencies: agents from prior waves that this wave depends on
+      const deps: string[] = []
+      if (wave.dependencies && wave.dependencies.length > 0) {
+        for (const depWaveNum of wave.dependencies) {
+          const depWave = impl.waves.find(w => w.number === depWaveNum)
+          if (depWave) {
+            deps.push(...depWave.agents)
+          }
+        }
+      }
+
+      return {
+        letter: agentId,
+        description: ownedFiles.length > 0 ? ownedFiles.join(', ') : `Agent ${agentId}`,
+        dependencies: deps,
+        wave: wave.number,
+      }
+    }),
+  }))
 }
 
 const NODE_W = 48
@@ -150,7 +182,7 @@ function layoutNodes(waves: ParsedWave[]): { nodes: NodePos[]; width: number; he
   return { nodes, width, height }
 }
 
-export default function DependencyGraphPanel({ dependencyGraphText, executionState }: DependencyGraphPanelProps): JSX.Element {
+export default function DependencyGraphPanel({ dependencyGraphText, impl, executionState }: DependencyGraphPanelProps): JSX.Element {
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; agent: ParsedAgent } | null>(null)
@@ -189,7 +221,10 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
     return executionState.agents.get(`${wave}:${letter}`)
   }
 
-  if (!dependencyGraphText || dependencyGraphText.trim() === '') {
+  const hasText = dependencyGraphText && dependencyGraphText.trim() !== ''
+  const hasImplWaves = impl?.waves && impl.waves.length > 0
+
+  if (!hasText && !hasImplWaves) {
     return (
       <Card>
         <CardHeader>
@@ -202,7 +237,9 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
     )
   }
 
-  const parsed = parseDependencyGraph(dependencyGraphText)
+  const parsed = hasText
+    ? parseDependencyGraph(dependencyGraphText!)
+    : buildWavesFromImpl(impl!)
 
   if (parsed.length === 0) {
     return (

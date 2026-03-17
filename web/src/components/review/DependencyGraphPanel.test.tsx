@@ -292,13 +292,64 @@ describe('DependencyGraphPanel', () => {
 
   // ── 7. Empty / missing dependencyGraphText ────────────────────────────────
 
-  test('renders "No dependency graph" when dependencyGraphText is empty', () => {
+  test('renders "No dependency graph" when dependencyGraphText is empty and no impl', () => {
     render(<DependencyGraphPanel dependencyGraphText="" />)
     expect(screen.getByText('No dependency graph')).toBeInTheDocument()
   })
 
-  test('renders "No dependency graph" when dependencyGraphText is undefined', () => {
+  test('renders "No dependency graph" when dependencyGraphText is undefined and no impl', () => {
     render(<DependencyGraphPanel />)
     expect(screen.getByText('No dependency graph')).toBeInTheDocument()
+  })
+
+  // ── 8. Fallback: build graph from impl data when text is empty ───────────
+
+  test('renders SVG graph from impl data when dependencyGraphText is empty', () => {
+    const impl = {
+      waves: [
+        { number: 1, agents: ['A', 'B'], dependencies: [] },
+        { number: 2, agents: ['C'], dependencies: [1] },
+      ],
+      file_ownership: [
+        { file: 'pkg/foo.go', agent: 'A', wave: 1, action: 'modify', depends_on: '' },
+        { file: 'pkg/bar.go', agent: 'B', wave: 1, action: 'modify', depends_on: '' },
+        { file: 'pkg/baz.go', agent: 'C', wave: 2, action: 'new', depends_on: '' },
+      ],
+    }
+
+    render(<DependencyGraphPanel dependencyGraphText="" impl={impl} />)
+
+    // Should render SVG graph, not the "No dependency graph" message
+    const svg = document.querySelector('svg')
+    expect(svg).toBeInTheDocument()
+
+    // Agent labels should be visible
+    expect(screen.getByText('A')).toBeInTheDocument()
+    expect(screen.getByText('B')).toBeInTheDocument()
+    expect(screen.getByText('C')).toBeInTheDocument()
+  })
+
+  test('renders "No dependency graph" when both text and impl are absent', () => {
+    render(<DependencyGraphPanel dependencyGraphText="" impl={{ waves: [], file_ownership: [] }} />)
+    expect(screen.getByText('No dependency graph')).toBeInTheDocument()
+  })
+
+  test('buildWavesFromImpl produces correct agent descriptions from file ownership', () => {
+    const impl = {
+      waves: [
+        { number: 1, agents: ['X'], dependencies: [] },
+      ],
+      file_ownership: [
+        { file: 'src/alpha.ts', agent: 'X', wave: 1, action: 'modify', depends_on: '' },
+        { file: 'src/beta.ts', agent: 'X', wave: 1, action: 'new', depends_on: '' },
+      ],
+    }
+
+    render(<DependencyGraphPanel impl={impl} />)
+
+    // SVG should render
+    const svg = document.querySelector('svg')
+    expect(svg).toBeInTheDocument()
+    expect(screen.getByText('X')).toBeInTheDocument()
   })
 })
