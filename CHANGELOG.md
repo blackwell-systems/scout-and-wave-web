@@ -2,6 +2,9 @@
 
 All notable changes to this project will be documented in this file.
 
+| [0.71.0] | 2026-03-16 | useReducer refactoring — useWaveEvents hook refactored via SAW (2 waves, 2 agents), pure reducer with 28 action types, hook shrunk from ~457 to 278 lines |
+| [0.70.0] | 2026-03-16 | Fix with AI for test/gate failures — AI-powered build fixer with streaming output, Retry + Fix buttons on test failures, fix_build SSE events |
+| [0.69.0] | 2026-03-16 | Retry finalization + failure context — POST /api/wave/{slug}/finalize endpoint, agent reruns prepend completion report to prompt, header nav height increase |
 | [0.68.0] | 2026-03-16 | File browser repo fix + sidebar polish — IMPL detail API populates repo/repo_path, per-repo completed section toggle, subtle bg tint on completed sections |
 | [0.67.0] | 2026-03-16 | Conflict resolution streaming + worktree cleanup fix — live model output in ConflictResolutionPanel, post-resolve cleanup wired, multi-repo IMPL path resolution |
 | [0.66.0] | 2026-03-16 | WaveBoard state persistence — disk-seeded agents/waves/merge state, inline worktree cleanup, waves_merged detection after branch cleanup |
