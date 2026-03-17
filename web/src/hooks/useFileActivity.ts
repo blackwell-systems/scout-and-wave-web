@@ -23,7 +23,7 @@ export function useFileActivity(waveState: AppWaveState): Map<string, FileActivi
 
     // Step 1: Initialize all files as idle
     for (const agent of waveState.agents) {
-      for (const file of agent.files) {
+      for (const file of (agent.files ?? [])) {
         if (!activityMap.has(file)) {
           activityMap.set(file, {
             status: 'idle',
@@ -37,7 +37,7 @@ export function useFileActivity(waveState: AppWaveState): Map<string, FileActivi
     // Step 2: Process complete agents first - mark their files as committed
     for (const agent of waveState.agents) {
       if (agent.status === 'complete') {
-        for (const file of agent.files) {
+        for (const file of (agent.files ?? [])) {
           activityMap.set(file, {
             status: 'committed',
             agent: agent.agent,
@@ -59,7 +59,7 @@ export function useFileActivity(waveState: AppWaveState): Map<string, FileActivi
           if (!filePath) continue
 
           // Find which owned file this tool call refers to
-          const matchedFile = agent.files.find(f => pathsMatch(filePath, f))
+          const matchedFile = (agent.files ?? []).find(f => pathsMatch(filePath, f))
           if (!matchedFile) continue
 
           const currentEntry = activityMap.get(matchedFile)

@@ -33,7 +33,7 @@
     "block_on_failure": false
   },
   "appearance": {
-    "theme": "system",
+    "theme": "dark",
     "color_theme_dark": "tokyo-night-dark"
   }
 }

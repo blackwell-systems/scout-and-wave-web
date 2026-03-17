@@ -32,6 +32,7 @@ interface ReviewScreenProps {
   onRefreshImpl?: (slug: string) => Promise<void>
   repos?: import('../types').RepoEntry[]
   chatModel?: string
+  refreshTick?: number
 }
 
 type PanelKey = 'pre-mortem' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'worktrees' | 'context-viewer' | 'validation'
@@ -57,7 +58,7 @@ const panels: Array<{ key: PanelKey; label: string }> = [
 ]
 
 export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
-  const { slug, impl, onApprove, onReject, onViewWaves, onRefreshImpl, repos, chatModel = 'claude-sonnet-4-6' } = props
+  const { slug, impl, onApprove, onReject, onViewWaves, onRefreshImpl, repos, chatModel = 'claude-sonnet-4-6', refreshTick } = props
   const isNotSuitable = impl.suitability.verdict === 'NOT SUITABLE'
 
   const executionState = useExecutionSync(slug)
@@ -178,7 +179,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
 
   useEffect(() => {
     refreshWorktreeCount()
-  }, [refreshWorktreeCount])
+  }, [refreshWorktreeCount, refreshTick])
 
   function handleApproveClick() {
     if (worktreeCount > 0) {

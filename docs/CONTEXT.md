@@ -9,3 +9,5 @@
   - IMPL doc: docs/IMPL/complete/IMPL-live-execution-viz.yaml
 - **usereducer-wave-events**: completed 2026-03-16, 2 waves, 2 agents
   - IMPL doc: docs/IMPL/IMPL-usereducer-wave-events.yaml
+- **live-file-activity**: completed 2026-03-17, 1 waves, 2 agents
+  - IMPL doc: docs/IMPL/IMPL-live-file-activity.yaml

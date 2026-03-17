@@ -2,6 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
+| [0.73.0] | 2026-03-17 | Vertical dep graph + file activity fix — dependency graph reoriented top-to-bottom, `useFileActivity` crash fix for agents without files array |
 | [0.72.0] | 2026-03-16 | Resume detection UI + structured retry context — `GET /api/sessions/interrupted` endpoint, amber sidebar banner for interrupted sessions, `retryctx.BuildRetryContext` replaces manual error formatting in agent reruns |
 | [0.71.0] | 2026-03-16 | useReducer refactoring — useWaveEvents hook refactored via SAW (2 waves, 2 agents), pure reducer with 28 action types, hook shrunk from ~457 to 278 lines |
 | [0.70.0] | 2026-03-16 | Fix with AI for test/gate failures — AI-powered build fixer with streaming output, Retry + Fix buttons on test failures, fix_build SSE events |
@@ -21,6 +22,18 @@ All notable changes to this project will be documented in this file.
 | [0.56.0] | 2026-03-14 | File browser (waves 1-2) — 4 backend API endpoints + 7 frontend components for in-app codebase exploration with syntax highlighting |
 | [0.55.0] | 2026-03-14 | UI improvements — Fixed stale IMPL list, added collapsible repo sections, improved repo context visibility |
 | [0.54.0] | 2026-03-14 | Scout automation integration — 5 automation command wrappers added to web CLI (analyze-deps, analyze-suitability, detect-cascades, detect-scaffolds, extract-commands) |
+
+---
+
+## [0.73.0] - 2026-03-17
+
+### Changed
+
+- **Vertical dependency graph** — `DependencyGraphPanel.tsx` reoriented from horizontal (waves left-to-right) to vertical (waves top-to-bottom) layout. Wave backgrounds render as horizontal bands, edges flow downward, arrows point down.
+
+### Fixed
+
+- **`useFileActivity` crash** — `r.files is not iterable` TypeError when scaffold agent completes without `files` array on agent object. Added `?? []` fallback guards at all 3 iteration points.
 
 ---
 

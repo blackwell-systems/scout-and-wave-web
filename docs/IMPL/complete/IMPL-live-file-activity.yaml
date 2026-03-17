@@ -1,0 +1,285 @@
+completion_date: "2026-03-17"
+title: Live File Activity Visualization in File Ownership Table
+feature_slug: live-file-activity
+verdict: SUITABLE
+suitability_assessment: |
+    SUITABLE. Three requirements map to 2 parallel agents with disjoint file ownership.
+    All SSE data shapes are known (AgentToolCallData in types.ts). The shared FileStatus
+    type is small enough for a scaffold. No backend changes needed. Build cycle is fast
+    (vite + vitest ~15s) but coordination value is high -- the hook/component interface
+    must match exactly.
+test_command: cd web && npx vitest run
+lint_command: cd web && npx tsc --noEmit
+file_ownership:
+    - file: web/src/hooks/useFileActivity.ts
+      agent: A
+      wave: 1
+      action: new
+    - file: web/src/hooks/useFileActivity.test.ts
+      agent: A
+      wave: 1
+      action: new
+    - file: web/src/components/FileOwnershipTable.tsx
+      agent: B
+      wave: 1
+      action: modify
+    - file: web/src/components/WaveBoard.tsx
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: useFileActivity
+      description: |
+        Custom hook that derives per-file activity status from the AppWaveState
+        returned by useWaveEvents. Watches toolCalls on each running agent and
+        maps file paths to their current activity status. Returns a Map keyed
+        by file path.
+      definition: |
+        function useFileActivity(waveState: AppWaveState): Map<string, FileActivityEntry>
+      location: web/src/hooks/useFileActivity.ts
+    - name: FileOwnershipTable liveStatus prop
+      description: |
+        Optional prop added to FileOwnershipTableProps. When provided, renders
+        an additional Status column with a colored dot and label for each file.
+        When absent (review mode), the column does not appear.
+      definition: |
+        interface FileOwnershipTableProps {
+          fileOwnership: FileOwnershipEntry[]
+          col4Name?: string
+          onFileClick?: (file: string, agent: string, wave: number) => void
+          renderViewButton?: (entry: FileOwnershipEntry) => React.ReactNode
+          liveStatus?: Map<string, FileActivityEntry>  // NEW -- optional live status
+        }
+      location: web/src/components/FileOwnershipTable.tsx
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Create a custom React hook `useFileActivity` that derives per-file activity
+            status from the existing `AppWaveState`. The hook scans `toolCalls` on each
+            running agent and extracts file paths from Read/Write/Edit tool calls to
+            build a `Map<string, FileActivityEntry>`.
+
+            **Status derivation logic:**
+            - Start with all files from all agents' `files[]` arrays as `idle`
+            - For each agent with status `running`, scan `toolCalls` (newest first):
+              - If `tool_name` is "Read" or "Glob" or "Grep" and input contains a file path
+                that matches an owned file: set that file to `reading`
+              - If `tool_name` is "Write" or "Edit" and input contains a file path
+                that matches an owned file: set that file to `writing`
+            - For each agent with status `complete`, set all their owned files to `committed`
+            - A file that was `writing` and whose agent is now `complete` becomes `committed`
+            - Use `useMemo` to avoid recomputation on every render
+
+            **File path extraction from tool input:**
+            The `input` field in ToolCallEntry is a truncated string. For Read/Write/Edit,
+            it typically starts with the file path. Use a simple heuristic: extract the
+            first token that looks like a file path (contains `/` and ends with a file
+            extension like `.ts`, `.tsx`, `.go`, etc.), then check if it matches any
+            file in any agent's `files[]` array (use suffix matching since tool paths
+            are absolute but ownership paths are relative).
+
+            ## Interfaces to Implement
+            ```typescript
+            // Import from scaffold:
+            import { FileActivityStatus, FileActivityEntry } from '../types/fileActivity'
+            import { AppWaveState } from './waveEventsReducer'
+
+            export function useFileActivity(waveState: AppWaveState): Map<string, FileActivityEntry>
+            ```
+
+            ## Interfaces to Call
+            - `AppWaveState` from `../hooks/waveEventsReducer` (agents[], each with files[], status, toolCalls[])
+            - `ToolCallEntry` from `../types` (tool_name, input, status fields)
+            - `FileActivityEntry` and `FileActivityStatus` from `../types/fileActivity` (scaffold)
+
+            ## Tests to Write
+            File: `web/src/hooks/useFileActivity.test.ts`
+
+            1. `test('returns empty map when no agents')` - empty agents array yields empty Map
+            2. `test('marks all files idle when agents are pending')` - pending agents = idle files
+            3. `test('marks file as reading when agent has Read tool call')` - running agent with
+               Read tool_call on owned file => reading status
+            4. `test('marks file as writing when agent has Write tool call')` - running agent with
+               Write tool_call => writing status
+            5. `test('marks files as committed when agent is complete')` - complete agent = committed
+            6. `test('writing takes priority over reading')` - if both Read and Write calls exist
+               for same file, writing wins (newest-first scan)
+            7. `test('handles suffix matching for absolute vs relative paths')` - tool input has
+               `/abs/path/to/web/src/foo.ts`, ownership has `web/src/foo.ts` => match
+
+            Use `renderHook` from `@testing-library/react` for hook tests.
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && npx vitest run --reporter=verbose
+            ```
+
+            ## Constraints
+            - Do NOT modify any existing files. Only create the two new files.
+            - Import FileActivityEntry and FileActivityStatus from `../types/fileActivity` (scaffold).
+            - The hook must be a pure derivation (useMemo) -- no useEffect, no state, no side effects.
+            - Keep the file path matching simple -- suffix match is sufficient.
+            - Cap the scan at the most recent 10 tool calls per agent for performance.
+          files:
+            - web/src/hooks/useFileActivity.ts
+            - web/src/hooks/useFileActivity.test.ts
+        - id: B
+          task: |
+            ## What to Implement
+
+            Two changes:
+
+            ### 1. Add live status column to FileOwnershipTable
+
+            Modify `FileOwnershipTable.tsx` to accept an optional `liveStatus` prop of type
+            `Map<string, FileActivityEntry>`. When present:
+            - Add a "Status" column header after the existing columns
+            - For each file row, look up `liveStatus.get(entry.file)`
+            - Render a status indicator: colored dot + label text
+            - Status dot colors (use inline styles, not Tailwind for dynamic colors):
+              - `idle`: gray dot (`#6b7280`), label "Idle"
+              - `reading`: blue dot (`#3b82f6`), label "Reading"
+              - `writing`: amber dot (`#f59e0b`), label "Writing", with a subtle pulse animation
+              - `committed`: green dot (`#22c55e`), label "Committed"
+            - When `liveStatus` is undefined/absent, do NOT render the Status column at all
+              (preserves existing review mode behavior exactly)
+
+            ### 2. Wire live status into WaveBoard
+
+            Modify `WaveBoard.tsx` to:
+            - Import `useFileActivity` from `../hooks/useFileActivity`
+            - Import `FileOwnershipTable` from `./FileOwnershipTable`
+            - Call `useFileActivity(state)` to get the live status map
+            - After the wave rows section (after the `state.waves.map(...)` block), add a
+              collapsible "File Activity" section that renders `FileOwnershipTable` with:
+              - `fileOwnership` from `state.agents` (build FileOwnershipEntry[] from agent data)
+              - `liveStatus` from the hook
+            - The section should be collapsed by default and togglable with a button
+            - Only show the section when there are running agents (at least one agent
+              with status 'running')
+            - Use existing styling patterns from WaveBoard (bg-white dark:bg-gray-900, etc.)
+
+            **Building FileOwnershipEntry[] from agent state:**
+            ```typescript
+            const fileEntries: FileOwnershipEntry[] = state.agents.flatMap(a =>
+              (a.files ?? []).map(f => ({
+                file: f,
+                agent: a.agent,
+                wave: a.wave,
+                action: '',
+                depends_on: '',
+              }))
+            )
+            ```
+
+            ## Interfaces to Implement
+            - Extended `FileOwnershipTableProps` with optional `liveStatus?: Map<string, FileActivityEntry>`
+            - New collapsible file activity section in WaveBoard render
+
+            ## Interfaces to Call
+            - `useFileActivity(state)` from `../hooks/useFileActivity` -- returns `Map<string, FileActivityEntry>`
+            - `FileActivityEntry`, `FileActivityStatus` from `../types/fileActivity`
+            - `FileOwnershipTable` component (already imported pattern exists in ReviewScreen)
+            - `getAgentColor` from `../lib/agentColors` (already used in FileOwnershipTable)
+            - Existing WaveBoard state: `state.agents`, `state.waves`
+
+            ## Tests to Write
+            No separate test file for this agent. The component changes are UI-only and
+            verified via TypeScript compilation and visual inspection. Agent A's hook tests
+            cover the data layer.
+
+            ## Verification Gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && npx vite build
+            ```
+
+            ## Constraints
+            - Do NOT change the behavior of FileOwnershipTable when `liveStatus` is not provided.
+              The ReviewScreen usage must continue to work identically.
+            - Do NOT add new SSE event listeners or modify useWaveEvents.
+            - Import FileActivityEntry from `../types/fileActivity`, NOT from the hook file.
+            - The file activity section in WaveBoard should be minimal -- a collapsible panel,
+              not a major layout change. Use a simple `useState<boolean>` for expand/collapse.
+            - Keep the status dot small (w-2 h-2) and use `animate-pulse` class only for
+              the `writing` status to draw attention to active writes.
+          files:
+            - web/src/components/FileOwnershipTable.tsx
+            - web/src/components/WaveBoard.tsx
+quality_gates:
+    level: standard
+    gates:
+        - type: typecheck
+          command: cd web && npx tsc --noEmit
+          required: true
+        - type: build
+          command: cd web && npx vite build
+          required: true
+        - type: test
+          command: cd web && npx vitest run
+          required: false
+          description: No existing tests in repo -- agents will add first tests
+scaffolds:
+    - file_path: web/src/types/fileActivity.ts
+      contents: |
+        /** Status of a file during live wave execution. */
+        export type FileActivityStatus = 'idle' | 'reading' | 'writing' | 'committed'
+
+        /** Per-file activity state derived from SSE tool_call events. */
+        export interface FileActivityEntry {
+          status: FileActivityStatus
+          agent: string
+          lastTool?: string      // e.g. "Read", "Write", "Edit"
+          lastUpdated: number    // Date.now() timestamp
+        }
+      import_path: ../types/fileActivity
+      status: committed (abcf798)
+completion_reports:
+    A:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-A
+        branch: wave1-agent-A
+        commit: 9a596dd47a0964cbe83c06fdb8766f4b78807de1
+        files_changed:
+            - package-lock.json
+            - web/src/hooks/useFileActivity.test.ts
+            - web/src/hooks/useFileActivity.ts
+        notes: auto-committed by orchestrator (API agent)
+    B:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/wave1-agent-B
+        branch: wave1-agent-B
+        commit: 7526f0385007513cc3b341ce0aadd0577e746645
+        files_changed:
+            - web/package-lock.json
+            - web/package.json
+            - web/src/components/FileOwnershipTable.tsx
+            - web/src/components/WaveBoard.tsx
+            - web/src/hooks/useFileActivity.test.ts
+            - web/src/hooks/useFileActivity.ts
+        notes: auto-committed by orchestrator (API agent)
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: File path matching fails -- tool input paths are absolute but ownership paths are relative
+          likelihood: medium
+          impact: low
+          mitigation: Use suffix matching (endsWith) rather than exact equality. Agent A's tests cover this case explicitly.
+        - scenario: FileOwnershipTable liveStatus column breaks existing review layout
+          likelihood: low
+          impact: medium
+          mitigation: Column only renders when liveStatus prop is provided. ReviewScreen does not pass this prop. TypeScript ensures backward compatibility.
+        - scenario: Performance degradation from frequent re-renders as tool calls stream in
+          likelihood: low
+          impact: low
+          mitigation: useFileActivity uses useMemo. Tool call scan is capped at 10 per agent. Map reference only changes when tool calls actually change file status.
+state: "COMPLETE"

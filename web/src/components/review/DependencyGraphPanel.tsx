@@ -124,21 +124,21 @@ function layoutNodes(waves: ParsedWave[]): { nodes: NodePos[]; width: number; he
 
   for (let wi = 0; wi < waves.length; wi++) {
     const wave = waves[wi]
-    const x = PAD_X + wi * WAVE_GAP
-    const totalHeight = (wave.agents.length - 1) * AGENT_GAP
-    const startY = PAD_Y + (maxAgents - 1) * AGENT_GAP / 2 - totalHeight / 2
+    const y = PAD_Y + wi * WAVE_GAP
+    const totalWidth = (wave.agents.length - 1) * AGENT_GAP
+    const startX = PAD_X + (maxAgents - 1) * AGENT_GAP / 2 - totalWidth / 2
 
     for (let ai = 0; ai < wave.agents.length; ai++) {
       nodes.push({
-        x,
-        y: startY + ai * AGENT_GAP,
+        x: startX + ai * AGENT_GAP,
+        y,
         agent: wave.agents[ai],
       })
     }
   }
 
-  const width = PAD_X * 2 + (waves.length - 1) * WAVE_GAP + NODE_W
-  const height = PAD_Y * 2 + (maxAgents - 1) * AGENT_GAP + NODE_H
+  const width = PAD_X * 2 + (maxAgents - 1) * AGENT_GAP + NODE_W
+  const height = PAD_Y * 2 + (waves.length - 1) * WAVE_GAP + NODE_H
 
   return { nodes, width, height }
 }
@@ -282,7 +282,7 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
         <CardTitle>Dependency Graph</CardTitle>
       </CardHeader>
       <CardContent>
-        <div ref={containerRef} className="overflow-x-auto relative">
+        <div ref={containerRef} className="overflow-y-auto relative">
           <svg
             ref={svgRef}
             width={width}
@@ -291,18 +291,18 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
             className="block"
             onMouseLeave={handleMouseLeave}
           >
-            {/* Wave column backgrounds */}
+            {/* Wave row backgrounds */}
             {parsed.map((_wave, wi) => {
-              const x = PAD_X + wi * WAVE_GAP - 16
-              const colW = NODE_W + 32
+              const y = PAD_Y + wi * WAVE_GAP - 16
+              const rowH = NODE_H + 32
               const color = WAVE_COLORS[wi % WAVE_COLORS.length]
               return (
                 <rect
                   key={`bg-${wi}`}
-                  x={x}
-                  y={24}
-                  width={colW}
-                  height={height - 28}
+                  x={24}
+                  y={y}
+                  width={width - 28}
+                  height={rowH}
                   rx={12}
                   fill={color}
                   opacity={0.08}
@@ -310,27 +310,28 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
               )
             })}
 
-            {/* Wave labels */}
+            {/* Wave labels (inside row bands) */}
             {parsed.map((wave, wi) => (
               <text
                 key={`label-${wave.number}`}
-                x={PAD_X + wi * WAVE_GAP + NODE_W / 2}
-                y={16}
+                x={36}
+                y={PAD_Y + wi * WAVE_GAP + NODE_H / 2}
                 textAnchor="middle"
+                dominantBaseline="central"
                 className="fill-muted-foreground"
                 fontSize={11}
                 fontWeight={600}
               >
-                Wave {wave.number}
+                W{wave.number}
               </text>
             ))}
 
             {/* Edges */}
             {edges.map((edge, i) => {
-              const x1 = edge.from.x + NODE_W
-              const y1 = edge.from.y + NODE_H / 2
-              const x2 = edge.to.x
-              const y2 = edge.to.y + NODE_H / 2
+              const x1 = edge.from.x + NODE_W / 2
+              const y1 = edge.from.y + NODE_H
+              const x2 = edge.to.x + NODE_W / 2
+              const y2 = edge.to.y
 
               // Determine edge class based on source node exec status
               const sourceExec = getExecStatus(edge.from.agent.letter, edge.from.agent.wave)
@@ -364,8 +365,8 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
 
             {/* Arrow markers at edge endpoints */}
             {edges.map((edge, i) => {
-              const x2 = edge.to.x
-              const y2 = edge.to.y + NODE_H / 2
+              const x2 = edge.to.x + NODE_W / 2
+              const y2 = edge.to.y
 
               // Mirror edge class onto arrow tip
               const sourceExec = getExecStatus(edge.from.agent.letter, edge.from.agent.wave)
@@ -385,7 +386,7 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
               return (
                 <polygon
                   key={`arrow-${i}`}
-                  points={`${x2},${y2} ${x2 - 6},${y2 - 3} ${x2 - 6},${y2 + 3}`}
+                  points={`${x2},${y2} ${x2 - 3},${y2 - 6} ${x2 + 3},${y2 - 6}`}
                   fill={edge.color}
                   opacity={arrowOpacity}
                   className={arrowClassName}

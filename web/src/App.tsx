@@ -40,6 +40,7 @@ export default function App() {
 
   const [interruptedSessions, setInterruptedSessions] = useState<InterruptedSession[]>([])
   const [sseConnected, setSseConnected] = useState(false)
+  const [sseRefreshTick, setSseRefreshTick] = useState(0)
   const [showPalette, setShowPalette] = useState(false)
 
   // Close model picker on Escape
@@ -97,6 +98,7 @@ export default function App() {
       setSseConnected(true)
       listImpls().then(setEntries).catch(() => {})
       fetchInterruptedSessions().then(setInterruptedSessions).catch(() => {})
+      setSseRefreshTick(t => t + 1)
     })
     return () => es.close()
   }, [])
@@ -401,7 +403,7 @@ export default function App() {
           )}
           {rejected && <p className="text-orange-600 text-sm p-4">Plan rejected.</p>}
           {!loading && impl !== null && selectedSlug !== null && (
-            <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onViewWaves={handleViewWaves} onRefreshImpl={handleSelect} repos={repos} chatModel={chatModel} />
+            <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onViewWaves={handleViewWaves} onRefreshImpl={handleSelect} repos={repos} chatModel={chatModel} refreshTick={sseRefreshTick} />
           )}
           {!loading && impl === null && !error && (
             <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
