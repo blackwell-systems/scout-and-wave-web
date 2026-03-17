@@ -14,6 +14,7 @@ import { useResizableDivider } from './hooks/useResizableDivider'
 import { ChevronLeft, ChevronRight, Settings, Search } from 'lucide-react'
 import ModelPicker from './components/ModelPicker'
 import ResumeBanner from './components/ResumeBanner'
+import PipelineView from './components/PipelineView'
 import { InterruptedSession } from './types'
 
 
@@ -42,6 +43,7 @@ export default function App() {
   const [sseConnected, setSseConnected] = useState(false)
   const [sseRefreshTick, setSseRefreshTick] = useState(0)
   const [showPalette, setShowPalette] = useState(false)
+  const [showPipeline, setShowPipeline] = useState(false)
 
   // Close model picker on Escape
   useEffect(() => {
@@ -289,6 +291,12 @@ export default function App() {
             New Plan
           </button>
           <button
+            onClick={() => { setShowPipeline(v => !v); if (!showPipeline) { setSelectedSlug(null); setImpl(null) } }}
+            className={`flex items-center justify-center text-sm font-medium px-6 transition-colors border-r ${showPipeline ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-400 dark:border-emerald-800' : 'hover:bg-muted text-muted-foreground border-border'}`}
+          >
+            Pipeline
+          </button>
+          <button
             onClick={() => setShowPalette(true)}
             className="flex items-center gap-2 px-4 text-xs text-muted-foreground border-r border-border hover:bg-muted hover:text-foreground transition-colors"
             title="Search plans (⌘K)"
@@ -389,6 +397,13 @@ export default function App() {
 
         {/* Center column */}
         <div className="flex-1 overflow-y-auto min-w-0">
+          {showPipeline ? (
+            <PipelineView
+              onSelectImpl={(slug) => { setShowPipeline(false); handleSelect(slug) }}
+              onClose={() => setShowPipeline(false)}
+            />
+          ) : (
+          <>
           {error && <p className="text-destructive text-sm p-4">{error}</p>}
           {loading && (
             <div className="p-6 space-y-4">
@@ -416,6 +431,8 @@ export default function App() {
                 <p className="text-xs text-muted-foreground mt-1">Select a plan from the sidebar or create a new one with New Plan</p>
               </div>
             </div>
+          )}
+          </>
           )}
         </div>
 

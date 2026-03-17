@@ -609,6 +609,7 @@ waves:
             - A
             - B
             - C
+      base_commit: 69792d8833825505679fb900c0771be3eb83e8ce
 quality_gates:
     level: standard
     gates:
@@ -757,6 +758,56 @@ completion_reports:
             - TestHandleSaveAutonomy_InvalidLevel
             - TestHandleDaemonStatus_NotRunning
             - TestHandleDaemonStart_AlreadyRunning
+        verification: PASS
+    D:
+        status: complete
+        branch: wave2-agent-D
+        commit: 5d2b23e
+        files_changed:
+            - web/src/components/PipelineView.tsx
+            - web/src/components/PipelineRow.tsx
+            - web/src/components/PipelineMetrics.tsx
+            - web/src/hooks/usePipeline.ts
+        files_created:
+            - web/src/components/PipelineView.tsx
+            - web/src/components/PipelineRow.tsx
+            - web/src/components/PipelineMetrics.tsx
+            - web/src/hooks/usePipeline.ts
+            - web/src/components/__tests__/PipelineRow.test.tsx
+            - web/src/components/__tests__/PipelineMetrics.test.tsx
+        tests_added:
+            - PipelineRow renders complete status
+            - PipelineRow renders queued status
+            - PipelineRow renders executing status
+            - PipelineRow renders blocked status
+            - PipelineRow calls onSelect
+            - PipelineMetrics renders all values
+            - PipelineMetrics handles zero
+            - PipelineMetrics formats decimal
+        verification: 'PASS: 175/175 vitest tests pass, no TS errors in owned files'
+    E:
+        status: complete
+        branch: wave2-agent-E
+        commit: 09fb6d8
+        files_changed:
+            - web/src/components/QueuePanel.tsx
+            - web/src/components/AutonomySettings.tsx
+            - web/src/components/DaemonControl.test.tsx
+            - web/src/components/AutonomySettings.test.tsx
+            - web/src/components/QueuePanel.test.tsx
+            - web/src/hooks/useDaemon.ts
+        tests_added:
+            - QueuePanel_renders_empty_state_with_add_form
+            - AutonomySettings_renders_all_three_level_options
+            - DaemonControl_shows_Start_when_not_running
+        verification: PASS
+    F:
+        status: complete
+        branch: wave2-agent-F
+        commit: 0ccbd71
+        files_changed:
+            - web/src/autonomyApi.ts
+            - pkg/api/server.go
         verification: PASS
 pre_mortem:
     overall_risk: medium
