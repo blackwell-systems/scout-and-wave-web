@@ -6,134 +6,12 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
-
-// ---------------------------------------------------------------------------
-// Pipeline types — these are the canonical definitions from the interface
-// contract. Agent A (pipeline_state.go) will also define them; the
-// integration agent de-duplicates at merge time.
-// ---------------------------------------------------------------------------
-
-// PipelineStep is a discrete step in the post-agent finalization pipeline.
-type PipelineStep string
-
-const (
-	StepVerifyCommits       PipelineStep = "verify_commits"
-	StepScanStubs           PipelineStep = "scan_stubs"
-	StepRunGates            PipelineStep = "run_gates"
-	StepValidateIntegration PipelineStep = "validate_integration"
-	StepMergeAgents         PipelineStep = "merge_agents"
-	StepFixGoMod            PipelineStep = "fix_go_mod"
-	StepVerifyBuild         PipelineStep = "verify_build"
-	StepCleanup             PipelineStep = "cleanup"
-)
-
-// PipelineStepOrder is the canonical execution order.
-var PipelineStepOrder = []PipelineStep{
-	StepVerifyCommits, StepScanStubs, StepRunGates,
-	StepValidateIntegration, StepMergeAgents, StepFixGoMod,
-	StepVerifyBuild, StepCleanup,
-}
-
-// StepStatus represents the status of a single pipeline step.
-type StepStatus string
-
-const (
-	StepPending  StepStatus = "pending"
-	StepRunning  StepStatus = "running"
-	StepComplete StepStatus = "complete"
-	StepFailed   StepStatus = "failed"
-	StepSkipped  StepStatus = "skipped"
-)
-
-// StepState is the persisted state of one pipeline step.
-type StepState struct {
-	Status    StepStatus `json:"status"`
-	Error     string     `json:"error,omitempty"`
-	Timestamp time.Time  `json:"timestamp"`
-}
-
-// PipelineState is the persisted state for a wave's finalization pipeline.
-type PipelineState struct {
-	Slug      string                    `json:"slug"`
-	Wave      int                       `json:"wave"`
-	Steps     map[PipelineStep]StepState `json:"steps"`
-	UpdatedAt time.Time                 `json:"updated_at"`
-}
-
-// pipelineTracker manages per-slug pipeline state. Provides thread-safe
-// read/write of step-level status for the finalization pipeline.
-type pipelineTracker struct {
-	mu     sync.Mutex
-	states map[string]*PipelineState // keyed by slug
-}
-
-func newPipelineTracker() *pipelineTracker {
-	return &pipelineTracker{states: make(map[string]*PipelineState)}
-}
-
-func (pt *pipelineTracker) Read(slug string) *PipelineState {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	return pt.states[slug]
-}
-
-func (pt *pipelineTracker) Start(slug string, wave int, step PipelineStep) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	state := pt.getOrCreate(slug, wave)
-	state.Steps[step] = StepState{Status: StepRunning, Timestamp: time.Now()}
-	state.UpdatedAt = time.Now()
-}
-
-func (pt *pipelineTracker) Complete(slug string, wave int, step PipelineStep) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	state := pt.getOrCreate(slug, wave)
-	state.Steps[step] = StepState{Status: StepComplete, Timestamp: time.Now()}
-	state.UpdatedAt = time.Now()
-}
-
-func (pt *pipelineTracker) Fail(slug string, wave int, step PipelineStep, errMsg string) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	state := pt.getOrCreate(slug, wave)
-	state.Steps[step] = StepState{Status: StepFailed, Error: errMsg, Timestamp: time.Now()}
-	state.UpdatedAt = time.Now()
-}
-
-func (pt *pipelineTracker) Skip(slug string, wave int, step PipelineStep, reason string) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	state := pt.getOrCreate(slug, wave)
-	state.Steps[step] = StepState{Status: StepSkipped, Error: reason, Timestamp: time.Now()}
-	state.UpdatedAt = time.Now()
-}
-
-func (pt *pipelineTracker) Clear(slug string) {
-	pt.mu.Lock()
-	defer pt.mu.Unlock()
-	delete(pt.states, slug)
-}
-
-func (pt *pipelineTracker) getOrCreate(slug string, wave int) *PipelineState {
-	if s, ok := pt.states[slug]; ok {
-		return s
-	}
-	s := &PipelineState{
-		Slug:  slug,
-		Wave:  wave,
-		Steps: make(map[PipelineStep]StepState),
-	}
-	pt.states[slug] = s
-	return s
-}
 
 // defaultPipelineTracker is the package-level pipeline tracker instance.
 // Set during server init (Wave 2). All handlers nil-check before use.
@@ -222,7 +100,7 @@ func (s *Server) handleStepRetry(w http.ResponseWriter, r *http.Request) {
 
 		// Update tracker if available.
 		if defaultPipelineTracker != nil {
-			defaultPipelineTracker.Start(slug, wave, step)
+			_ = defaultPipelineTracker.Start(slug, wave, step)
 		}
 
 		publish("step_retry_started", map[string]interface{}{
@@ -238,7 +116,7 @@ func (s *Server) handleStepRetry(w http.ResponseWriter, r *http.Request) {
 			if step == StepValidateIntegration || step == StepFixGoMod {
 				log.Printf("step %s non-fatal error: %v", step, err)
 				if defaultPipelineTracker != nil {
-					defaultPipelineTracker.Complete(slug, wave, step)
+					_ = defaultPipelineTracker.Complete(slug, wave, step)
 				}
 				publish("step_retry_complete", map[string]interface{}{
 					"slug":    slug,
@@ -250,7 +128,7 @@ func (s *Server) handleStepRetry(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if defaultPipelineTracker != nil {
-				defaultPipelineTracker.Fail(slug, wave, step, err.Error())
+				_ = defaultPipelineTracker.Fail(slug, wave, step, err)
 			}
 			publish("step_retry_failed", map[string]interface{}{
 				"slug":  slug,
@@ -262,7 +140,7 @@ func (s *Server) handleStepRetry(w http.ResponseWriter, r *http.Request) {
 		}
 
 		if defaultPipelineTracker != nil {
-			defaultPipelineTracker.Complete(slug, wave, step)
+			_ = defaultPipelineTracker.Complete(slug, wave, step)
 		}
 		publish("step_retry_complete", map[string]interface{}{
 			"slug": slug,
@@ -367,7 +245,7 @@ func (s *Server) handleStepSkip(w http.ResponseWriter, r *http.Request) {
 
 	// Update tracker if available.
 	if defaultPipelineTracker != nil {
-		defaultPipelineTracker.Skip(slug, req.Wave, step, req.Reason)
+		_ = defaultPipelineTracker.Skip(slug, req.Wave, step)
 	}
 
 	w.Header().Set("Content-Type", "application/json")

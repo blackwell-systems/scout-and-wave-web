@@ -152,7 +152,7 @@ func TestHandlePipelineState_NotFound(t *testing.T) {
 	s, _ := makeTestServer(t)
 
 	// Set up a non-nil tracker with no state.
-	defaultPipelineTracker = newPipelineTracker()
+	defaultPipelineTracker = newPipelineTracker(t.TempDir())
 	t.Cleanup(func() { defaultPipelineTracker = nil })
 
 	req := httptest.NewRequest(http.MethodGet, "/api/wave/nonexistent/pipeline", nil)
