@@ -146,6 +146,19 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("GET /api/journal/{wave}/{agent}/checkpoints", s.handleJournalCheckpoints)
 	s.mux.HandleFunc("POST /api/journal/{wave}/{agent}/restore", s.handleJournalRestore)
 
+	// Autonomy layer (v0.58.0)
+	s.mux.HandleFunc("GET /api/pipeline", s.handleGetPipeline)
+	s.mux.HandleFunc("GET /api/queue", s.handleListQueue)
+	s.mux.HandleFunc("POST /api/queue", s.handleAddQueue)
+	s.mux.HandleFunc("DELETE /api/queue/{slug}", s.handleDeleteQueue)
+	s.mux.HandleFunc("PUT /api/queue/{slug}/priority", s.handleReorderQueue)
+	s.mux.HandleFunc("GET /api/autonomy", s.handleGetAutonomy)
+	s.mux.HandleFunc("PUT /api/autonomy", s.handleSaveAutonomy)
+	s.mux.HandleFunc("POST /api/daemon/start", s.handleDaemonStart)
+	s.mux.HandleFunc("POST /api/daemon/stop", s.handleDaemonStop)
+	s.mux.HandleFunc("GET /api/daemon/status", s.handleDaemonStatus)
+	s.mux.HandleFunc("GET /api/daemon/events", s.handleDaemonEvents)
+
 	sub, err := fs.Sub(staticFiles, "dist")
 	if err != nil {
 		panic("saw: failed to sub embed.FS: " + err.Error())
