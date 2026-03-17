@@ -13,6 +13,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
 )
 
 // gateChannels stores per-slug gate channels used to pause runWaveLoop
@@ -369,30 +370,14 @@ func (s *Server) handleWaveAgentRerun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build failure context from previous completion report (if any).
+	// Build structured failure context from previous completion report (if any).
 	promptPrefix := body.ScopeHint
-	if manifest, loadErr := protocol.Load(implPath); loadErr == nil {
-		if report, ok := manifest.CompletionReports[letter]; ok {
-			var ctx string
-			if report.Status != "complete" {
-				ctx = fmt.Sprintf("## Previous Attempt Failed\nStatus: %s\n", report.Status)
-				if report.FailureType != "" {
-					ctx += fmt.Sprintf("Failure type: %s\n", report.FailureType)
-				}
-				if report.Notes != "" {
-					ctx += fmt.Sprintf("Agent notes: %s\n", report.Notes)
-				}
-				if report.Verification != "" {
-					ctx += fmt.Sprintf("Verification output: %s\n", report.Verification)
-				}
-				ctx += "\nFix the issues described above, then complete your original task.\n\n"
-			}
-			if ctx != "" {
-				if promptPrefix != "" {
-					promptPrefix = ctx + promptPrefix
-				} else {
-					promptPrefix = ctx
-				}
+	if rc, err := retryctx.BuildRetryContext(implPath, letter, 2); err == nil {
+		if rc.PromptText != "" {
+			if promptPrefix != "" {
+				promptPrefix = rc.PromptText + "\n" + promptPrefix
+			} else {
+				promptPrefix = rc.PromptText
 			}
 		}
 	}

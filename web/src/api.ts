@@ -1,4 +1,4 @@
-import { IMPLDocResponse, IMPLListEntry, WorktreeListResponse, WorktreeBatchDeleteRequest, WorktreeBatchDeleteResponse, FileDiffResponse, SAWConfig, ChatMessage, AgentContextResponse, ScoutContext } from './types'
+import { IMPLDocResponse, IMPLListEntry, WorktreeListResponse, WorktreeBatchDeleteRequest, WorktreeBatchDeleteResponse, FileDiffResponse, SAWConfig, ChatMessage, AgentContextResponse, ScoutContext, InterruptedSession } from './types'
 
 export async function listImpls(): Promise<IMPLListEntry[]> {
   const response = await fetch('/api/impl')
@@ -321,6 +321,13 @@ export async function fetchAgentContext(slug: string, agent: string): Promise<Ag
   const r = await fetch(`/api/impl/${slug}/agent/${agent}/context`)
   if (!r.ok) throw new Error(await r.text())
   return r.json()
+}
+
+// Interrupted session detection (resume)
+export async function fetchInterruptedSessions(): Promise<InterruptedSession[]> {
+  const r = await fetch('/api/sessions/interrupted')
+  if (!r.ok) return [] // non-fatal: don't block the UI
+  return r.json() as Promise<InterruptedSession[]>
 }
 
 // File browser API

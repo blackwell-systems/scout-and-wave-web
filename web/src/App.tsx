@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
-import { listImpls, fetchImpl, approveImpl, rejectImpl, startWave, deleteImpl, getConfig, saveConfig } from './api'
+import { listImpls, fetchImpl, approveImpl, rejectImpl, startWave, deleteImpl, getConfig, saveConfig, fetchInterruptedSessions } from './api'
 import { IMPLDocResponse, IMPLListEntry, RepoEntry } from './types'
 import ReviewScreen from './components/ReviewScreen'
 import DarkModeToggle from './components/DarkModeToggle'
@@ -13,6 +13,8 @@ import CommandPalette from './components/CommandPalette'
 import { useResizableDivider } from './hooks/useResizableDivider'
 import { ChevronLeft, ChevronRight, Settings, Search } from 'lucide-react'
 import ModelPicker from './components/ModelPicker'
+import ResumeBanner from './components/ResumeBanner'
+import { InterruptedSession } from './types'
 
 
 export default function App() {
@@ -36,6 +38,7 @@ export default function App() {
 
   const [pickerOpen, setPickerOpen] = useState<'scout' | 'scaffold' | 'wave' | 'integration' | 'chat' | 'all' | null>(null)
 
+  const [interruptedSessions, setInterruptedSessions] = useState<InterruptedSession[]>([])
   const [sseConnected, setSseConnected] = useState(false)
   const [showPalette, setShowPalette] = useState(false)
 
@@ -93,12 +96,14 @@ export default function App() {
     es.addEventListener('impl_list_updated', () => {
       setSseConnected(true)
       listImpls().then(setEntries).catch(() => {})
+      fetchInterruptedSessions().then(setInterruptedSessions).catch(() => {})
     })
     return () => es.close()
   }, [])
 
   useEffect(() => {
     listImpls().then(setEntries).catch(() => {})
+    fetchInterruptedSessions().then(setInterruptedSessions).catch(() => {})
     getConfig().then(config => {
       if (config.repos && config.repos.length > 0) {
         setRepos(config.repos)
@@ -356,6 +361,7 @@ export default function App() {
             <div className="relative shrink-0" style={{ width: leftWidthPx }}>
               {/* Inner div: scroll container, separate from button positioning */}
               <div className="flex flex-col overflow-y-auto h-full border-r bg-muted w-full">
+                <ResumeBanner sessions={interruptedSessions} onSelect={handleSelect} />
                 <ImplList
                   entries={entries}
                   selectedSlug={selectedSlug}

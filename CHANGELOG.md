@@ -2,6 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
+| [0.72.0] | 2026-03-16 | Resume detection UI + structured retry context — `GET /api/sessions/interrupted` endpoint, amber sidebar banner for interrupted sessions, `retryctx.BuildRetryContext` replaces manual error formatting in agent reruns |
 | [0.71.0] | 2026-03-16 | useReducer refactoring — useWaveEvents hook refactored via SAW (2 waves, 2 agents), pure reducer with 28 action types, hook shrunk from ~457 to 278 lines |
 | [0.70.0] | 2026-03-16 | Fix with AI for test/gate failures — AI-powered build fixer with streaming output, Retry + Fix buttons on test failures, fix_build SSE events |
 | [0.69.0] | 2026-03-16 | Retry finalization + failure context — POST /api/wave/{slug}/finalize endpoint, agent reruns prepend completion report to prompt, header nav height increase |
@@ -20,6 +21,20 @@ All notable changes to this project will be documented in this file.
 | [0.56.0] | 2026-03-14 | File browser (waves 1-2) — 4 backend API endpoints + 7 frontend components for in-app codebase exploration with syntax highlighting |
 | [0.55.0] | 2026-03-14 | UI improvements — Fixed stale IMPL list, added collapsible repo sections, improved repo context visibility |
 | [0.54.0] | 2026-03-14 | Scout automation integration — 5 automation command wrappers added to web CLI (analyze-deps, analyze-suitability, detect-cascades, detect-scaffolds, extract-commands) |
+
+---
+
+## [0.72.0] - 2026-03-16
+
+### Added
+
+- **`GET /api/sessions/interrupted`** — Scans all configured repos for interrupted SAW sessions via `resume.Detect()`, returns JSON array of session state (progress %, failed agents, orphaned worktrees, suggested action)
+- **`ResumeBanner` component** — Amber sidebar banner above IMPL list showing interrupted sessions with progress, failure counts, and suggested actions; clicking selects the IMPL
+- **Reactive refresh** — Banner auto-updates on `impl_list_updated` SSE events (wave completions, agent finishes)
+
+### Changed
+
+- **`handleWaveAgentRerun`** — Replaced 15 lines of manual completion report formatting with `retryctx.BuildRetryContext()` for structured error classification and fix suggestions on agent reruns
 
 ---
 

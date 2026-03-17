@@ -109,6 +109,8 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("GET /api/impl/{slug}/chat/{runID}/events", s.handleImplChatEvents)
 
 	// v0.18.0-C — Settings
+	s.mux.HandleFunc("GET /api/sessions/interrupted", s.handleInterruptedSessions)
+
 	s.mux.HandleFunc("GET /api/config", s.handleGetConfig)
 	s.mux.HandleFunc("POST /api/config", s.handleSaveConfig)
 

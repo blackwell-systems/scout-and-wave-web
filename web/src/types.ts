@@ -294,6 +294,22 @@ export interface ToolCallEntry {
   status: 'running' | 'done' | 'error'
 }
 
+// Interrupted session detection (resume)
+export interface InterruptedSession {
+  impl_slug: string
+  impl_path: string
+  current_wave: number
+  total_waves: number
+  completed_agents: string[]
+  failed_agents: string[]
+  pending_agents: string[]
+  orphaned_worktrees: string[]
+  suggested_action: string
+  progress_pct: number
+  can_auto_resume: boolean
+  resume_command: string
+}
+
 // Conflict resolution SSE events (v0.20.0-D)
 // - conflict_resolving:        {slug, wave, file}
 // - conflict_resolved:         {slug, wave, file}
