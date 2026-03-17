@@ -130,7 +130,7 @@ func TestHandleGetPipeline_MixedStatus(t *testing.T) {
 	// Mark active-thing as executing
 	s.activeRuns.Store("active-thing", struct{}{})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/pipeline", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/pipeline?include_completed=true", nil)
 	rr := httptest.NewRecorder()
 	s.handleGetPipeline(rr, req)
 
