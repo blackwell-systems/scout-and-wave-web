@@ -182,7 +182,7 @@ export default function App() {
   }
 
   function handleViewWaves() {
-    setLiveView('wave')
+    setLiveView(prev => prev === 'wave' ? null : 'wave')
   }
 
   async function handleReject() {

@@ -72,21 +72,56 @@ export function useWaveEvents(slug: string): AppWaveState {
 
   const esRef = useRef<EventSource | null>(null)
 
-  // Seed merge state from disk status on mount — covers waves merged in
-  // previous sessions whose SSE events are no longer available.
+  // Seed agent, wave, and merge state from disk status on mount — covers
+  // work completed in previous sessions whose SSE events are no longer available.
   useEffect(() => {
     fetchDiskWaveStatus(slug).then(disk => {
-      if (disk.waves_merged && disk.waves_merged.length > 0) {
-        setState(prev => {
-          const next = new Map(prev.wavesMergeState)
-          for (const w of disk.waves_merged!) {
-            if (!next.has(w)) {
-              next.set(w, { status: 'success', output: '', conflictingFiles: [], resolvedFiles: [] })
+      setState(prev => {
+        // Seed agents from disk completion reports
+        let agents = prev.agents
+        let waves = prev.waves
+        if (disk.agents && disk.agents.length > 0 && prev.agents.length === 0) {
+          agents = disk.agents.map(da => ({
+            agent: da.agent,
+            wave: da.wave,
+            status: (da.status === 'complete' ? 'complete' : da.status === 'blocked' ? 'failed' : 'pending') as 'complete' | 'failed' | 'pending',
+            files: da.files ?? [],
+            branch: da.branch,
+            failure_type: da.failure_type,
+            message: da.message,
+          }))
+          // Build waves from seeded agents
+          const waveMap = new Map<number, WaveState>()
+          for (const a of agents) {
+            if (!waveMap.has(a.wave)) {
+              waveMap.set(a.wave, { wave: a.wave, agents: [], complete: false })
+            }
+            waveMap.get(a.wave)!.agents.push(a)
+          }
+          // Mark waves complete if all agents are complete
+          for (const [, w] of waveMap) {
+            w.complete = w.agents.length > 0 && w.agents.every(a => a.status === 'complete')
+          }
+          waves = Array.from(waveMap.values()).sort((a, b) => a.wave - b.wave)
+        }
+
+        // Seed scaffold status
+        const scaffoldStatus = disk.scaffold_status === 'committed' || disk.scaffold_status === 'none'
+          ? 'complete' as const
+          : prev.scaffoldStatus
+
+        // Seed merge state from waves_merged
+        const mergeState = new Map(prev.wavesMergeState)
+        if (disk.waves_merged) {
+          for (const w of disk.waves_merged) {
+            if (!mergeState.has(w)) {
+              mergeState.set(w, { status: 'success', output: '', conflictingFiles: [], resolvedFiles: [] })
             }
           }
-          return { ...prev, wavesMergeState: next }
-        })
-      }
+        }
+
+        return { ...prev, agents, waves, scaffoldStatus, wavesMergeState: mergeState }
+      })
     }).catch(() => { /* disk status unavailable — SSE will provide state */ })
   }, [slug])
 
