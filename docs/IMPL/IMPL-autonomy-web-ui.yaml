@@ -1,0 +1,799 @@
+# IMPL: autonomy-web-ui
+title: "Autonomy Layer Web UI"
+feature_slug: autonomy-web-ui
+verdict: SUITABLE
+test_command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./pkg/api/... && cd web && npx vitest run"
+lint_command: "go vet ./pkg/api/..."
+state: SCOUT_PENDING
+
+# Suitability Assessment
+# ----------------------
+# Verdict: SUITABLE
+#
+# 1. File decomposition: YES — Feature spans 6+ new backend files (queue handler,
+#    pipeline handler, daemon handler, autonomy config handler, autonomy types)
+#    and 8+ new frontend files (PipelineView, PipelineRow, QueuePanel,
+#    AutonomySettings, DaemonControl, new hooks, new types). Clean decomposition
+#    into backend API agents and frontend component agents with no conflicting
+#    file writes.
+#
+# 2. Investigation-first: NO — The autonomy backend (v0.58.0) is complete and
+#    tested. All types (autonomy.Config, queue.Item, engine.DaemonState,
+#    engine.Event) are stable. No unknowns to investigate.
+#
+# 3. Interface discoverability: YES — Backend types from scout-and-wave-go are
+#    fully defined. API endpoint contracts (request/response shapes) can be
+#    specified up front. Frontend component props derive from API responses.
+#
+# 4. Pre-implementation status check:
+#    Total items: 8 (4 backend handlers + 4 frontend component groups)
+#    Already implemented (DONE): 0
+#    Partially implemented (PARTIAL): 1 (config handler exists, needs autonomy section)
+#    Not implemented (TO-DO): 7
+#
+# 5. Parallelization value: HIGH — Build+test cycle ~45s (Go build + npm build
+#    + vitest). 6 agents across 2 waves. Backend agents (wave 1) are fully
+#    independent. Frontend agents (wave 2) depend on backend types but not
+#    on each other. Average 3 files per agent.
+#
+# Estimated times:
+# - Scout phase: ~8 min (dependency mapping, interface contracts, IMPL doc)
+# - Agent execution: ~25 min (6 agents x 12 min avg, 2 waves with parallelism)
+# - Merge & verification: ~5 min
+# Total SAW time: ~38 min
+#
+# Sequential baseline: ~72 min (6 agents x 12 min avg sequential)
+# Time savings: ~34 min (~47% faster)
+# Recommendation: Clear speedup. Proceed.
+
+suitability_assessment: |
+  SUITABLE. The autonomy layer backend (v0.58.0 in scout-and-wave-go) provides
+  stable types and functions. This feature adds API endpoints and React UI
+  components to expose them. Work decomposes cleanly into backend handlers
+  (wave 1, independent) and frontend components (wave 2, depend on types).
+  6 agents across 2 waves with ~47% time savings over sequential.
+
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: "go build ./..."
+      required: true
+    - type: lint
+      command: "go vet ./..."
+      required: true
+    - type: test
+      command: "go test ./pkg/api/..."
+      required: true
+    - type: custom
+      command: "cd web && npx vitest run"
+      required: false
+      description: "Frontend unit tests"
+
+scaffolds:
+  - file_path: "web/src/types/autonomy.ts"
+    contents: |
+      // Autonomy level type — mirrors pkg/autonomy.Level
+      export type AutonomyLevel = 'gated' | 'supervised' | 'autonomous'
+
+      // Autonomy config — mirrors pkg/autonomy.Config
+      export interface AutonomyConfig {
+        level: AutonomyLevel
+        max_auto_retries: number
+        max_queue_depth: number
+      }
+
+      // Queue item — mirrors pkg/queue.Item
+      export interface QueueItem {
+        title: string
+        priority: number
+        depends_on?: string[]
+        feature_description: string
+        status: 'queued' | 'in_progress' | 'complete' | 'blocked'
+        autonomy_override?: string
+        require_review?: boolean
+        slug?: string
+        file_path?: string
+      }
+
+      // Daemon state — mirrors pkg/engine.DaemonState
+      export interface DaemonState {
+        running: boolean
+        current_impl?: string
+        current_wave?: number
+        queue_depth: number
+        completed_count: number
+        blocked_count: number
+      }
+
+      // Pipeline entry — combined view of completed + executing + queued
+      export interface PipelineEntry {
+        slug: string
+        title: string
+        status: 'complete' | 'executing' | 'blocked' | 'queued'
+        wave_progress?: string        // e.g. "Wave 2/3"
+        active_agent?: string         // e.g. "Agent B"
+        blocked_reason?: string
+        queue_position?: number
+        depends_on?: string[]
+        completed_at?: string
+        elapsed_seconds?: number
+      }
+
+      // Pipeline response from GET /api/pipeline
+      export interface PipelineResponse {
+        entries: PipelineEntry[]
+        metrics: PipelineMetrics
+        autonomy_level: AutonomyLevel
+      }
+
+      // Throughput metrics
+      export interface PipelineMetrics {
+        impls_per_hour: number
+        avg_wave_seconds: number
+        queue_depth: number
+        blocked_count: number
+        completed_count: number
+      }
+
+      // Add queue item request
+      export interface AddQueueItemRequest {
+        title: string
+        priority: number
+        feature_description: string
+        depends_on?: string[]
+        autonomy_override?: string
+        require_review?: boolean
+      }
+    import_path: "@/types/autonomy"
+    status: committed (0b840d904159daa512c285bbe59d492b5507e231)
+
+interface_contracts:
+  - name: "handleGetPipeline"
+    description: |
+      GET /api/pipeline — returns combined pipeline view with completed IMPLs,
+      currently executing IMPL, and queued items. Includes throughput metrics
+      and current autonomy level.
+    definition: |
+      func (s *Server) handleGetPipeline(w http.ResponseWriter, r *http.Request)
+      // Response body: PipelineResponse JSON
+    location: "pkg/api/pipeline_handler.go"
+
+  - name: "handleListQueue / handleAddQueue / handleDeleteQueue / handleReorderQueue"
+    description: |
+      CRUD endpoints for the IMPL queue.
+      GET /api/queue — list queue items sorted by priority.
+      POST /api/queue — add a new queue item.
+      DELETE /api/queue/{slug} — remove a queue item.
+      PUT /api/queue/{slug}/priority — update priority.
+    definition: |
+      func (s *Server) handleListQueue(w http.ResponseWriter, r *http.Request)
+      func (s *Server) handleAddQueue(w http.ResponseWriter, r *http.Request)
+      func (s *Server) handleDeleteQueue(w http.ResponseWriter, r *http.Request)
+      func (s *Server) handleReorderQueue(w http.ResponseWriter, r *http.Request)
+    location: "pkg/api/queue_handler.go"
+
+  - name: "handleGetAutonomy / handleSaveAutonomy"
+    description: |
+      GET /api/autonomy — returns current autonomy config from saw.config.json.
+      PUT /api/autonomy — saves autonomy config section.
+    definition: |
+      func (s *Server) handleGetAutonomy(w http.ResponseWriter, r *http.Request)
+      func (s *Server) handleSaveAutonomy(w http.ResponseWriter, r *http.Request)
+    location: "pkg/api/autonomy_handler.go"
+
+  - name: "handleDaemonStart / handleDaemonStop / handleDaemonStatus / handleDaemonEvents"
+    description: |
+      POST /api/daemon/start — start daemon loop.
+      POST /api/daemon/stop — stop daemon loop.
+      GET /api/daemon/status — get current daemon state.
+      GET /api/daemon/events — SSE stream of daemon events.
+    definition: |
+      func (s *Server) handleDaemonStart(w http.ResponseWriter, r *http.Request)
+      func (s *Server) handleDaemonStop(w http.ResponseWriter, r *http.Request)
+      func (s *Server) handleDaemonStatus(w http.ResponseWriter, r *http.Request)
+      func (s *Server) handleDaemonEvents(w http.ResponseWriter, r *http.Request)
+    location: "pkg/api/daemon_handler.go"
+
+  - name: "PipelineView component"
+    description: |
+      Top-level page component showing all IMPLs across the pipeline lifecycle.
+      Fetches from GET /api/pipeline and subscribes to SSE pipeline_updated events.
+    definition: |
+      interface PipelineViewProps {
+        onSelectImpl: (slug: string) => void
+        onClose: () => void
+      }
+      export default function PipelineView(props: PipelineViewProps): JSX.Element
+    location: "web/src/components/PipelineView.tsx"
+
+  - name: "QueuePanel component"
+    description: |
+      Queue management panel with add/remove/reorder capabilities.
+      Used within PipelineView or as a standalone sidebar panel.
+    definition: |
+      interface QueuePanelProps {
+        onSelectItem?: (slug: string) => void
+      }
+      export default function QueuePanel(props: QueuePanelProps): JSX.Element
+    location: "web/src/components/QueuePanel.tsx"
+
+file_ownership:
+  # Wave 1 — Backend API handlers (independent, no cross-dependencies)
+  - file: "pkg/api/pipeline_handler.go"
+    agent: A
+    wave: 1
+    action: new
+  - file: "pkg/api/pipeline_handler_test.go"
+    agent: A
+    wave: 1
+    action: new
+
+  - file: "pkg/api/queue_handler.go"
+    agent: B
+    wave: 1
+    action: new
+  - file: "pkg/api/queue_handler_test.go"
+    agent: B
+    wave: 1
+    action: new
+
+  - file: "pkg/api/autonomy_handler.go"
+    agent: C
+    wave: 1
+    action: new
+  - file: "pkg/api/autonomy_handler_test.go"
+    agent: C
+    wave: 1
+    action: new
+  - file: "pkg/api/daemon_handler.go"
+    agent: C
+    wave: 1
+    action: new
+  - file: "pkg/api/daemon_handler_test.go"
+    agent: C
+    wave: 1
+    action: new
+
+  # Wave 2 — Frontend components + API client + route wiring
+  - file: "web/src/components/PipelineView.tsx"
+    agent: D
+    wave: 2
+    action: new
+  - file: "web/src/components/PipelineRow.tsx"
+    agent: D
+    wave: 2
+    action: new
+  - file: "web/src/components/PipelineMetrics.tsx"
+    agent: D
+    wave: 2
+    action: new
+  - file: "web/src/hooks/usePipeline.ts"
+    agent: D
+    wave: 2
+    action: new
+
+  - file: "web/src/components/QueuePanel.tsx"
+    agent: E
+    wave: 2
+    action: new
+  - file: "web/src/components/DaemonControl.tsx"
+    agent: E
+    wave: 2
+    action: new
+  - file: "web/src/components/AutonomySettings.tsx"
+    agent: E
+    wave: 2
+    action: new
+  - file: "web/src/hooks/useDaemon.ts"
+    agent: E
+    wave: 2
+    action: new
+
+  - file: "web/src/autonomyApi.ts"
+    agent: F
+    wave: 2
+    action: new
+  - file: "pkg/api/server.go"
+    agent: F
+    wave: 2
+    action: modify
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## What to Implement
+          Pipeline API handler: GET /api/pipeline that returns a combined view of
+          all IMPLs across the lifecycle (completed, executing, queued) with
+          throughput metrics and current autonomy level.
+
+          The handler should:
+          1. Load completed IMPLs from docs/IMPL/complete/ (use existing listImpls logic)
+          2. Check for currently executing IMPL from server's activeRuns sync.Map
+          3. Load queued items using queue.NewManager(repoPath).List()
+          4. Load autonomy config using autonomy.LoadConfig(repoPath)
+          5. Compute metrics (completed count, queue depth, blocked count)
+          6. Return PipelineResponse JSON
+
+          Define these types in the handler file:
+
+          ```go
+          type PipelineEntry struct {
+              Slug          string   `json:"slug"`
+              Title         string   `json:"title"`
+              Status        string   `json:"status"` // complete, executing, blocked, queued
+              WaveProgress  string   `json:"wave_progress,omitempty"`
+              ActiveAgent   string   `json:"active_agent,omitempty"`
+              BlockedReason string   `json:"blocked_reason,omitempty"`
+              QueuePosition int      `json:"queue_position,omitempty"`
+              DependsOn     []string `json:"depends_on,omitempty"`
+              CompletedAt   string   `json:"completed_at,omitempty"`
+              ElapsedSecs   int      `json:"elapsed_seconds,omitempty"`
+          }
+
+          type PipelineMetrics struct {
+              ImplsPerHour  float64 `json:"impls_per_hour"`
+              AvgWaveSecs   float64 `json:"avg_wave_seconds"`
+              QueueDepth    int     `json:"queue_depth"`
+              BlockedCount  int     `json:"blocked_count"`
+              CompletedCount int    `json:"completed_count"`
+          }
+
+          type PipelineResponse struct {
+              Entries       []PipelineEntry `json:"entries"`
+              Metrics       PipelineMetrics `json:"metrics"`
+              AutonomyLevel string          `json:"autonomy_level"`
+          }
+          ```
+
+          Use existing imports:
+          - `github.com/blackwell-systems/scout-and-wave-go/pkg/autonomy`
+          - `github.com/blackwell-systems/scout-and-wave-go/pkg/queue`
+
+          ## Tests to Write
+          1. TestHandleGetPipeline_Empty — no IMPLs, no queue items, returns empty entries
+          2. TestHandleGetPipeline_WithQueue — queue items present, returns correct ordering
+          3. TestHandleGetPipeline_MixedStatus — completed + queued items, checks status mapping
+
+          ## Verification Gate
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./... && go vet ./... && go test ./pkg/api/ -run TestHandleGetPipeline -timeout 30s
+          ```
+
+          ## Constraints
+          - Do NOT modify server.go — route registration happens in wave 2
+          - Handler receives *Server receiver to access cfg.RepoPath and activeRuns
+          - Follow existing handler patterns: JSON response, proper error status codes
+          - Use filepath.Join for all path construction
+        files:
+          - "pkg/api/pipeline_handler.go"
+          - "pkg/api/pipeline_handler_test.go"
+        dependencies: []
+
+      - id: B
+        task: |
+          ## What to Implement
+          Queue management API handlers:
+
+          1. GET /api/queue — list all queue items sorted by priority
+             Uses queue.NewManager(s.cfg.RepoPath).List()
+             Returns JSON array of queue.Item
+
+          2. POST /api/queue — add a new queue item
+             Request body: AddQueueRequest{Title, Priority, FeatureDescription, DependsOn, AutonomyOverride, RequireReview}
+             Uses queue.NewManager(s.cfg.RepoPath).Add(item)
+             Returns 201 with the created item
+
+          3. DELETE /api/queue/{slug} — remove a queue item from disk
+             Find the item file in docs/IMPL/queue/ matching the slug, delete it
+             Returns 204 on success
+
+          4. PUT /api/queue/{slug}/priority — update an item's priority
+             Request body: {priority: int}
+             Read the item, update priority, rewrite the file
+             Returns 200
+
+          Define request types in the handler file:
+
+          ```go
+          type AddQueueRequest struct {
+              Title              string   `json:"title"`
+              Priority           int      `json:"priority"`
+              FeatureDescription string   `json:"feature_description"`
+              DependsOn          []string `json:"depends_on,omitempty"`
+              AutonomyOverride   string   `json:"autonomy_override,omitempty"`
+              RequireReview      bool     `json:"require_review,omitempty"`
+          }
+
+          type UpdatePriorityRequest struct {
+              Priority int `json:"priority"`
+          }
+          ```
+
+          Import `github.com/blackwell-systems/scout-and-wave-go/pkg/queue`
+
+          After any mutation (add, delete, reorder), broadcast "impl_list_updated"
+          via s.globalBroker.broadcast("impl_list_updated") so the frontend refreshes.
+
+          ## Tests to Write
+          1. TestHandleListQueue_Empty — no queue dir, returns empty array
+          2. TestHandleAddQueue — adds item, verifies file created
+          3. TestHandleDeleteQueue — creates then deletes, verifies 204
+          4. TestHandleAddQueue_InvalidBody — bad JSON returns 400
+
+          ## Verification Gate
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./... && go vet ./... && go test ./pkg/api/ -run TestHandleQueue -timeout 30s
+          ```
+
+          ## Constraints
+          - Do NOT modify server.go — route registration happens in wave 2
+          - Follow existing handler patterns in impl_handlers.go for style
+          - Queue directory: filepath.Join(s.cfg.RepoPath, "docs", "IMPL", "queue")
+          - Use os.MkdirAll to ensure queue dir exists before writes
+        files:
+          - "pkg/api/queue_handler.go"
+          - "pkg/api/queue_handler_test.go"
+        dependencies: []
+
+      - id: C
+        task: |
+          ## What to Implement
+          Two handler files for autonomy config and daemon control:
+
+          **File 1: pkg/api/autonomy_handler.go**
+
+          1. GET /api/autonomy — load autonomy config
+             Uses autonomy.LoadConfig(s.cfg.RepoPath)
+             Returns JSON: autonomy.Config (level, max_auto_retries, max_queue_depth)
+
+          2. PUT /api/autonomy — save autonomy config
+             Request body: autonomy.Config JSON
+             Validates level is one of "gated", "supervised", "autonomous"
+             Uses autonomy.SaveConfig(s.cfg.RepoPath, cfg)
+             Broadcasts "impl_list_updated" to refresh any pipeline views
+             Returns 200
+
+          **File 2: pkg/api/daemon_handler.go**
+
+          Add a daemonState field to track the running daemon:
+
+          ```go
+          // These fields are added conceptually — the agent should store them
+          // on the Server struct via a dedicated sub-struct or sync fields.
+          // Use a mutex-protected struct:
+
+          type daemonControl struct {
+              mu     sync.Mutex
+              cancel context.CancelFunc
+              state  *engine.DaemonState
+              events []engine.Event // ring buffer, last 100
+          }
+          ```
+
+          Handlers:
+
+          3. POST /api/daemon/start — start the daemon
+             Creates a context, starts engine.RunDaemon() in a goroutine
+             with OnEvent callback that stores events and broadcasts SSE
+             Returns 200 with DaemonState or 409 if already running
+
+          4. POST /api/daemon/stop — stop the daemon
+             Calls the stored cancel func
+             Returns 200
+
+          5. GET /api/daemon/status — return current DaemonState
+             Returns the stored state, or {running: false} if never started
+
+          6. GET /api/daemon/events — SSE stream of daemon events
+             Similar to handleGlobalEvents pattern: subscribe to a channel,
+             write events as SSE, heartbeat every 30s.
+             Emit stored recent events on connect (replay buffer).
+
+          Imports:
+          - `github.com/blackwell-systems/scout-and-wave-go/pkg/autonomy`
+          - `github.com/blackwell-systems/scout-and-wave-go/pkg/engine`
+
+          ## Tests to Write
+          1. TestHandleGetAutonomy_Default — no config file, returns default (gated)
+          2. TestHandleSaveAutonomy — save supervised, read back, verify
+          3. TestHandleSaveAutonomy_InvalidLevel — returns 400 for bad level
+          4. TestHandleDaemonStatus_NotRunning — returns {running: false}
+          5. TestHandleDaemonStart_AlreadyRunning — returns 409
+
+          ## Verification Gate
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./... && go vet ./... && go test ./pkg/api/ -run "TestHandleAutonomy|TestHandleDaemon" -timeout 30s
+          ```
+
+          ## Constraints
+          - Do NOT modify server.go — route registration happens in wave 2
+          - The daemonControl struct should be a field on Server, but since
+            server.go is owned by wave 2 agent F, declare it as a package-level
+            var in daemon_handler.go: `var globalDaemon daemonControl`
+            Agent F will wire it properly when registering routes.
+          - For daemon SSE events, create a dedicated daemonBroker (same pattern
+            as globalBroker) declared in daemon_handler.go
+          - engine.RunDaemon requires DaemonOpts — populate RepoPath from
+            s.cfg.RepoPath, load AutonomyConfig via autonomy.LoadConfig
+        files:
+          - "pkg/api/autonomy_handler.go"
+          - "pkg/api/autonomy_handler_test.go"
+          - "pkg/api/daemon_handler.go"
+          - "pkg/api/daemon_handler_test.go"
+        dependencies: []
+
+  - number: 2
+    agents:
+      - id: D
+        task: |
+          ## What to Implement
+          Pipeline visualization frontend components:
+
+          **1. web/src/hooks/usePipeline.ts**
+          Custom hook that:
+          - Fetches GET /api/pipeline on mount (use autonomyApi.fetchPipeline)
+          - Subscribes to global SSE events for "pipeline_updated" and
+            "impl_list_updated" to auto-refresh
+          - Returns { entries: PipelineEntry[], metrics: PipelineMetrics,
+            autonomyLevel: AutonomyLevel, loading: boolean, error: string | null }
+          - Uses types from web/src/types/autonomy.ts (scaffold file)
+
+          **2. web/src/components/PipelineView.tsx**
+          Top-level page showing all IMPLs across the pipeline lifecycle.
+
+          Layout (vertical list):
+          - Header bar with "SAW Pipeline" title, autonomy level badge, throughput
+          - List of PipelineRow components, one per entry
+          - PipelineMetrics bar at bottom
+
+          Props: { onSelectImpl: (slug: string) => void, onClose: () => void }
+
+          **3. web/src/components/PipelineRow.tsx**
+          Single row in the pipeline view. Shows:
+          - Status icon (checkmark for complete, spinner for executing, pause for blocked, clock for queued)
+          - Slug/title
+          - Status detail (wave progress, blocked reason, queue position)
+          - Action button (View, Live, Review depending on status)
+          - Click to call onSelectImpl
+
+          Props: { entry: PipelineEntry, onSelect: (slug: string) => void }
+
+          **4. web/src/components/PipelineMetrics.tsx**
+          Bottom bar showing throughput stats:
+          - IMPLs/hr, queue depth, blocked count, completed count
+
+          Props: { metrics: PipelineMetrics }
+
+          ## Interfaces to Call
+          - autonomyApi.fetchPipeline() from web/src/autonomyApi.ts (agent F)
+          - Types from web/src/types/autonomy.ts (scaffold)
+
+          ## Tests to Write
+          1. PipelineRow renders complete status correctly
+          2. PipelineRow renders queued status with position
+          3. PipelineMetrics renders all metric values
+
+          ## Verification Gate
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx vitest run --reporter=verbose 2>&1 | head -50
+          ```
+
+          ## Constraints
+          - Use Tailwind + shadcn/ui patterns matching existing components
+          - Use lucide-react for icons (CheckCircle, Loader2, PauseCircle, Clock)
+          - Follow the mockup layout from the seed document
+          - PipelineView is NOT wired into App.tsx routing — that's agent F's job
+          - Import fetchPipeline from '../autonomyApi' (created by agent F)
+        files:
+          - "web/src/components/PipelineView.tsx"
+          - "web/src/components/PipelineRow.tsx"
+          - "web/src/components/PipelineMetrics.tsx"
+          - "web/src/hooks/usePipeline.ts"
+        dependencies:
+          - "A"
+
+      - id: E
+        task: |
+          ## What to Implement
+          Queue management panel, daemon control, and autonomy settings components:
+
+          **1. web/src/components/QueuePanel.tsx**
+          Queue management panel showing queued items with add/remove/reorder.
+
+          Features:
+          - List of queue items with priority, title, status, dependencies
+          - "Add to queue" form: title, priority (number), description (textarea),
+            depends_on (comma-separated slugs), require_review checkbox
+          - Delete button per item (with confirmation)
+          - Drag handle for reorder (or simple up/down arrows)
+          - Uses autonomyApi.fetchQueue, addQueueItem, deleteQueueItem
+
+          Props: { onSelectItem?: (slug: string) => void }
+
+          **2. web/src/components/DaemonControl.tsx**
+          Daemon start/stop control with live status.
+
+          Features:
+          - Start/Stop button (toggles based on daemon state)
+          - Status display: running indicator, current IMPL, current wave
+          - Event log: last N daemon events from SSE stream
+          - Uses autonomyApi.startDaemon, stopDaemon, fetchDaemonStatus
+          - Subscribes to GET /api/daemon/events SSE
+
+          Props: {} (self-contained, fetches its own state)
+
+          **3. web/src/components/AutonomySettings.tsx**
+          Autonomy level configuration panel for the Settings drawer.
+
+          Features:
+          - Dropdown/segmented control for level: gated | supervised | autonomous
+          - Number inputs for max_auto_retries and max_queue_depth
+          - Description text explaining each level
+          - Save button that calls autonomyApi.saveAutonomy
+          - Uses autonomyApi.fetchAutonomy, saveAutonomy
+
+          Props: {} (self-contained, loads from API)
+
+          **4. web/src/hooks/useDaemon.ts**
+          Custom hook for daemon state:
+          - Fetches GET /api/daemon/status on mount
+          - Subscribes to GET /api/daemon/events SSE for live updates
+          - Returns { state: DaemonState, events: DaemonEvent[], start, stop }
+
+          ## Interfaces to Call
+          - All autonomyApi functions from web/src/autonomyApi.ts (agent F)
+          - Types from web/src/types/autonomy.ts (scaffold)
+
+          ## Tests to Write
+          1. QueuePanel renders empty state with add form
+          2. AutonomySettings renders all three level options
+          3. DaemonControl shows Start when not running
+
+          ## Verification Gate
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx vitest run --reporter=verbose 2>&1 | head -50
+          ```
+
+          ## Constraints
+          - Use Tailwind + shadcn/ui patterns (Button, input classes)
+          - Use lucide-react for icons (Play, Square, Plus, Trash2)
+          - Follow SettingsScreen.tsx patterns for form layout and save flow
+          - Import from '../autonomyApi' (created by agent F)
+        files:
+          - "web/src/components/QueuePanel.tsx"
+          - "web/src/components/DaemonControl.tsx"
+          - "web/src/components/AutonomySettings.tsx"
+          - "web/src/hooks/useDaemon.ts"
+        dependencies:
+          - "B"
+          - "C"
+
+      - id: F
+        task: |
+          ## What to Implement
+          API client module and route wiring:
+
+          **1. web/src/autonomyApi.ts**
+          New API client module for all autonomy-related endpoints.
+
+          Functions (follow patterns from web/src/api.ts):
+          ```typescript
+          // Pipeline
+          export async function fetchPipeline(): Promise<PipelineResponse>
+          // GET /api/pipeline
+
+          // Queue
+          export async function fetchQueue(): Promise<QueueItem[]>
+          // GET /api/queue
+
+          export async function addQueueItem(req: AddQueueItemRequest): Promise<QueueItem>
+          // POST /api/queue
+
+          export async function deleteQueueItem(slug: string): Promise<void>
+          // DELETE /api/queue/{slug}
+
+          export async function updateQueuePriority(slug: string, priority: number): Promise<void>
+          // PUT /api/queue/{slug}/priority
+
+          // Autonomy config
+          export async function fetchAutonomy(): Promise<AutonomyConfig>
+          // GET /api/autonomy
+
+          export async function saveAutonomy(config: AutonomyConfig): Promise<void>
+          // PUT /api/autonomy
+
+          // Daemon control
+          export async function startDaemon(): Promise<DaemonState>
+          // POST /api/daemon/start
+
+          export async function stopDaemon(): Promise<void>
+          // POST /api/daemon/stop
+
+          export async function fetchDaemonStatus(): Promise<DaemonState>
+          // GET /api/daemon/status
+
+          export function subscribeDaemonEvents(): EventSource
+          // GET /api/daemon/events
+          ```
+
+          Import types from './types/autonomy' (scaffold file).
+          Follow exact same error handling pattern as api.ts:
+          `if (!r.ok) throw new Error(\`HTTP \${r.status}: \${await r.text()}\`)`
+
+          **2. pkg/api/server.go — Route Registration**
+          Add route registrations for all new handlers in the New() constructor.
+          Add them after the existing journal routes and before the static file handler.
+
+          New routes to register:
+          ```go
+          // Autonomy layer (v0.58.0)
+          s.mux.HandleFunc("GET /api/pipeline", s.handleGetPipeline)
+          s.mux.HandleFunc("GET /api/queue", s.handleListQueue)
+          s.mux.HandleFunc("POST /api/queue", s.handleAddQueue)
+          s.mux.HandleFunc("DELETE /api/queue/{slug}", s.handleDeleteQueue)
+          s.mux.HandleFunc("PUT /api/queue/{slug}/priority", s.handleReorderQueue)
+          s.mux.HandleFunc("GET /api/autonomy", s.handleGetAutonomy)
+          s.mux.HandleFunc("PUT /api/autonomy", s.handleSaveAutonomy)
+          s.mux.HandleFunc("POST /api/daemon/start", s.handleDaemonStart)
+          s.mux.HandleFunc("POST /api/daemon/stop", s.handleDaemonStop)
+          s.mux.HandleFunc("GET /api/daemon/status", s.handleDaemonStatus)
+          s.mux.HandleFunc("GET /api/daemon/events", s.handleDaemonEvents)
+          ```
+
+          Also add the `pipeline_updated` event to globalBroker broadcasts
+          where appropriate (add a comment noting that pipeline_updated is
+          broadcast by queue and daemon handlers when state changes).
+
+          ## Tests to Write
+          No new tests — this agent wires existing handlers into routes.
+          Existing tests for handlers (agents A, B, C) already test the logic.
+
+          ## Verification Gate
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./... && go vet ./...
+          ```
+
+          ## Constraints
+          - server.go is the ONLY existing file modified in this entire IMPL
+          - Add routes in a clearly commented block
+          - Do NOT change any existing routes or server initialization
+          - The autonomyApi.ts file must export all functions — agents D and E import from it
+          - Follow existing api.ts patterns exactly for consistency
+        files:
+          - "web/src/autonomyApi.ts"
+          - "pkg/api/server.go"
+        dependencies:
+          - "A"
+          - "B"
+          - "C"
+
+pre_mortem:
+  overall_risk: medium
+  rows:
+    - scenario: "scout-and-wave-go dependency not up to date — missing autonomy/queue/engine packages"
+      likelihood: medium
+      impact: high
+      mitigation: "Verify go.sum is current. Run go mod tidy before wave 1. The replace directive in go.mod points to local checkout which should have v0.58.0."
+    - scenario: "Daemon handler uses package-level var instead of Server field — potential race condition"
+      likelihood: medium
+      impact: medium
+      mitigation: "Agent C uses sync.Mutex in daemonControl struct. Agent F wires it into Server in wave 2 if needed. The mutex protects concurrent access."
+    - scenario: "Frontend components import from autonomyApi.ts before it exists"
+      likelihood: low
+      impact: low
+      mitigation: "Agents D and E are in the same wave as F. Scaffold types file is created pre-wave. TypeScript compilation may show import errors during individual agent work but resolves at merge."
+    - scenario: "Pipeline handler performance — scanning complete/ directory on every request"
+      likelihood: low
+      impact: medium
+      mitigation: "Acceptable for initial implementation. Complete/ dir typically has <50 files. Can add caching in a follow-up if needed."
+
+known_issues:
+  - title: "App.tsx routing not wired"
+    description: "PipelineView component is created but not wired into App.tsx navigation. This requires modifying App.tsx which is complex and risky to assign to an agent."
+    status: "Intentional — manual integration step post-merge"
+    workaround: "After merge, manually add pipeline view toggle button to App.tsx header and conditional render in the center column."
+
+completion_reports: {}
