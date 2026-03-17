@@ -124,16 +124,28 @@ func (s *Server) handleWaveDiskStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Detect which waves have been fully merged into the current branch.
+	// A wave is considered merged if either:
+	// (a) all agent branches are ancestors of HEAD (merged but not cleaned up), OR
+	// (b) all agents have completion reports with status "complete" AND their
+	//     branches no longer exist (merged + cleaned up).
 	for _, wave := range manifest.Waves {
 		allMerged := true
 		for _, agent := range wave.Agents {
 			branch := fmt.Sprintf("wave%d-agent-%s", wave.Number, agent.ID)
-			if !diskBranchMerged(repoPath, branch) {
-				allMerged = false
-				break
+			if diskBranchMerged(repoPath, branch) {
+				continue // branch exists and is ancestor of HEAD
 			}
+			// Branch not found or not ancestor — check if it was cleaned up
+			// after a successful merge (completion report present + branch gone)
+			report, hasReport := manifest.CompletionReports[agent.ID]
+			branchExists := diskBranchExists(repoPath, branch)
+			if hasReport && report.Status == "complete" && !branchExists {
+				continue // merged + cleaned up
+			}
+			allMerged = false
+			break
 		}
-		if allMerged {
+		if allMerged && len(wave.Agents) > 0 {
 			result.WavesMerged = append(result.WavesMerged, wave.Number)
 		}
 	}
@@ -159,6 +171,13 @@ func diskBranchHasCommits(repoPath, branch string) bool {
 		}
 	}
 	return false
+}
+
+// diskBranchExists returns true if the branch ref exists locally.
+func diskBranchExists(repoPath, branch string) bool {
+	cmd := exec.Command("git", "rev-parse", "--verify", "refs/heads/"+branch)
+	cmd.Dir = repoPath
+	return cmd.Run() == nil
 }
 
 // diskBranchMerged returns true if the branch has been merged into HEAD.
