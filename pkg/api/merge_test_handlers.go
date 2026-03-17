@@ -7,9 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
@@ -326,7 +324,12 @@ func (s *Server) handleResolveConflicts(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
+	implPath, repoPath, resolveErr := s.resolveIMPLPath(slug)
+	if resolveErr != nil {
+		s.mergingRuns.Delete(slug)
+		http.Error(w, resolveErr.Error(), http.StatusNotFound)
+		return
+	}
 	publish := s.makePublisher(slug)
 	wave := req.Wave
 
@@ -337,15 +340,9 @@ func (s *Server) handleResolveConflicts(w http.ResponseWriter, r *http.Request) 
 
 		ctx := context.Background()
 
-		// Read saw.config.json for model selection (same pattern as chat_handler.go).
-		var sawCfg SAWConfig
-		if cfgData, err := os.ReadFile(filepath.Join(s.cfg.RepoPath, "saw.config.json")); err == nil {
-			_ = json.Unmarshal(cfgData, &sawCfg)
-		}
-
 		err := resolveConflictsFunc(ctx, engine.ResolveConflictsOpts{
 			IMPLPath: implPath,
-			RepoPath: s.cfg.RepoPath,
+			RepoPath: repoPath,
 			WaveNum:  wave,
 			OnProgress: func(file string, status string) {
 				eventName := ""
@@ -379,6 +376,19 @@ func (s *Server) handleResolveConflicts(w http.ResponseWriter, r *http.Request) 
 				"error": err.Error(),
 			})
 			return
+		}
+
+		// Post-resolve: go.mod fixup + worktree cleanup (same as handleWaveMerge)
+		if fixed, fixErr := protocol.FixGoModReplacePaths(repoPath); fixErr != nil {
+			publish("merge_output", map[string]interface{}{"slug": slug, "wave": wave, "chunk": fmt.Sprintf("go.mod fixup warning: %v\n", fixErr)})
+		} else if fixed {
+			publish("merge_output", map[string]interface{}{"slug": slug, "wave": wave, "chunk": "Auto-corrected go.mod replace paths\n"})
+		}
+
+		if cleanupResult, cleanErr := protocol.Cleanup(implPath, wave, repoPath); cleanErr != nil {
+			publish("merge_output", map[string]interface{}{"slug": slug, "wave": wave, "chunk": fmt.Sprintf("Cleanup warning: %v\n", cleanErr)})
+		} else if cleanupResult != nil {
+			publish("merge_output", map[string]interface{}{"slug": slug, "wave": wave, "chunk": fmt.Sprintf("Cleaned up %d worktrees\n", len(cleanupResult.Agents))})
 		}
 
 		publish("merge_complete", map[string]interface{}{
