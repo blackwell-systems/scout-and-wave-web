@@ -12,7 +12,7 @@ export interface AgentExecStatus {
 export interface WaveProgress {
   complete: number
   total: number
-  mergeStatus?: 'idle' | 'merging' | 'success' | 'failed'
+  mergeStatus?: 'idle' | 'merging' | 'success' | 'failed' | 'resolving'
 }
 
 export interface ExecutionSyncState {

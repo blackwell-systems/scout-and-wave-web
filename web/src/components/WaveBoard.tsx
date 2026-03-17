@@ -6,8 +6,9 @@ import AgentCard from './AgentCard'
 import ProgressBar from './ProgressBar'
 import ImplEditor from './ImplEditor'
 import StageTimeline from './StageTimeline'
+import ConflictResolutionPanel from './ConflictResolutionPanel'
 import { AgentStatus, RepoEntry } from '../types'
-import { mergeWave, mergeAbort, runWaveTests, rerunAgent, fetchDiskWaveStatus, startWave } from '../api'
+import { mergeWave, runWaveTests, rerunAgent, resolveConflicts } from '../api'
 
 interface WaveBoardProps {
   slug: string
@@ -106,45 +107,10 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
   // Optimistic status overrides — keyed by "wave:agent"
   const [statusOverrides, setStatusOverrides] = useState<Map<string, 'pending'>>(new Map())
   const [staleDismissed, setStaleDismissed] = useState(false)
-  const [diskAgents, setDiskAgents] = useState<AgentStatus[]>([])
-  const [diskScaffoldStatus, setDiskScaffoldStatus] = useState<'idle' | 'complete'>('idle')
-  const [wavesMerged, setWavesMerged] = useState<Set<number>>(new Set())
 
   const state = useWaveEvents(slug)
 
-  // Load persisted state from disk on mount (survives server restarts)
-  useEffect(() => {
-    fetchDiskWaveStatus(slug).then(disk => {
-      const agents: AgentStatus[] = disk.agents.map(da => ({
-        agent: da.agent,
-        wave: da.wave,
-        files: da.files ?? [],
-        status: (da.status === 'complete' || da.status === 'failed' || da.status === 'pending'
-          ? da.status : 'pending') as AgentStatus['status'],
-        branch: da.branch,
-        failure_type: da.failure_type,
-        message: da.message,
-      }))
-      setDiskAgents(agents)
-      if (disk.scaffold_status === 'committed' || disk.scaffold_status === 'none') {
-        setDiskScaffoldStatus('complete')
-      }
-      if (disk.waves_merged?.length) {
-        setWavesMerged(new Set(disk.waves_merged))
-      }
-    }).catch(() => {})
-  }, [slug])
-
-  // Merge: SSE agents overlay on top of disk agents (not replace).
-  // This way a rerun of agent B doesn't erase A/C/D from the UI.
-  const effectiveAgents = (() => {
-    if (diskAgents.length === 0) return state.agents
-    if (state.agents.length === 0) return diskAgents
-    const sseMap = new Map(state.agents.map(a => [agentKey(a.agent, a.wave), a]))
-    return diskAgents.map(da => sseMap.get(agentKey(da.agent, da.wave)) ?? da)
-  })()
-  const effectiveScaffold = state.scaffoldStatus !== 'idle' ? state.scaffoldStatus : diskScaffoldStatus
-  // Merge optimistic overrides on top of effective agent state
+  // Merge optimistic overrides on top of SSE-driven agent state
   function applyOverrides(agent: AgentStatus): AgentStatus {
     const key = agentKey(agent.agent, agent.wave)
     const override = statusOverrides.get(key)
@@ -152,26 +118,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
     return agent
   }
 
-  // Build effective waves: use SSE waves if available, else build from disk agents
-  const effectiveWaves: typeof state.waves = state.waves.length > 0
-    ? state.waves
-    : (() => {
-        const waveMap = new Map<number, AgentStatus[]>()
-        for (const a of effectiveAgents) {
-          const list = waveMap.get(a.wave) ?? []
-          list.push(a)
-          waveMap.set(a.wave, list)
-        }
-        return Array.from(waveMap.entries())
-          .sort(([a], [b]) => a - b)
-          .map(([waveNum, agents]) => ({
-            wave: waveNum,
-            agents,
-            complete: agents.every(a => a.status === 'complete'),
-          }))
-      })()
-
-  const displayAgents = effectiveAgents.map(applyOverrides)
+  const displayAgents = state.agents.map(applyOverrides)
   const totalAgents = displayAgents.length
   const completeAgents = displayAgents.filter(a => a.status === 'complete').length
 
@@ -220,14 +167,6 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
   async function handleProceedGate(nextWave: number): Promise<void> {
     await fetch(`/api/wave/${encodeURIComponent(slug)}/gate/proceed`, { method: 'POST' })
     void nextWave
-  }
-
-  async function handleStartNextWave(): Promise<void> {
-    try {
-      await startWave(slug)
-    } catch (err) {
-      console.error('startWave failed:', err)
-    }
   }
 
   async function handleMergeWave(waveNum: number): Promise<void> {
@@ -316,12 +255,12 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
   }
 
   return (
-    <div className="h-full overflow-y-auto bg-background p-4">
+    <div className="h-full overflow-y-auto bg-gray-50 dark:bg-gray-950 p-4">
       <div className="space-y-6">
 
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h1 className="text-base font-bold text-foreground">Wave Execution — {slug}</h1>
+          <h1 className="text-base font-bold text-gray-800 dark:text-gray-100">Wave Execution — {slug}</h1>
           {!state.connected && (
             <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full animate-pulse">
               Reconnecting...
@@ -361,32 +300,32 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
         )}
 
         {/* Run failed — prominent display when no waves rendered */}
-        {state.runFailed && effectiveWaves.length === 0 && (
+        {state.runFailed && state.waves.length === 0 && (
           <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
             <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/50 flex items-center justify-center mb-4">
               <span className="text-red-600 dark:text-red-400 text-xl font-bold">!</span>
             </div>
             <h2 className="text-base font-semibold text-red-800 dark:text-red-300 mb-2">Wave Execution Failed</h2>
             <p className="text-sm text-red-700 dark:text-red-400 max-w-md break-words">{state.runFailed}</p>
-            <p className="text-xs text-muted-foreground mt-4">Press Escape to close this panel</p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-4">Press Escape to close this panel</p>
           </div>
         )}
         {/* Run failed banner — inline when waves are also showing */}
-        {state.runFailed && effectiveWaves.length > 0 && (
+        {state.runFailed && state.waves.length > 0 && (
           <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-800 text-sm dark:bg-red-950 dark:border-red-800 dark:text-red-400">
             <span className="font-medium">Wave failed:</span> {state.runFailed}
           </div>
         )}
 
         {/* Scaffold row */}
-        {effectiveScaffold !== 'idle' && (
-          <ScaffoldCard status={effectiveScaffold} output={state.scaffoldOutput} error={state.error} />
+        {state.scaffoldStatus !== 'idle' && (
+          <ScaffoldCard status={state.scaffoldStatus} output={state.scaffoldOutput} error={state.error} />
         )}
 
         {/* Empty state — no waves loaded yet */}
-        {effectiveWaves.length === 0 && effectiveScaffold === 'idle' && !state.runFailed && diskAgents.length === 0 && (
-          <div className="bg-card border border-border rounded-lg p-8 text-center">
-            <p className="text-muted-foreground text-sm mb-2">
+        {state.waves.length === 0 && state.scaffoldStatus === 'idle' && !state.runFailed && (
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-8 text-center">
+            <p className="text-gray-600 dark:text-gray-400 text-sm mb-2">
               {state.connected ? 'Waiting for wave execution to start...' : 'Connecting to wave execution stream...'}
             </p>
             {state.staleBranches && (
@@ -397,33 +336,8 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
           </div>
         )}
 
-        {/* Never executed — all disk agents pending, no SSE activity */}
-        {effectiveWaves.length > 0 && state.agents.length === 0 && !state.runFailed &&
-          effectiveWaves.every(w => w.agents.every(a => a.status === 'pending')) && (() => {
-          const needsScaffold = diskScaffoldStatus !== 'complete' && effectiveScaffold !== 'complete'
-          return (
-            <div className="bg-blue-500/10 border border-blue-500/30 rounded-lg px-5 py-4 flex items-center justify-between">
-              <div>
-                <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
-                  Ready to execute
-                </p>
-                <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
-                  {needsScaffold ? 'Scaffolds will run first, then ' : ''}
-                  {diskAgents.length} agent{diskAgents.length !== 1 ? 's' : ''} across {effectiveWaves.length} wave{effectiveWaves.length !== 1 ? 's' : ''}
-                </p>
-              </div>
-              <button
-                onClick={() => void handleStartNextWave()}
-                className="text-sm font-medium px-5 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors whitespace-nowrap"
-              >
-                {needsScaffold ? 'Start Scaffold' : 'Start Wave 1'} &rarr;
-              </button>
-            </div>
-          )
-        })()}
-
         {/* Wave rows */}
-        {effectiveWaves.map(wave => {
+        {state.waves.map(wave => {
           // Compute display agents for this wave (with overrides applied)
           const waveAgents = wave.agents.map(applyOverrides)
           const waveComplete = waveAgents.filter(a => a.status === 'complete').length
@@ -431,11 +345,11 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
           const hasGate = state.waveGate?.wave === wave.wave
           return (
             <div key={wave.wave}>
-              <div className="bg-card border border-border rounded-lg p-4 shadow-sm space-y-3">
+              <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg p-4 shadow-sm space-y-3">
                 <div className="flex items-center justify-between">
-                  <span className="font-semibold text-foreground text-sm">Wave {wave.wave}</span>
+                  <span className="font-semibold text-gray-700 dark:text-gray-300 text-sm">Wave {wave.wave}</span>
                   {wave.complete && wave.merge_status && (
-                    <span className="text-xs text-muted-foreground bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
+                    <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-800 px-2 py-0.5 rounded-full">
                       merge: {wave.merge_status}
                     </span>
                   )}
@@ -473,8 +387,8 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
                 return (
                   <>
-                    {/* Merge button — hidden if wave already merged on disk */}
-                    {allComplete && mergeStatus === 'idle' && !hasGate && !wavesMerged.has(wave.wave) && (
+                    {/* Merge button */}
+                    {allComplete && mergeStatus === 'idle' && !hasGate && (
                       <button
                         onClick={() => void handleMergeWave(wave.wave)}
                         className="mt-3 text-sm font-medium px-4 py-1.5 rounded-md bg-violet-600 text-white hover:bg-violet-700 transition-colors"
@@ -533,43 +447,71 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
                     {/* Merge failed */}
                     {mergeStatus === 'failed' && (
-                      <div className="mt-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3 space-y-2 dark:bg-red-950 dark:border-red-800">
-                        <p className="text-red-800 text-sm font-medium dark:text-red-400">
-                          Merge failed: {mergeState?.error}
-                        </p>
-                        {(mergeState?.conflictingFiles?.length ?? 0) > 0 && (
-                          <div>
-                            <p className="text-xs text-red-700 dark:text-red-300 font-medium mb-1">Conflicting files:</p>
-                            <ul className="space-y-0.5">
+                      <div className="mt-3 space-y-2">
+                        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 space-y-2 dark:bg-red-950 dark:border-red-800">
+                          <p className="text-red-800 text-sm font-medium dark:text-red-400">
+                            Merge failed: {mergeState?.error}
+                          </p>
+                          {(mergeState?.conflictingFiles?.length ?? 0) > 0 && (
+                            <ul className="mt-1 space-y-0.5">
                               {mergeState!.conflictingFiles.map(f => (
-                                <li key={f} className="font-mono text-xs text-red-700 dark:text-red-300">• {f}</li>
+                                <li key={f} className="font-mono text-xs text-red-700 dark:text-red-300">{f}</li>
                               ))}
                             </ul>
+                          )}
+                          <div className="flex items-center gap-2 mt-3">
+                            <button
+                              onClick={() => void handleMergeWave(wave.wave)}
+                              className="text-xs font-medium px-3 py-1.5 rounded-md bg-gray-600 text-white hover:bg-gray-700 transition-colors"
+                            >
+                              Abort Merge
+                            </button>
+                            {(mergeState?.conflictingFiles?.length ?? 0) > 0 && (
+                              <button
+                                onClick={() => void resolveConflicts(slug, wave.wave)}
+                                className="text-xs font-medium px-3 py-1.5 rounded-md bg-violet-600 text-white hover:bg-violet-700 transition-colors"
+                              >
+                                Resolve with AI
+                              </button>
+                            )}
+                            <button
+                              onClick={() => void handleMergeWave(wave.wave)}
+                              className="text-xs font-medium px-3 py-1.5 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+                            >
+                              Retry Merge
+                            </button>
                           </div>
-                        )}
-                        <div className="flex gap-2 pt-1">
-                          <button
-                            onClick={async () => {
-                              try {
-                                await mergeAbort(slug)
-                                // Reset merge state by re-triggering merge (clears failed status)
-                                window.location.reload()
-                              } catch (err) {
-                                console.error('merge abort failed:', err)
-                              }
-                            }}
-                            className="text-xs font-medium px-3 py-1.5 rounded-md border border-red-300 dark:border-red-700 text-red-700 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900 transition-colors"
-                          >
-                            Abort Merge
-                          </button>
-                          <button
-                            onClick={() => void handleMergeWave(wave.wave)}
-                            className="text-xs font-medium px-3 py-1.5 rounded-md bg-violet-600 text-white hover:bg-violet-700 transition-colors"
-                          >
-                            Retry Merge
-                          </button>
                         </div>
+                        
+                        {mergeState?.resolutionError && (
+                          <ConflictResolutionPanel
+                            slug={slug}
+                            wave={wave.wave}
+                            conflictingFiles={mergeState?.conflictingFiles ?? []}
+                            onResolveStart={() => void resolveConflicts(slug, wave.wave)}
+                            resolvingFile={mergeState?.resolvingFile}
+                            resolvedFiles={mergeState?.resolvedFiles ?? []}
+                            resolutionError={mergeState?.resolutionError}
+                            failedFile={mergeState?.failedFile}
+                            isResolving={false}
+                          />
+                        )}
                       </div>
+                    )}
+
+                    {/* AI Resolving conflicts */}
+                    {mergeStatus === 'resolving' && (
+                      <ConflictResolutionPanel
+                        slug={slug}
+                        wave={wave.wave}
+                        conflictingFiles={mergeState?.conflictingFiles ?? []}
+                        onResolveStart={() => void resolveConflicts(slug, wave.wave)}
+                        resolvingFile={mergeState?.resolvingFile}
+                        resolvedFiles={mergeState?.resolvedFiles ?? []}
+                        resolutionError={mergeState?.resolutionError}
+                        failedFile={mergeState?.failedFile}
+                        isResolving={true}
+                      />
                     )}
                   </>
                 )
@@ -599,32 +541,6 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                   </div>
                 </div>
               )}
-
-              {/* Start Next Wave — shown when all agents complete, no SSE gate, and a next wave exists with pending agents */}
-              {!hasGate && waveComplete === waveTotal && waveTotal > 0 && (() => {
-                const nextWave = effectiveWaves.find(w => w.wave === wave.wave + 1)
-                if (!nextWave) return null
-                const nextAllPending = nextWave.agents.every(a => a.status === 'pending')
-                if (!nextAllPending) return null
-                return (
-                  <div className="mt-3 bg-blue-500/10 border border-blue-500/30 rounded-lg px-4 py-3 flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">
-                        Wave {wave.wave} complete — ready for Wave {nextWave.wave}
-                      </p>
-                      <p className="text-xs text-blue-600 dark:text-blue-400 mt-0.5">
-                        {nextWave.agents.length} agent{nextWave.agents.length !== 1 ? 's' : ''} pending
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => void handleStartNextWave()}
-                      className="text-sm font-medium px-4 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 transition-colors whitespace-nowrap"
-                    >
-                      Start Wave {nextWave.wave} &rarr;
-                    </button>
-                  </div>
-                )
-              })()}
             </div>
           )
         })}

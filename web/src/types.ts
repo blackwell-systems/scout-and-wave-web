@@ -291,3 +291,8 @@ export interface ToolCallEntry {
   is_error?: boolean
   status: 'running' | 'done' | 'error'
 }
+
+// Conflict resolution SSE events (v0.20.0-D)
+// - conflict_resolving:        {slug, wave, file}
+// - conflict_resolved:         {slug, wave, file}
+// - conflict_resolution_failed: {slug, wave, file, error}
