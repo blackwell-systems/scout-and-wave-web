@@ -284,7 +284,8 @@ export default function WaveStructurePanel({ impl, executionState }: WaveStructu
         return getWaveStatus(node.waveNum!) === 'complete'
 
       case 'complete':
-        return false
+        // Fill when all waves are complete (final merge done)
+        return sortedWaves.length > 0 && sortedWaves.every(w => w.status === 'complete')
 
       default:
         return false
