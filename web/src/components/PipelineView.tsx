@@ -89,7 +89,7 @@ export default function PipelineView({ onSelectImpl, onClose }: PipelineViewProp
         </div>
 
         {/* Right: control sidebar */}
-        <div className="w-[340px] shrink-0 border-l border-border flex flex-col">
+        <div className="w-[320px] shrink-0 border-l border-border flex flex-col">
           {/* Tabs */}
           <div className="flex border-b border-border">
             {([['queue', 'Queue'], ['daemon', 'Daemon'], ['settings', 'Settings']] as const).map(([key, label]) => (

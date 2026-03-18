@@ -286,7 +286,7 @@ export default function App() {
       <header className="flex items-stretch justify-between h-[61px] border-b shrink-0">
         <div className="flex items-stretch">
           <button
-            onClick={() => { setShowPipeline(v => !v); if (!showPipeline) { setSelectedSlug(null); setImpl(null) } }}
+            onClick={() => { setShowPipeline(v => !v); if (!showPipeline) { setSelectedSlug(null); setImpl(null); setLiveView(null) } }}
             className={`flex items-center justify-center text-sm font-medium px-6 transition-colors border-r ${showPipeline ? 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950/60 dark:text-emerald-400 dark:border-emerald-800' : 'bg-emerald-50/40 hover:bg-emerald-100/60 text-emerald-700 border-emerald-200 dark:bg-emerald-950/20 dark:hover:bg-emerald-900/40 dark:text-emerald-500 dark:border-emerald-900'}`}
           >
             Pipeline

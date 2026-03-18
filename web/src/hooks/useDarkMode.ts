@@ -47,25 +47,12 @@ export function useDarkMode(): [boolean, () => void] {
     }
   }, [isDark])
 
-  // Toggle cycles through system -> light -> dark -> system.
-  // Updates state synchronously for instant feedback, persists in background.
+  // Toggle flips between light and dark directly.
+  // The system/light/dark tri-state is available in Settings.
   function toggle() {
-    let nextTheme: 'system' | 'light' | 'dark'
-    if (themeMode === 'system') {
-      nextTheme = isDark ? 'light' : 'dark'
-    } else if (themeMode === 'light') {
-      nextTheme = 'dark'
-    } else {
-      nextTheme = 'system'
-    }
-
+    const nextTheme: 'light' | 'dark' = isDark ? 'light' : 'dark'
     setThemeMode(nextTheme)
-
-    if (nextTheme === 'system') {
-      setIsDark(getSystemDark())
-    } else {
-      setIsDark(nextTheme === 'dark')
-    }
+    setIsDark(nextTheme === 'dark')
 
     // Persist in background — don't block the UI
     getConfig().then(async config => {
