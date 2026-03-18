@@ -35,6 +35,7 @@ export interface StaleBranchesInfo {
 export interface AppWaveState {
   agents: AgentStatus[]
   scaffoldStatus: 'idle' | 'running' | 'complete' | 'failed'
+  hasScaffolds: boolean
   scaffoldOutput: string
   runComplete: boolean
   runStatus?: string
@@ -58,7 +59,7 @@ export type WaveAction =
   | { type: 'RESET' }
   | { type: 'CONNECT' }
   | { type: 'DISCONNECT'; error?: string }
-  | { type: 'SEED_DISK_STATUS'; agents: AgentStatus[]; waves: WaveState[]; scaffoldStatus: AppWaveState['scaffoldStatus']; mergedWaves: number[] }
+  | { type: 'SEED_DISK_STATUS'; agents: AgentStatus[]; waves: WaveState[]; scaffoldStatus: AppWaveState['scaffoldStatus']; hasScaffolds: boolean; mergedWaves: number[] }
   | { type: 'SCAFFOLD_STARTED' }
   | { type: 'SCAFFOLD_OUTPUT'; chunk: string }
   | { type: 'SCAFFOLD_COMPLETE' }
@@ -96,6 +97,7 @@ export type WaveAction =
 export const initialWaveState: AppWaveState = {
   agents: [],
   scaffoldStatus: 'idle',
+  hasScaffolds: false,
   scaffoldOutput: '',
   runComplete: false,
   connected: false,
@@ -188,12 +190,13 @@ export function waveEventsReducer(state: AppWaveState, action: WaveAction): AppW
         agents: mergedAgents,
         waves,
         scaffoldStatus,
+        hasScaffolds: action.hasScaffolds || state.hasScaffolds,
         wavesMergeState: mergeState,
       }
     }
 
     case 'SCAFFOLD_STARTED':
-      return { ...state, scaffoldStatus: 'running', scaffoldOutput: '' }
+      return { ...state, scaffoldStatus: 'running', hasScaffolds: true, scaffoldOutput: '' }
 
     case 'SCAFFOLD_OUTPUT':
       return { ...state, scaffoldOutput: state.scaffoldOutput + action.chunk }

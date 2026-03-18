@@ -6,13 +6,6 @@ interface PipelineRowProps {
   onSelect: (slug: string) => void
 }
 
-const borderColors: Record<string, string> = {
-  executing: 'border-l-blue-500',
-  complete: 'border-l-green-500',
-  blocked: 'border-l-amber-500',
-  queued: 'border-l-border',
-}
-
 const hoverColors: Record<string, string> = {
   executing: 'hover:bg-blue-50 dark:hover:bg-blue-950/30',
   complete: 'hover:bg-green-50 dark:hover:bg-green-950/30',
@@ -117,7 +110,7 @@ export default function PipelineRow({ entry, onSelect }: PipelineRowProps): JSX.
 
   return (
     <div
-      className={`flex items-center gap-4 px-6 py-4 border-b border-border border-l-[3px] ${borderColors[entry.status] ?? 'border-l-transparent'} ${hoverColors[entry.status] ?? 'hover:bg-muted/50'} transition-all duration-150 cursor-pointer`}
+      className={`flex items-center gap-4 px-6 py-4 border-b border-border ${hoverColors[entry.status] ?? 'hover:bg-muted/50'} transition-all duration-150 cursor-pointer`}
       onClick={() => onSelect(entry.slug)}
     >
       <div className="flex-shrink-0">

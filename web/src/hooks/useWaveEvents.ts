@@ -69,6 +69,7 @@ export function useWaveEvents(slug: string): AppWaveState {
         agents,
         waves,
         scaffoldStatus,
+        hasScaffolds: disk.scaffold_status !== 'none',
         mergedWaves,
       })
     }).catch(() => { /* disk status unavailable — SSE will provide state */ })

@@ -115,6 +115,7 @@ export function subscribe(slug: string, listener: () => void): () => void {
             agents,
             waves,
             scaffoldStatus,
+            hasScaffolds: disk.scaffold_status !== 'none',
             mergedWaves,
           })
         })

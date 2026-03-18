@@ -489,13 +489,13 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
           </div>
         )}
 
-        {/* Start Wave 1 — show when waves are loaded but none have started executing */}
-        {state.waves.length > 0 && state.waves.every(w => w.agents.every(a => a.status === 'pending' || !a.status)) && !state.runFailed && state.scaffoldStatus !== 'running' && (
+        {/* Start execution — show when waves are loaded but none have started */}
+        {state.waves.length > 0 && state.waves.every(w => w.agents.every(a => a.status === 'pending' || !a.status)) && !state.runFailed && state.scaffoldStatus !== 'running' && state.scaffoldStatus !== 'complete' && (
           <button
             onClick={() => void startWave(slug)}
             className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 hover:border-blue-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
           >
-            Start Wave 1
+            {state.hasScaffolds && state.scaffoldStatus === 'idle' ? 'Start Scaffold Agent' : 'Start Wave 1'}
           </button>
         )}
 
