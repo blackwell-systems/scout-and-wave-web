@@ -237,7 +237,7 @@ func runWaveLoop(
 		// Falls back to monolithic engine.FinalizeWave if tracker is nil.
 		onStage(StageWaveMerge, StageStatusRunning, waveNum, "")
 		if defaultPipelineTracker != nil {
-			if err := runFinalizeSteps(slug, waveNum, implPath, repoPath, publish); err != nil {
+			if err := runFinalizeSteps(slug, waveNum, implPath, repoPath, integrationModel, publish); err != nil {
 				onStage(StageWaveMerge, StageStatusFailed, waveNum, err.Error())
 				publish("run_failed", map[string]string{"error": err.Error()})
 				return
@@ -355,7 +355,7 @@ func publishPipelineStep(publish func(string, interface{}), slug string, waveNum
 // On resume, steps that already completed or were skipped are skipped.
 // Non-fatal steps (scan_stubs, validate_integration, fix_go_mod, cleanup)
 // log errors but continue. Fatal step failures return an error.
-func runFinalizeSteps(slug string, waveNum int, implPath, repoPath string, publish func(string, interface{})) error {
+func runFinalizeSteps(slug string, waveNum int, implPath, repoPath, integrationModel string, publish func(string, interface{})) error {
 	tracker := defaultPipelineTracker
 
 	// Determine resume point: skip steps already completed/skipped.
@@ -462,15 +462,18 @@ func runFinalizeSteps(slug string, waveNum int, implPath, repoPath string, publi
 	}
 
 	// --- Step 4: ValidateIntegration (non-fatal) ---
+	// Stash report for use in StepIntegrationAgent after merge+build.
+	var integrationReport *protocol.IntegrationReport
 	if shouldSkip(StepValidateIntegration) {
 		publishPipelineStep(publish, slug, waveNum, StepValidateIntegration, StepSkipped, "")
 	} else {
 		_ = tracker.Start(slug, waveNum, StepValidateIntegration)
 		publishPipelineStep(publish, slug, waveNum, StepValidateIntegration, StepRunning, "")
 
-		integrationReport, err := protocol.ValidateIntegration(manifest, waveNum, repoPath)
-		if err != nil {
-			log.Printf("runFinalizeSteps: validate-integration non-fatal error: %v", err)
+		var intErr error
+		integrationReport, intErr = protocol.ValidateIntegration(manifest, waveNum, repoPath)
+		if intErr != nil {
+			log.Printf("runFinalizeSteps: validate-integration non-fatal error: %v", intErr)
 		} else if integrationReport != nil {
 			waveKey := fmt.Sprintf("wave%d", waveNum)
 			_ = protocol.AppendIntegrationReport(implPath, waveKey, integrationReport)
@@ -542,7 +545,39 @@ func runFinalizeSteps(slug string, waveNum int, implPath, repoPath string, publi
 		publishPipelineStep(publish, slug, waveNum, StepVerifyBuild, StepComplete, "")
 	}
 
-	// --- Step 8: Cleanup (non-fatal) ---
+	// --- Step 8: IntegrationAgent (non-fatal, E26) ---
+	// If ValidateIntegration found gaps, launch the integration agent to wire them.
+	if shouldSkip(StepIntegrationAgent) {
+		publishPipelineStep(publish, slug, waveNum, StepIntegrationAgent, StepSkipped, "")
+	} else if integrationReport != nil && !integrationReport.Valid && len(integrationReport.Gaps) > 0 {
+		_ = tracker.Start(slug, waveNum, StepIntegrationAgent)
+		publishPipelineStep(publish, slug, waveNum, StepIntegrationAgent, StepRunning, "")
+
+		intAgentErr := engine.RunIntegrationAgent(context.Background(), engine.RunIntegrationAgentOpts{
+			IMPLPath: implPath,
+			RepoPath: repoPath,
+			WaveNum:  waveNum,
+			Report:   integrationReport,
+			Model:    integrationModel,
+		}, func(ev engine.Event) {
+			publish(ev.Event, ev.Data)
+		})
+		if intAgentErr != nil {
+			log.Printf("runFinalizeSteps: integration-agent non-fatal error: %v", intAgentErr)
+			_ = tracker.Complete(slug, waveNum, StepIntegrationAgent)
+			publishPipelineStep(publish, slug, waveNum, StepIntegrationAgent, StepComplete,
+				fmt.Sprintf("non-fatal: %v", intAgentErr))
+		} else {
+			_ = tracker.Complete(slug, waveNum, StepIntegrationAgent)
+			publishPipelineStep(publish, slug, waveNum, StepIntegrationAgent, StepComplete, "")
+		}
+	} else {
+		// No gaps found — skip automatically.
+		_ = tracker.Skip(slug, waveNum, StepIntegrationAgent)
+		publishPipelineStep(publish, slug, waveNum, StepIntegrationAgent, StepSkipped, "no integration gaps")
+	}
+
+	// --- Step 9: Cleanup (non-fatal) ---
 	if shouldSkip(StepCleanup) {
 		publishPipelineStep(publish, slug, waveNum, StepCleanup, StepSkipped, "")
 	} else {
@@ -708,6 +743,18 @@ func (s *Server) handleWaveFinalize(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusAccepted)
 
+	// Resolve integration model for the integration agent step.
+	finalizeIntModel := ""
+	if cfgData, err := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); err == nil {
+		var sawCfg SAWConfig
+		if json.Unmarshal(cfgData, &sawCfg) == nil {
+			finalizeIntModel = sawCfg.Agent.IntegrationModel
+		}
+	}
+	if finalizeIntModel == "" && fallbackSAWConfig != nil {
+		finalizeIntModel = fallbackSAWConfig.Agent.IntegrationModel
+	}
+
 	go func() {
 		defer s.mergingRuns.Delete(slug)
 
@@ -723,7 +770,7 @@ func (s *Server) handleWaveFinalize(w http.ResponseWriter, r *http.Request) {
 
 		if defaultPipelineTracker != nil {
 			// Use decomposed pipeline with step tracking.
-			if err := runFinalizeSteps(slug, wave, implPath, repoPath, publish); err != nil {
+			if err := runFinalizeSteps(slug, wave, implPath, repoPath, finalizeIntModel, publish); err != nil {
 				publish("merge_failed", map[string]interface{}{
 					"slug":  slug,
 					"wave":  wave,

@@ -133,7 +133,7 @@ waves:
 	publish, getEvents := capturePublishWithData()
 
 	// VerifyCommits will fail because there's no git repo at /nonexistent/repo.
-	err := runFinalizeSteps("emit-test", 1, implPath, "/nonexistent/repo", publish)
+	err := runFinalizeSteps("emit-test", 1, implPath, "/nonexistent/repo", "", publish)
 	if err == nil {
 		t.Fatal("expected error from runFinalizeSteps")
 	}
@@ -252,7 +252,7 @@ waves:
 
 	// RunFinalizeSteps should skip verify_commits and scan_stubs, then
 	// attempt run_gates (which will fail because there's no real repo).
-	err := runFinalizeSteps("resume-test", 1, implPath, "/nonexistent/repo", publish)
+	err := runFinalizeSteps("resume-test", 1, implPath, "/nonexistent/repo", "", publish)
 	if err == nil {
 		t.Fatal("expected error from runFinalizeSteps (gates should fail)")
 	}

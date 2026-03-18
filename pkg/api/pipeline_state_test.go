@@ -196,14 +196,14 @@ func TestPipelineTracker_ConcurrentAccess(t *testing.T) {
 }
 
 func TestPipelineStepOrder(t *testing.T) {
-	if len(PipelineStepOrder) != 8 {
-		t.Errorf("PipelineStepOrder has %d entries, want 8", len(PipelineStepOrder))
+	if len(PipelineStepOrder) != 9 {
+		t.Errorf("PipelineStepOrder has %d entries, want 9", len(PipelineStepOrder))
 	}
 
 	expected := []PipelineStep{
 		StepVerifyCommits, StepScanStubs, StepRunGates,
 		StepValidateIntegration, StepMergeAgents, StepFixGoMod,
-		StepVerifyBuild, StepCleanup,
+		StepVerifyBuild, StepIntegrationAgent, StepCleanup,
 	}
 	for i, step := range expected {
 		if PipelineStepOrder[i] != step {

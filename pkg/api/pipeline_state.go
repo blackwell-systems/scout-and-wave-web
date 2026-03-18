@@ -20,6 +20,7 @@ const (
 	StepMergeAgents         PipelineStep = "merge_agents"
 	StepFixGoMod            PipelineStep = "fix_go_mod"
 	StepVerifyBuild         PipelineStep = "verify_build"
+	StepIntegrationAgent    PipelineStep = "integration_agent"
 	StepCleanup             PipelineStep = "cleanup"
 )
 
@@ -27,7 +28,7 @@ const (
 var PipelineStepOrder = []PipelineStep{
 	StepVerifyCommits, StepScanStubs, StepRunGates,
 	StepValidateIntegration, StepMergeAgents, StepFixGoMod,
-	StepVerifyBuild, StepCleanup,
+	StepVerifyBuild, StepIntegrationAgent, StepCleanup,
 }
 
 // StepStatus is the lifecycle status of a single pipeline step.

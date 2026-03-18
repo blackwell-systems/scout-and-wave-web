@@ -37,6 +37,7 @@ var validPipelineSteps = map[PipelineStep]bool{
 	StepMergeAgents:         true,
 	StepFixGoMod:            true,
 	StepVerifyBuild:         true,
+	StepIntegrationAgent:    true,
 	StepCleanup:             true,
 }
 
@@ -46,6 +47,7 @@ var validPipelineSteps = map[PipelineStep]bool{
 var skippableSteps = map[PipelineStep]bool{
 	StepScanStubs:           true,
 	StepValidateIntegration: true,
+	StepIntegrationAgent:    true,
 	StepCleanup:             true,
 	StepFixGoMod:            true,
 }
@@ -113,7 +115,7 @@ func (s *Server) handleStepRetry(w http.ResponseWriter, r *http.Request) {
 
 		if err != nil {
 			// Non-fatal steps: log but treat as success.
-			if step == StepValidateIntegration || step == StepFixGoMod {
+			if step == StepValidateIntegration || step == StepFixGoMod || step == StepIntegrationAgent {
 				log.Printf("step %s non-fatal error: %v", step, err)
 				if defaultPipelineTracker != nil {
 					_ = defaultPipelineTracker.Complete(slug, wave, step)
@@ -203,6 +205,12 @@ func executeStep(step PipelineStep, implPath, repoPath string, wave int) error {
 	case StepVerifyBuild:
 		_, err := protocol.VerifyBuild(implPath, repoPath)
 		return err
+
+	case StepIntegrationAgent:
+		// Integration agent retry is a no-op in executeStep — it requires
+		// model config and an integration report, which aren't available here.
+		// Users should use the full finalize retry instead.
+		return nil
 
 	case StepCleanup:
 		_, err := protocol.Cleanup(implPath, wave, repoPath)
