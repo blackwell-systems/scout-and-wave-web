@@ -635,8 +635,8 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                           </div>
                         )}
 
-                        {/* Start Next Wave — show after merge success if next wave is still pending */}
-                        {wave.wave < Math.max(...state.waves.map(w => w.wave)) && !state.waves.find(w => w.wave === wave.wave + 1)?.complete && (
+                        {/* Start Next Wave — show after merge success if next wave is still pending and no gate is active */}
+                        {wave.wave < Math.max(...state.waves.map(w => w.wave)) && !state.waves.find(w => w.wave === wave.wave + 1)?.complete && !hasGate && (
                           <button
                             onClick={() => void startWave(slug)}
                             className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 hover:border-blue-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
@@ -734,7 +734,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                   </div>
                   <button
                     onClick={() => void handleProceedGate(state.waveGate!.nextWave)}
-                    className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-blue-600 text-white hover:bg-blue-700 dark:bg-blue-500 dark:hover:bg-blue-600 active:scale-[0.98] transition-all"
+                    className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 hover:border-blue-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
                   >
                     Proceed to Wave {state.waveGate.nextWave} &rarr;
                   </button>
