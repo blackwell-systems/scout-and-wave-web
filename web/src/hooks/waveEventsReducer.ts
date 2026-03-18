@@ -55,6 +55,7 @@ export interface AppWaveState {
 
 // Action types
 export type WaveAction =
+  | { type: 'RESET' }
   | { type: 'CONNECT' }
   | { type: 'DISCONNECT'; error?: string }
   | { type: 'SEED_DISK_STATUS'; agents: AgentStatus[]; waves: WaveState[]; scaffoldStatus: AppWaveState['scaffoldStatus']; mergedWaves: number[] }
@@ -150,6 +151,9 @@ function upsertAgent(
 // Reducer
 export function waveEventsReducer(state: AppWaveState, action: WaveAction): AppWaveState {
   switch (action.type) {
+    case 'RESET':
+      return { ...initialWaveState }
+
     case 'CONNECT':
       return { ...state, connected: true, error: undefined }
 

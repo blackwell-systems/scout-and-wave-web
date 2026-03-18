@@ -2,6 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
+| [0.81.0] | 2026-03-17 | WaveBoard UX fixes — IMPL Complete celebration banner (icon + summary + next action), slug switch resets reducer state (was showing stale agents from previous IMPL), multi-repo IMPL editor 404 fix (`findImplPath` shared helper), gate proceed fallback re-launches wave when server restarted, external-wave-event-store IMPL scouted |
 | [0.80.0] | 2026-03-17 | Scaffold failure styling + sidebar fix — ScaffoldCard gets red border on RUN_FAILED (was stuck on blue/running), sidebar IMPL click dismisses Pipeline view |
 | [0.79.0] | 2026-03-17 | Visual polish — PipelineRow status-colored left border accents, theme-aware colors, ActionButtons icon prefixes (Play/Pencil/X/Eye) + hover/press scale micro-interactions, visual-polish-v1 IMPL added |
 | [0.78.0] | 2026-03-17 | SAW protocol gaps v1 — DependencyGraphPanel structured-data fallback (renders wave graph from `impl` prop when dep_graph text empty), removed duplicate `window.confirm` on force-complete |

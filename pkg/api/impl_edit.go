@@ -22,29 +22,9 @@ func (s *Server) handleGetImplRaw(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Search for IMPL doc in standard locations (same as handleGetImpl)
-	searchDirs := []string{
-		filepath.Join(s.cfg.RepoPath, "docs", "IMPL"),
-		filepath.Join(s.cfg.RepoPath, "docs", "IMPL", "complete"),
-	}
-
-	var implPath string
-	var found bool
-	for _, dir := range searchDirs {
-		for _, ext := range []string{".yaml"} {
-			candidate := filepath.Join(dir, "IMPL-"+slug+ext)
-			if _, err := os.Stat(candidate); err == nil {
-				implPath = candidate
-				found = true
-				break
-			}
-		}
-		if found {
-			break
-		}
-	}
-
-	if !found {
+	// Search all configured repos for the IMPL doc (mirrors handleGetImpl)
+	implPath, _ := s.findImplPath(slug)
+	if implPath == "" {
 		http.Error(w, "IMPL doc not found", http.StatusNotFound)
 		return
 	}
@@ -80,15 +60,19 @@ func (s *Server) handlePutImplRaw(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "empty body", http.StatusBadRequest)
 		return
 	}
-	// Ensure IMPL directory exists
-	if err := os.MkdirAll(s.cfg.IMPLDir, 0755); err != nil {
+	// Find existing IMPL doc across all repos, or fall back to primary IMPLDir for new docs
+	implPath, _ := s.findImplPath(slug)
+	if implPath == "" {
+		implPath = filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
+	}
+	implDir := filepath.Dir(implPath)
+	if err := os.MkdirAll(implDir, 0755); err != nil {
 		http.Error(w, "failed to create IMPL directory", http.StatusInternalServerError)
 		return
 	}
 
-	implPath := filepath.Join(s.cfg.IMPLDir, "IMPL-"+slug+".yaml")
 	// Atomic write via temp file + rename
-	tmpFile, err := os.CreateTemp(s.cfg.IMPLDir, "impl-edit-*.yaml.tmp")
+	tmpFile, err := os.CreateTemp(implDir, "impl-edit-*.yaml.tmp")
 	if err != nil {
 		http.Error(w, "failed to create temp file", http.StatusInternalServerError)
 		return

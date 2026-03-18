@@ -25,6 +25,11 @@ export function useWaveEvents(slug: string): AppWaveState {
   const [state, dispatch] = useReducer(waveEventsReducer, initialWaveState)
   const esRef = useRef<EventSource | null>(null)
 
+  // Reset state when slug changes so stale data from the previous IMPL is cleared.
+  useEffect(() => {
+    dispatch({ type: 'RESET' })
+  }, [slug])
+
   // Seed agent, wave, and merge state from disk status on mount — covers
   // work completed in previous sessions whose SSE events are no longer available.
   useEffect(() => {

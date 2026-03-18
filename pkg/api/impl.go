@@ -131,13 +131,9 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-// handleGetImpl serves GET /api/impl/{slug}.
-// Searches all configured repos for the IMPL doc. Returns IMPLDocResponse as JSON.
-// 404 if the file does not exist in any repo; 500 on parse error.
-func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
-	slug := r.PathValue("slug")
-
-	// Read saw.config.json to get the list of repos
+// findImplPath searches all configured repos for an IMPL doc by slug.
+// Returns the absolute file path and matched repo, or empty string if not found.
+func (s *Server) findImplPath(slug string) (string, RepoEntry) {
 	configPath := filepath.Join(s.cfg.RepoPath, "saw.config.json")
 	configData, err := os.ReadFile(configPath)
 
@@ -148,8 +144,6 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 			repos = cfg.Repos
 		}
 	}
-
-	// Fallback: if no config or no repos, use the startup IMPLDir
 	if len(repos) == 0 {
 		repos = []RepoEntry{{
 			Name: filepath.Base(s.cfg.RepoPath),
@@ -157,29 +151,24 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 		}}
 	}
 
-	// Search all repos for the IMPL doc (both active and complete directories)
-	var implPath string
-	var matchedRepo RepoEntry
 	for _, repo := range repos {
-		implDirs := []string{
-			filepath.Join(repo.Path, "docs", "IMPL"),
-			filepath.Join(repo.Path, "docs", "IMPL", "complete"),
-		}
-
-		for _, implDir := range implDirs {
-			yamlPath := filepath.Join(implDir, "IMPL-"+slug+".yaml")
-
-			if _, err := os.Stat(yamlPath); err == nil {
-				implPath = yamlPath
-				matchedRepo = repo
-				break
+		for _, sub := range []string{"docs/IMPL", "docs/IMPL/complete"} {
+			candidate := filepath.Join(repo.Path, sub, "IMPL-"+slug+".yaml")
+			if _, err := os.Stat(candidate); err == nil {
+				return candidate, repo
 			}
 		}
-		if implPath != "" {
-			break
-		}
 	}
+	return "", RepoEntry{}
+}
 
+// handleGetImpl serves GET /api/impl/{slug}.
+// Searches all configured repos for the IMPL doc. Returns IMPLDocResponse as JSON.
+// 404 if the file does not exist in any repo; 500 on parse error.
+func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+
+	implPath, matchedRepo := s.findImplPath(slug)
 	if implPath == "" {
 		http.Error(w, "IMPL doc not found", http.StatusNotFound)
 		return

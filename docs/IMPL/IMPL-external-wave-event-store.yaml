@@ -1,0 +1,388 @@
+# IMPL: external-wave-event-store
+title: "External Wave Event Store"
+feature_slug: external-wave-event-store
+verdict: SUITABLE
+test_command: "cd web && npx vitest run"
+lint_command: "cd web && npx tsc --noEmit"
+state: SCOUT_PENDING
+
+# Suitability Assessment
+# ----------------------
+# Verdict: SUITABLE
+#
+# 1. File decomposition: YES — Work splits cleanly into two disjoint concerns:
+#    (a) the new singleton store module (waveEventStore.ts + tests), and
+#    (b) the refactored hook that delegates to the store (useWaveEvents.ts + tests).
+#    No two agents need conflicting modifications to the same file.
+#
+# 2. Investigation-first: NO — The problem is well-understood (EventSource
+#    lifecycle tied to React component mount/unmount). No root-cause analysis needed.
+#
+# 3. Interface discoverability: YES — The store's public API can be fully defined
+#    upfront: subscribe(slug), getSnapshot(slug), dispatch(slug, action). The
+#    waveEventsReducer is an existing pure function that moves unchanged.
+#
+# 4. Pre-implementation status check:
+#    Total items: 7 (per the key behaviors listed in the feature spec)
+#    Already implemented (DONE): 0
+#    Partially implemented (PARTIAL): 0
+#    Not implemented (TO-DO): 7
+#
+# 5. Parallelization value: HIGH — Two agents with independent file ownership.
+#    The store module is a leaf dependency (no imports from useWaveEvents.ts).
+#    Build/test cycle is ~15s (vite + vitest). Each agent touches 2 files.
+#    Wave 1 builds the store; Wave 2 rewires the hook. Clear dependency chain.
+#
+# Estimated times:
+# - Scout phase: ~8 min
+# - Agent execution: ~12 min (2 agents x 8 min avg, Wave 1 parallel, Wave 2 sequential)
+# - Merge & verification: ~3 min
+# Total SAW time: ~23 min
+#
+# Sequential baseline: ~25 min (2 agents x 10 min avg + 5 min context switching)
+# Time savings: ~2 min (~8% faster)
+# Recommendation: Clear coordination value. The IMPL doc prevents the hook refactor
+# from diverging from the store API. Speed gain is marginal but the interface
+# contract between store and hook makes this worth structuring.
+
+suitability_assessment: |
+  SUITABLE. The work decomposes into two agents with disjoint file ownership:
+  Agent A builds the new singleton store module, Agent B rewires useWaveEvents
+  to delegate to it. The reducer (waveEventsReducer.ts) is reused unchanged and
+  owned by neither agent. Interface between store and hook is fully specifiable
+  upfront. The existing useWaveEvents API contract is preserved — zero consumer
+  changes needed (WaveBoard, useExecutionSync, StageTimeline all unchanged).
+
+quality_gates:
+  level: standard
+  gates:
+    - type: typecheck
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit"
+      required: true
+    - type: test
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx vitest run"
+      required: true
+
+scaffolds: []
+
+interface_contracts:
+  - name: "SlugEntry"
+    description: |
+      Internal per-slug state held by the singleton store. Not exported to
+      consumers — used only inside waveEventStore.ts.
+    definition: |
+      interface SlugEntry {
+        state: AppWaveState
+        eventSource: EventSource | null
+        refCount: number
+        listeners: Set<() => void>
+        seeded: boolean
+      }
+    location: "web/src/stores/waveEventStore.ts"
+
+  - name: "getSnapshot"
+    description: |
+      Returns the current AppWaveState for a given slug. Called by
+      useSyncExternalStore as the getSnapshot argument. Returns initialWaveState
+      if no entry exists for the slug. Must return a referentially stable object
+      (same reference if state has not changed) to avoid infinite re-renders.
+    definition: |
+      export function getSnapshot(slug: string): AppWaveState
+    location: "web/src/stores/waveEventStore.ts"
+
+  - name: "subscribe"
+    description: |
+      Subscribes a React component to state changes for a given slug. On first
+      subscriber (refCount 0 -> 1): opens the EventSource SSE connection and
+      runs disk seeding via fetchDiskWaveStatus. On last unsubscribe (refCount
+      1 -> 0): closes the EventSource but RETAINS state in the Map so remounts
+      get cached state. Returns an unsubscribe function compatible with
+      useSyncExternalStore's subscribe signature.
+    definition: |
+      export function subscribe(slug: string, listener: () => void): () => void
+    location: "web/src/stores/waveEventStore.ts"
+
+  - name: "dispatch"
+    description: |
+      Dispatches a WaveAction to the store for a given slug. Runs the existing
+      waveEventsReducer, replaces the entry's state, and notifies all listeners.
+      Used internally by SSE event handlers. Not called by React components directly.
+    definition: |
+      export function dispatch(slug: string, action: WaveAction): void
+    location: "web/src/stores/waveEventStore.ts"
+
+  - name: "resetStore"
+    description: |
+      Test-only function that clears all entries from the store Map and closes
+      any open EventSources. Exported for use in test afterEach cleanup.
+    definition: |
+      export function resetStore(): void
+    location: "web/src/stores/waveEventStore.ts"
+
+file_ownership:
+  - file: "web/src/stores/waveEventStore.ts"
+    agent: A
+    wave: 1
+    action: new
+  - file: "web/src/stores/waveEventStore.test.ts"
+    agent: A
+    wave: 1
+    action: new
+  - file: "web/src/hooks/useWaveEvents.ts"
+    agent: B
+    wave: 2
+    action: modify
+  - file: "web/src/hooks/useWaveEvents.test.ts"
+    agent: B
+    wave: 2
+    action: modify
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## What to Implement
+
+          Create a new module `web/src/stores/waveEventStore.ts` that manages SSE
+          connections and reducer state as a module-level singleton, outside React's
+          component lifecycle. This store holds a `Map<string, SlugEntry>` where each
+          entry contains the `AppWaveState`, an `EventSource` reference, a subscriber
+          reference count, a `Set<() => void>` of listeners, and a `seeded` boolean.
+
+          Key behaviors:
+          1. `subscribe(slug, listener)` — Adds listener to the slug's entry. If this
+             is the first subscriber (refCount goes from 0 to 1), open the EventSource
+             at `/api/wave/${slug}/events` and wire all SSE event listeners (identical
+             to the current useWaveEvents.ts addEventListener calls). Also trigger
+             disk seeding via `fetchDiskWaveStatus(slug)` if `entry.seeded` is false,
+             then set `seeded = true`. Returns an unsubscribe function that removes the
+             listener and decrements refCount. When refCount hits 0, close the
+             EventSource (set to null) but DO NOT delete the entry — state persists
+             for remount.
+          2. `getSnapshot(slug)` — Returns `entry.state` if the slug exists in the Map,
+             otherwise returns `initialWaveState`. CRITICAL: must return the same object
+             reference if state has not changed (useSyncExternalStore requirement).
+          3. `dispatch(slug, action)` — Runs `waveEventsReducer(entry.state, action)`,
+             replaces `entry.state` with the result, and calls every listener in
+             `entry.listeners`. If no entry exists for the slug, creates one with
+             `initialWaveState` first.
+          4. `resetStore()` — Test helper. Iterates all entries, closes EventSources,
+             clears the Map.
+
+          The SSE event wiring inside subscribe must replicate EXACTLY the event listeners
+          from the current `useWaveEvents.ts` (lines 84-265): scaffold_started,
+          scaffold_output, scaffold_complete, scaffold_failed, agent_started, agent_complete,
+          agent_failed, agent_output, agent_tool_call, wave_complete, run_complete,
+          run_failed, wave_gate_pending, wave_gate_resolved, merge_started, merge_output,
+          merge_complete, merge_failed, conflict_resolving, conflict_resolved,
+          conflict_resolution_failed, test_started, test_output, test_complete, test_failed,
+          stale_branches_detected, stage_transition, pipeline_step, fix_build_started,
+          fix_build_output, fix_build_complete, fix_build_failed.
+
+          The `onopen` handler dispatches `{ type: 'CONNECT' }`.
+          The `onerror` handler dispatches `{ type: 'DISCONNECT' }`.
+
+          Disk seeding logic (from current useWaveEvents.ts lines 31-69) must also be
+          replicated in the subscribe function when refCount transitions from 0 to 1
+          AND `entry.seeded` is false.
+
+          ## Interfaces to Implement
+
+          ```typescript
+          export function getSnapshot(slug: string): AppWaveState
+          export function subscribe(slug: string, listener: () => void): () => void
+          export function dispatch(slug: string, action: WaveAction): void
+          export function resetStore(): void
+          ```
+
+          ## Interfaces to Call
+
+          - `waveEventsReducer` from `../hooks/waveEventsReducer` (pure function, unchanged)
+          - `initialWaveState` from `../hooks/waveEventsReducer`
+          - `buildWaves` from `../hooks/waveEventsReducer`
+          - `fetchDiskWaveStatus` from `../api`
+          - `WaveAction` type from `../hooks/waveEventsReducer`
+          - `AppWaveState` type from `../hooks/waveEventsReducer`
+          - `AgentStatus` type from `../types`
+          - `AgentOutputData`, `AgentToolCallData` types from `../types`
+
+          ## Tests to Write
+
+          In `web/src/stores/waveEventStore.test.ts`:
+
+          1. TestGetSnapshotDefault — getSnapshot returns initialWaveState for unknown slug
+          2. TestSubscribeOpensEventSource — first subscribe call creates EventSource
+          3. TestSubscribeRefCounting — second subscribe does NOT create a new EventSource
+          4. TestUnsubscribeClosesEventSource — last unsubscribe closes EventSource
+          5. TestStatePersistsAfterUnsubscribe — getSnapshot still returns accumulated
+             state after all subscribers leave
+          6. TestResubscribeReusesState — re-subscribing after full unsubscribe gets
+             cached state and opens new EventSource
+          7. TestDispatchNotifiesListeners — dispatch calls all registered listeners
+          8. TestDispatchCreatesEntryIfMissing — dispatch on unknown slug creates entry
+          9. TestSSEEventWiring — fire mock SSE events and verify state updates via getSnapshot
+          10. TestDiskSeeding — verify fetchDiskWaveStatus is called on first subscribe
+          11. TestDiskSeedingOnlyOnce — second subscribe after unsubscribe does not re-seed
+          12. TestResetStore — resetStore clears all entries and closes EventSources
+          13. TestSnapshotReferentialStability — getSnapshot returns same reference when
+              state unchanged (no dispatch between calls)
+
+          Use the same mock EventSource pattern as the existing useWaveEvents.test.ts.
+          Import `resetStore` and call it in `afterEach`.
+
+          ## Verification Gate
+
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx vitest run src/stores/waveEventStore.test.ts
+          ```
+
+          ## Constraints
+
+          - Do NOT modify any existing files. Only create new files in web/src/stores/.
+          - Create the `web/src/stores/` directory if it does not exist.
+          - The store module must have zero React imports — it is pure TypeScript.
+          - `getSnapshot` must return referentially stable objects (same reference if
+            no dispatch occurred) to satisfy useSyncExternalStore's contract.
+          - Do NOT delete Map entries on unsubscribe — only close EventSource and
+            null it out. The state must survive for remount scenarios.
+          - The `seeded` flag prevents duplicate disk fetches on re-subscribe.
+        files:
+          - "web/src/stores/waveEventStore.ts"
+          - "web/src/stores/waveEventStore.test.ts"
+        dependencies: []
+
+  - number: 2
+    agents:
+      - id: B
+        task: |
+          ## What to Implement
+
+          Refactor `web/src/hooks/useWaveEvents.ts` to delegate all state management
+          and SSE connection handling to the external store created by Agent A. The
+          hook's public API (`useWaveEvents(slug: string): AppWaveState`) must remain
+          EXACTLY the same — no consumer changes allowed.
+
+          Replace the current implementation:
+          - Remove `useReducer`, `useRef`, and both `useEffect` hooks
+          - Import `useSyncExternalStore` from `react`
+          - Import `subscribe`, `getSnapshot` from `../stores/waveEventStore`
+          - Implement the hook as:
+
+          ```typescript
+          import { useSyncExternalStore, useCallback } from 'react'
+          import { subscribe, getSnapshot } from '../stores/waveEventStore'
+          import type { AppWaveState } from './waveEventsReducer'
+
+          // Re-export types for backward compatibility (keep existing re-exports)
+          export type { AppWaveState, WaveMergeState, WaveTestState, StageEntry, StaleBranchesInfo } from './waveEventsReducer'
+
+          export function useWaveEvents(slug: string): AppWaveState {
+            const sub = useCallback(
+              (listener: () => void) => subscribe(slug, listener),
+              [slug]
+            )
+            const snap = useCallback(() => getSnapshot(slug), [slug])
+            return useSyncExternalStore(sub, snap)
+          }
+          ```
+
+          That is essentially the entire implementation. The hook becomes a thin
+          adapter between React's useSyncExternalStore and the external store.
+
+          Remove ALL of the following from useWaveEvents.ts:
+          - The `useReducer` call
+          - The `useRef<EventSource>` ref
+          - The disk-seeding useEffect (lines 30-70)
+          - The EventSource useEffect with all addEventListener calls (lines 72-288)
+          - Imports of `useEffect`, `useRef`, `useReducer` from react
+          - Import of `fetchDiskWaveStatus` from `../api`
+          - Imports of `AgentOutputData`, `AgentToolCallData`, `AgentStatus` from `../types`
+          - Imports of `waveEventsReducer`, `initialWaveState`, `buildWaves` from `./waveEventsReducer`
+
+          Keep the re-exports of types (`AppWaveState`, `WaveMergeState`, `WaveTestState`,
+          `StageEntry`, `StaleBranchesInfo`) since WaveBoard and other consumers import
+          these from `useWaveEvents`.
+
+          ## Interfaces to Implement
+
+          ```typescript
+          export function useWaveEvents(slug: string): AppWaveState
+          ```
+
+          (Same signature as before — this is a refactor, not an API change.)
+
+          ## Interfaces to Call
+
+          - `subscribe` from `../stores/waveEventStore`
+          - `getSnapshot` from `../stores/waveEventStore`
+          - `useSyncExternalStore` from `react`
+          - `useCallback` from `react`
+
+          ## Tests to Write
+
+          Update `web/src/hooks/useWaveEvents.test.ts`:
+
+          The tests need to change because the hook no longer directly creates EventSource.
+          Instead, mock the store module:
+
+          1. TestReturnsInitialState — useWaveEvents returns initialWaveState when store
+             has no entry for the slug
+          2. TestSubscribesOnMount — verify subscribe(slug, listener) is called on mount
+          3. TestUnsubscribesOnUnmount — verify the unsubscribe function returned by
+             subscribe is called on unmount
+          4. TestReturnsStoreSnapshot — when store has state for a slug, hook returns it
+          5. TestRerendersOnStoreChange — when store dispatches and listener fires, hook
+             returns updated state
+          6. TestSlugChangeResubscribes — changing slug unsubscribes old, subscribes new
+          7. TestBackwardCompatibleExports — verify AppWaveState, WaveMergeState,
+             WaveTestState, StageEntry, StaleBranchesInfo are all exported
+
+          Mock approach: `vi.mock('../stores/waveEventStore', ...)` to provide controlled
+          subscribe/getSnapshot implementations. Do NOT mock EventSource — that is now
+          the store's concern, tested in Agent A's test file.
+
+          ## Verification Gate
+
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx vitest run src/hooks/useWaveEvents.test.ts
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx vitest run src/hooks/useExecutionSync.test.ts
+          ```
+
+          ## Constraints
+
+          - The public API of useWaveEvents MUST NOT change. The function signature,
+            return type, and all type re-exports must remain identical.
+          - Do NOT modify WaveBoard.tsx, useExecutionSync.ts, StageTimeline.tsx, or
+            any other consumer — they must work without changes.
+          - Do NOT modify waveEventsReducer.ts — it is shared and unchanged.
+          - The useCallback wrappers around subscribe and getSnapshot are required
+            to ensure useSyncExternalStore does not re-subscribe on every render.
+            The dependency array must be [slug] so that slug changes trigger resubscription.
+          - Run the useExecutionSync tests as part of verification — it depends on
+            useWaveEvents and must continue passing.
+        files:
+          - "web/src/hooks/useWaveEvents.ts"
+          - "web/src/hooks/useWaveEvents.test.ts"
+        dependencies:
+          - A
+
+pre_mortem:
+  overall_risk: low
+  rows:
+    - scenario: "useSyncExternalStore causes tearing or infinite re-renders due to unstable snapshot references"
+      likelihood: medium
+      impact: high
+      mitigation: "Agent A's getSnapshot must return the same object reference when state has not changed. Test 13 (TestSnapshotReferentialStability) explicitly verifies this. Agent B's useCallback with [slug] dep prevents resubscription loops."
+    - scenario: "SSE events arrive between unsubscribe and re-subscribe during slug change, causing missed events"
+      likelihood: low
+      impact: medium
+      mitigation: "This is the existing behavior (current hook closes EventSource on slug change too). The store improves this slightly because state persists, but SSE gap during reconnection is unchanged. Not a regression."
+    - scenario: "Memory leak from never-deleted Map entries for slugs no longer in use"
+      likelihood: low
+      impact: low
+      mitigation: "Acceptable tradeoff for this feature. Entries are lightweight (state object + null EventSource). A future cleanup pass could add TTL eviction. The resetStore function handles test cleanup."
+
+completion_reports: {}
