@@ -272,9 +272,10 @@ export default function WaveStructurePanel({ impl, executionState }: WaveStructu
         return true
 
       case 'scaffold':
-        // If any wave completed, scaffold must have completed first.
-        // Also fill during live execution (scaffold runs before any wave).
-        return highestCompleteWave > 0 || (isLive && executionState?.scaffoldStatus === 'complete')
+        // Always filled — the Scout already ran to produce this IMPL doc,
+        // so the line from Scout→Scaffold should be solid. The scaffold orb
+        // itself animates its fill on execution completion separately.
+        return true
 
       case 'wave':
         return getWaveStatus(node.waveNum!) === 'complete'
