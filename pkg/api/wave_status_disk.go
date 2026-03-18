@@ -124,26 +124,27 @@ func (s *Server) handleWaveDiskStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Detect which waves have been fully merged into the current branch.
-	// A wave is considered merged if either:
-	// (a) all agent branches are ancestors of HEAD (merged but not cleaned up), OR
-	// (b) all agents have completion reports with status "complete" AND their
-	//     branches no longer exist (merged + cleaned up).
+	// A wave is considered merged only if ALL agents have completion reports
+	// with status "complete" AND their branches are either ancestors of HEAD
+	// or already cleaned up. A completion report is required to prevent
+	// stale branches from prior IMPLs (same agent ID) being misattributed.
 	for _, wave := range manifest.Waves {
 		allMerged := true
 		for _, agent := range wave.Agents {
-			branch := fmt.Sprintf("wave%d-agent-%s", wave.Number, agent.ID)
-			if diskBranchMerged(repoPath, branch) {
-				continue // branch exists and is ancestor of HEAD
-			}
-			// Branch not found or not ancestor — check if it was cleaned up
-			// after a successful merge (completion report present + branch gone)
 			report, hasReport := manifest.CompletionReports[agent.ID]
-			branchExists := diskBranchExists(repoPath, branch)
-			if hasReport && report.Status == "complete" && !branchExists {
-				continue // merged + cleaned up
+			if !hasReport || report.Status != "complete" {
+				allMerged = false
+				break
 			}
-			allMerged = false
-			break
+			// Agent has a completion report — verify branch state is consistent
+			branch := fmt.Sprintf("wave%d-agent-%s", wave.Number, agent.ID)
+			branchExists := diskBranchExists(repoPath, branch)
+			if branchExists && !diskBranchMerged(repoPath, branch) {
+				// Branch exists but hasn't been merged yet
+				allMerged = false
+				break
+			}
+			// Branch merged (ancestor of HEAD) or cleaned up — both OK
 		}
 		if allMerged && len(wave.Agents) > 0 {
 			result.WavesMerged = append(result.WavesMerged, wave.Number)
