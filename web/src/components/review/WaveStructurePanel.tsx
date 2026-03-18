@@ -225,6 +225,13 @@ export default function WaveStructurePanel({ impl, executionState }: WaveStructu
     return highest
   }, [sortedWaves])
 
+  // Check if a wave is actively running via live execution state
+  const isWaveRunning = useCallback((waveNum: number): boolean => {
+    if (!isLive || !executionState) return false
+    const progress = executionState.waveProgress.get(waveNum)
+    return !!progress
+  }, [isLive, executionState])
+
   const isNodeFilled = useCallback((node: TimelineNode): boolean => {
     if (isComplete) return true
 
@@ -234,8 +241,9 @@ export default function WaveStructurePanel({ impl, executionState }: WaveStructu
         return true
 
       case 'scaffold':
-        // If any wave completed, scaffold must have completed first
-        return highestCompleteWave > 0
+        // If any wave completed, scaffold must have completed first.
+        // Also fill during live execution (scaffold runs before any wave).
+        return highestCompleteWave > 0 || (isLive && executionState?.scaffoldStatus === 'complete')
 
       case 'wave':
         return getWaveStatus(node.waveNum!) === 'complete'
@@ -250,7 +258,7 @@ export default function WaveStructurePanel({ impl, executionState }: WaveStructu
       default:
         return false
     }
-  }, [isComplete, highestCompleteWave, getWaveStatus])
+  }, [isComplete, highestCompleteWave, getWaveStatus, isLive, executionState, isWaveRunning])
 
   // Track node element positions for per-segment colored lines
   const railRef = useRef<HTMLDivElement>(null)
@@ -292,9 +300,31 @@ export default function WaveStructurePanel({ impl, executionState }: WaveStructu
     if (filled.length > 0) {
       const last = filled[filled.length - 1]
       segs.push({ top: last.top, height: last.bottom - last.top, color: last.color })
+
+      // Extend line to the next node if it's a running wave (line reaches it, orb stays unfilled)
+      const lastFilledIdx = nodes.findIndex((n, i) => {
+        const el = nodeRefs.current[i]
+        if (!el || !isNodeFilled(n)) return false
+        const rect = el.getBoundingClientRect()
+        const isMerge = n.type === 'merge'
+        const orbTop = rect.top + (isMerge ? 2 : 14) - railTop
+        return Math.abs(orbTop - last.top) < 1
+      })
+      if (lastFilledIdx >= 0 && lastFilledIdx + 1 < nodes.length) {
+        const nextNode = nodes[lastFilledIdx + 1]
+        const nextEl = nodeRefs.current[lastFilledIdx + 1]
+        if (nextEl && nextNode.type === 'wave' && isWaveRunning(nextNode.waveNum!)) {
+          const nextRect = nextEl.getBoundingClientRect()
+          const nextOrbTop = nextRect.top + 14 - railTop
+          // Extend the last segment to reach the running wave's orb top
+          const lastSeg = segs[segs.length - 1]
+          const extendTo = nextOrbTop + 20 // reach through the orb
+          lastSeg.height = extendTo - lastSeg.top
+        }
+      }
     }
     setSegments(segs)
-  }, [nodes, isNodeFilled, executionState])
+  }, [nodes, isNodeFilled, isWaveRunning, executionState])
 
   // Ensure refs array matches nodes length
   if (nodeRefs.current.length !== nodes.length) {

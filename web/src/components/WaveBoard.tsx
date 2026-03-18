@@ -577,7 +577,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                         {testStatus === 'idle' && (
                           <button
                             onClick={() => void handleRunTests(wave.wave)}
-                            className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-teal-600 text-white hover:bg-teal-700 active:scale-[0.98] transition-all"
+                            className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-teal-500/15 text-teal-400 border border-teal-500/30 hover:bg-teal-500/25 hover:border-teal-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
                           >
                             Run Tests
                           </button>
@@ -627,7 +627,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                         {wave.wave < Math.max(...state.waves.map(w => w.wave)) && (
                           <button
                             onClick={() => void startWave(slug)}
-                            className="text-sm font-medium px-4 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+                            className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 hover:border-blue-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
                           >
                             Start Wave {wave.wave + 1}
                           </button>
