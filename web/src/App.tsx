@@ -146,6 +146,7 @@ export default function App() {
 
   async function handleSelect(selected: string) {
     setSelectedSlug(selected)
+    setShowPipeline(false)
     setRejected(false)
     setLoading(true)
     setError(null)
