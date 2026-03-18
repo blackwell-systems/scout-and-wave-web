@@ -10,7 +10,7 @@ package api
 // on mount and after in-app scout runs via SSE completion events.
 //
 // This file adds:
-//   - A filesystem watcher (fsnotify) that watches the configured IMPLDir
+//   - A filesystem watcher (fsnotify) that watches IMPL dirs across all configured repos
 //   - A global SSE endpoint GET /api/events that every client subscribes to
 //   - An "impl_list_updated" event broadcast whenever the IMPL dir changes
 //
@@ -20,6 +20,8 @@ package api
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -100,14 +102,30 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// startIMPLWatcher watches the IMPL directory and broadcasts
-// "impl_list_updated" whenever a .yaml file is created or renamed into place.
-func (s *Server) startIMPLWatcher(implDir string) {
+// startIMPLWatcher watches IMPL directories across all configured repos and
+// broadcasts "impl_list_updated" whenever a .yaml file is created, renamed,
+// or removed. This ensures the frontend stays in sync even when CLI Scout
+// agents write IMPL docs to repos other than the server's startup repo.
+func (s *Server) startIMPLWatcher(fallbackDir string) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		return
 	}
-	if err := watcher.Add(implDir); err != nil {
+
+	// Collect IMPL directories from all configured repos.
+	dirs := s.implWatchDirs(fallbackDir)
+	if len(dirs) == 0 {
+		watcher.Close()
+		return
+	}
+
+	added := 0
+	for _, dir := range dirs {
+		if err := watcher.Add(dir); err == nil {
+			added++
+		}
+	}
+	if added == 0 {
 		watcher.Close()
 		return
 	}
@@ -131,4 +149,32 @@ func (s *Server) startIMPLWatcher(implDir string) {
 			}
 		}
 	}()
+}
+
+// implWatchDirs returns all IMPL directories that should be watched,
+// mirroring the multi-repo scanning logic in handleListImpls.
+func (s *Server) implWatchDirs(fallbackDir string) []string {
+	repos := s.getConfiguredRepos()
+
+	seen := make(map[string]struct{})
+	var dirs []string
+	for _, repo := range repos {
+		for _, sub := range []string{"docs/IMPL", "docs/IMPL/complete"} {
+			dir := filepath.Join(repo.Path, sub)
+			if _, err := os.Stat(dir); err == nil {
+				if _, ok := seen[dir]; !ok {
+					seen[dir] = struct{}{}
+					dirs = append(dirs, dir)
+				}
+			}
+		}
+	}
+
+	// Fallback: if no repos configured or none had IMPL dirs, use the startup dir.
+	if len(dirs) == 0 {
+		if _, err := os.Stat(fallbackDir); err == nil {
+			dirs = append(dirs, fallbackDir)
+		}
+	}
+	return dirs
 }
