@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { IMPLDocResponse } from '../../types'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { getAgentColor, getAgentColorWithOpacity } from '../../lib/agentColors'
@@ -215,45 +215,42 @@ export default function WaveStructurePanel({ impl, executionState }: WaveStructu
     return wave?.status ?? 'pending'
   }, [sortedWaves])
 
+  // Determine the highest completed wave number from the IMPL doc.
+  // This is the single source of truth — no reliance on SSE or execution state.
+  const highestCompleteWave = useMemo(() => {
+    let highest = 0
+    for (const w of sortedWaves) {
+      if (w.status === 'complete') highest = w.number
+    }
+    return highest
+  }, [sortedWaves])
+
   const isNodeFilled = useCallback((node: TimelineNode): boolean => {
+    if (isComplete) return true
+
     switch (node.type) {
       case 'orchestrator':
+        // Scout always ran — we're viewing its output
         return true
 
       case 'scaffold':
-        // Scaffold is done if execution says so, or if any wave has progress
-        // (waves can't start without scaffolds), or if doc is complete
-        if (executionState?.scaffoldStatus === 'complete') return true
-        if (isComplete) return true
-        return sortedWaves.some(w => w.status === 'complete' || w.status === 'partial')
+        // If any wave completed, scaffold must have completed first
+        return highestCompleteWave > 0
 
-      case 'wave': {
-        if (isComplete) return true
-        // Check IMPL doc status first (persisted across sessions)
-        const docStatus = getWaveStatus(node.waveNum!)
-        if (docStatus === 'complete') return true
-        // Fall back to live execution state
-        const progress = executionState?.waveProgress.get(node.waveNum!)
-        if (progress && progress.total > 0 && progress.complete === progress.total) return true
-        return false
-      }
+      case 'wave':
+        return getWaveStatus(node.waveNum!) === 'complete'
 
-      case 'merge': {
-        if (isComplete) return true
-        const docStatus = getWaveStatus(node.waveNum!)
-        if (docStatus === 'complete') return true
-        const progress = executionState?.waveProgress.get(node.waveNum!)
-        if (progress?.mergeStatus === 'success') return true
-        return false
-      }
+      case 'merge':
+        // Merge is done if this wave completed (merge happens before next wave can start)
+        return getWaveStatus(node.waveNum!) === 'complete'
 
       case 'complete':
-        return isComplete
+        return false
 
       default:
-        return isComplete
+        return false
     }
-  }, [isComplete, executionState, sortedWaves, getWaveStatus])
+  }, [isComplete, highestCompleteWave, getWaveStatus])
 
   // Track node element positions for per-segment colored lines
   const railRef = useRef<HTMLDivElement>(null)

@@ -466,7 +466,7 @@ export default function DependencyGraphPanel({ dependencyGraphText, impl, execut
 
                   {/* Arrow marker */}
                   <polygon
-                    points={`${x2},${y2} ${x2 - 3},${y2 - 6} ${x2 + 3},${y2 - 6}`}
+                    points={`${x2},${y2} ${x2 - 5},${y2 - 10} ${x2 + 5},${y2 - 10}`}
                     fill={edgeColor}
                     opacity={edgeOpacity}
                     className={edgeClassName}

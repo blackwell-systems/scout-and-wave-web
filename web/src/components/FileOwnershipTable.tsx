@@ -126,8 +126,19 @@ export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileC
   const groupedByRepo: { repo: string; waveGroups: { wave: number; entries: FileOwnershipEntry[] }[] }[] = []
 
   if (hasMultipleRepos) {
+    // Sort repos by their earliest non-scaffold wave so waves display in order
+    const sortedRepos = [...repos].sort((a, b) => {
+      const minWave = (r: string) => {
+        let min = Infinity
+        for (const e of sorted) {
+          if ((e.repo || '') === r && e.wave > 0 && e.wave < min) min = e.wave
+        }
+        return min === Infinity ? 0 : min
+      }
+      return minWave(a) - minWave(b)
+    })
     // Group by repo
-    repos.forEach(repo => {
+    sortedRepos.forEach(repo => {
       const repoEntries = sorted.filter(e => (e.repo || '') === repo)
 
       // Within each repo, group by wave

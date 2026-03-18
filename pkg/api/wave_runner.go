@@ -220,7 +220,7 @@ func runWaveLoop(
 		// If all agents in this wave already have commits on their branches
 		// (e.g. agents ran in a previous server session but merge was not reached),
 		// skip re-launching them and go straight to FinalizeWave.
-		if waveAgentsHaveCommits(repoPath, slug, waveNum, wave.Agents) {
+		if waveAgentsHaveCommitsWithManifest(repoPath, implPath, slug, waveNum, wave.Agents) {
 			publish("wave_resumed", map[string]interface{}{
 				"wave":   waveNum,
 				"reason": "agent branches already have commits from previous session; skipping to merge",
@@ -910,27 +910,55 @@ func (s *Server) makeStageCallback(slug string, publish func(string, interface{}
 }
 
 // waveAgentsHaveCommits returns true when every agent in the wave already has
-// a branch with at least one commit ahead of HEAD in repoPath. This indicates
-// that the agents ran in a previous server session and only the merge step
-// remains — the wave execution step can be safely skipped.
+// a branch with at least one commit ahead of HEAD. For cross-repo IMPLs,
+// each agent's branch is checked in its own repo (resolved from file ownership).
 //
 // Checks slug-scoped branch names first, then falls back to legacy format
 // for backward compatibility with in-progress migrations.
 func waveAgentsHaveCommits(repoPath, slug string, waveNum int, agents []protocol.Agent) bool {
+	return waveAgentsHaveCommitsWithManifest(repoPath, "", slug, waveNum, agents)
+}
+
+// waveAgentsHaveCommitsWithManifest is the cross-repo-aware version.
+// When implPath is non-empty, it loads the manifest to resolve per-agent repos.
+func waveAgentsHaveCommitsWithManifest(repoPath, implPath, slug string, waveNum int, agents []protocol.Agent) bool {
 	if len(agents) == 0 {
 		return false
 	}
+
+	// Build per-agent repo map from file ownership (cross-repo support).
+	agentRepoDir := make(map[string]string) // agent ID -> repo dir
+	if implPath != "" {
+		if manifest, err := protocol.Load(implPath); err == nil {
+			repoParent := filepath.Dir(repoPath)
+			for _, agent := range agents {
+				for _, fo := range manifest.FileOwnership {
+					if fo.Agent == agent.ID && fo.Repo != "" && fo.Repo != filepath.Base(repoPath) {
+						agentRepoDir[agent.ID] = filepath.Join(repoParent, fo.Repo)
+						break
+					}
+				}
+			}
+		}
+	}
+
 	for _, agent := range agents {
+		// Use agent-specific repo if available, otherwise default
+		checkRepo := repoPath
+		if r, ok := agentRepoDir[agent.ID]; ok {
+			checkRepo = r
+		}
+
 		branch := protocol.BranchName(slug, waveNum, agent.ID)
 		legacyBranch := protocol.LegacyBranchName(waveNum, agent.ID)
 
 		// Try slug-scoped branch first, then legacy
 		activeBranch := ""
-		refCheck := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", branch)
+		refCheck := exec.Command("git", "-C", checkRepo, "rev-parse", "--verify", branch)
 		if refCheck.Run() == nil {
 			activeBranch = branch
 		} else {
-			refCheck2 := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", legacyBranch)
+			refCheck2 := exec.Command("git", "-C", checkRepo, "rev-parse", "--verify", legacyBranch)
 			if refCheck2.Run() == nil {
 				activeBranch = legacyBranch
 			} else {
@@ -939,7 +967,7 @@ func waveAgentsHaveCommits(repoPath, slug string, waveNum int, agents []protocol
 		}
 
 		// Check that the branch has at least one commit ahead of HEAD
-		countOut, err := exec.Command("git", "-C", repoPath, "rev-list", "--count", "HEAD.."+activeBranch).Output()
+		countOut, err := exec.Command("git", "-C", checkRepo, "rev-list", "--count", "HEAD.."+activeBranch).Output()
 		if err != nil {
 			return false
 		}

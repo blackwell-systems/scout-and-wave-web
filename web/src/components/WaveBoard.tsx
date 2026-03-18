@@ -561,7 +561,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                     {/* Merge success */}
                     {mergeStatus === 'success' && (
                       <div className="mt-3 space-y-2">
-                        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-lg px-4 py-2 dark:bg-green-950 dark:border-green-800">
+                        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-none px-4 py-2 dark:bg-green-950 dark:border-green-800">
                           <span className="text-green-800 text-sm dark:text-green-400">Wave {wave.wave} merged successfully</span>
                           <button
                             onClick={async () => {
