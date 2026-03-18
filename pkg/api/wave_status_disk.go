@@ -2,7 +2,6 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"os"
 	"os/exec"
@@ -86,7 +85,8 @@ func (s *Server) handleWaveDiskStatus(w http.ResponseWriter, r *http.Request) {
 	// Build agent statuses from completion reports + git state
 	for _, wave := range manifest.Waves {
 		for _, agent := range wave.Agents {
-			branch := fmt.Sprintf("wave%d-agent-%s", wave.Number, agent.ID)
+			branch := protocol.BranchName(manifest.FeatureSlug, wave.Number, agent.ID)
+			legacyBranch := protocol.LegacyBranchName(wave.Number, agent.ID)
 			ds := DiskAgentStatus{
 				Agent:  agent.ID,
 				Wave:   wave.Number,
@@ -103,14 +103,26 @@ func (s *Server) handleWaveDiskStatus(w http.ResponseWriter, r *http.Request) {
 				ds.FailureType = report.FailureType
 				ds.Message = report.Notes
 			} else {
-				hasCommits := diskBranchHasCommits(repoPath, branch)
-				wtPath := filepath.Join(repoPath, ".claude", "worktrees", branch)
+				// Check slug-scoped branch first, fall back to legacy
+				hasCommits := diskBranchHasCommits(repoPath, branch) || diskBranchHasCommits(repoPath, legacyBranch)
+				wtPath := protocol.WorktreeDir(repoPath, manifest.FeatureSlug, wave.Number, agent.ID)
 				_, wtErr := os.Stat(wtPath)
 				hasWorktree := wtErr == nil
+				if !hasWorktree {
+					// Fallback: check legacy worktree path
+					legacyWtPath := filepath.Join(repoPath, ".claude", "worktrees", legacyBranch)
+					_, wtErr = os.Stat(legacyWtPath)
+					hasWorktree = wtErr == nil
+				}
 
 				if hasCommits {
 					ds.Status = "complete"
-					ds.Commit = diskBranchHead(repoPath, branch)
+					// Try slug-scoped branch first, fall back to legacy
+					commit := diskBranchHead(repoPath, branch)
+					if commit == "" {
+						commit = diskBranchHead(repoPath, legacyBranch)
+					}
+					ds.Commit = commit
 				} else if hasWorktree {
 					ds.Status = "failed"
 					ds.Message = "worktree exists but no implementation commits"
@@ -137,9 +149,11 @@ func (s *Server) handleWaveDiskStatus(w http.ResponseWriter, r *http.Request) {
 				break
 			}
 			// Agent has a completion report — verify branch state is consistent
-			branch := fmt.Sprintf("wave%d-agent-%s", wave.Number, agent.ID)
-			branchExists := diskBranchExists(repoPath, branch)
-			if branchExists && !diskBranchMerged(repoPath, branch) {
+			branch := protocol.BranchName(manifest.FeatureSlug, wave.Number, agent.ID)
+			legacyBranch := protocol.LegacyBranchName(wave.Number, agent.ID)
+			branchExists := diskBranchExists(repoPath, branch) || diskBranchExists(repoPath, legacyBranch)
+			branchMerged := diskBranchMerged(repoPath, branch) || diskBranchMerged(repoPath, legacyBranch)
+			if branchExists && !branchMerged {
 				// Branch exists but hasn't been merged yet
 				allMerged = false
 				break

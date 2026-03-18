@@ -8,11 +8,14 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // handleImplDiff serves GET /api/impl/{slug}/diff/{agent}?wave=N&file=path/to/file
 // Returns a unified diff of the agent's branch changes for the given file.
 func (s *Server) handleImplDiff(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
 	agent := r.PathValue("agent")
 	if agent == "" {
 		http.Error(w, "missing agent", http.StatusBadRequest)
@@ -40,8 +43,8 @@ func (s *Server) handleImplDiff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Construct branch name: wave{N}-agent-{letter}
-	branch := fmt.Sprintf("wave%d-agent-%s", wave, strings.ToLower(agent))
+	// Construct slug-scoped branch name
+	branch := protocol.BranchName(slug, wave, strings.ToUpper(agent))
 
 	// Run: git diff main...{branch} -- {file}
 	diff, gitErr := runGitDiff(s.cfg.RepoPath, branch, file)

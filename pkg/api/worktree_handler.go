@@ -12,8 +12,9 @@ import (
 	"time"
 )
 
-// waveAgentBranchRe matches SAW-managed branches like "wave1-agent-A" or "wave1-agent-A2".
-var waveAgentBranchRe = regexp.MustCompile(`^wave\d+-agent-[A-Z]\d*$`)
+// waveAgentBranchRe matches SAW-managed branches in both legacy format
+// ("wave1-agent-A") and slug-scoped format ("saw/my-slug/wave1-agent-A").
+var waveAgentBranchRe = regexp.MustCompile(`^(?:saw/[a-z0-9][-a-z0-9]*/)?wave\d+-agent-[A-Z][2-9]?$`)
 
 // handleListWorktrees serves GET /api/impl/{slug}/worktrees.
 // Parses `git worktree list --porcelain` output, filters to SAW-managed

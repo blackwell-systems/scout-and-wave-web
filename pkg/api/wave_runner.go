@@ -216,7 +216,7 @@ func runWaveLoop(
 		// If all agents in this wave already have commits on their branches
 		// (e.g. agents ran in a previous server session but merge was not reached),
 		// skip re-launching them and go straight to FinalizeWave.
-		if waveAgentsHaveCommits(repoPath, waveNum, wave.Agents) {
+		if waveAgentsHaveCommits(repoPath, slug, waveNum, wave.Agents) {
 			publish("wave_resumed", map[string]interface{}{
 				"wave":   waveNum,
 				"reason": "agent branches already have commits from previous session; skipping to merge",
@@ -860,19 +860,33 @@ func (s *Server) makeStageCallback(slug string, publish func(string, interface{}
 // a branch with at least one commit ahead of HEAD in repoPath. This indicates
 // that the agents ran in a previous server session and only the merge step
 // remains — the wave execution step can be safely skipped.
-func waveAgentsHaveCommits(repoPath string, waveNum int, agents []protocol.Agent) bool {
+//
+// Checks slug-scoped branch names first, then falls back to legacy format
+// for backward compatibility with in-progress migrations.
+func waveAgentsHaveCommits(repoPath, slug string, waveNum int, agents []protocol.Agent) bool {
 	if len(agents) == 0 {
 		return false
 	}
 	for _, agent := range agents {
-		branch := fmt.Sprintf("wave%d-agent-%s", waveNum, agent.ID)
-		// Check that the branch ref exists
+		branch := protocol.BranchName(slug, waveNum, agent.ID)
+		legacyBranch := protocol.LegacyBranchName(waveNum, agent.ID)
+
+		// Try slug-scoped branch first, then legacy
+		activeBranch := ""
 		refCheck := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", branch)
-		if refCheck.Run() != nil {
-			return false // branch doesn't exist
+		if refCheck.Run() == nil {
+			activeBranch = branch
+		} else {
+			refCheck2 := exec.Command("git", "-C", repoPath, "rev-parse", "--verify", legacyBranch)
+			if refCheck2.Run() == nil {
+				activeBranch = legacyBranch
+			} else {
+				return false // neither branch exists
+			}
 		}
+
 		// Check that the branch has at least one commit ahead of HEAD
-		countOut, err := exec.Command("git", "-C", repoPath, "rev-list", "--count", "HEAD.."+branch).Output()
+		countOut, err := exec.Command("git", "-C", repoPath, "rev-list", "--count", "HEAD.."+activeBranch).Output()
 		if err != nil {
 			return false
 		}
