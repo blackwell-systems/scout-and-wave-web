@@ -24,6 +24,7 @@ import ContextViewerPanel from './review/ContextViewerPanel'
 import WorktreePanel from './WorktreePanel'
 import ChatPanel from './ChatPanel'
 import ManifestValidation from './ManifestValidation'
+import AmendPanel from './AmendPanel'
 
 interface ReviewScreenProps {
   slug: string
@@ -37,7 +38,7 @@ interface ReviewScreenProps {
   refreshTick?: number
 }
 
-type PanelKey = 'reactions' | 'pre-mortem' | 'wiring' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'worktrees' | 'context-viewer' | 'validation'
+type PanelKey = 'reactions' | 'pre-mortem' | 'wiring' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'worktrees' | 'context-viewer' | 'validation' | 'amend'
 
 const panels: Array<{ key: PanelKey; label: string }> = [
   // Structure & Plan
@@ -59,6 +60,7 @@ const panels: Array<{ key: PanelKey; label: string }> = [
   // Post-Execution
   { key: 'stub-report', label: 'Stub Report' },
   { key: 'post-merge-checklist', label: 'Post-Merge' },
+  { key: 'amend', label: 'Amend' },
 ]
 
 export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
@@ -363,6 +365,17 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
 
                 {/* Post-Merge Checklist — full width */}
                 {activePanels.includes('post-merge-checklist') && <div className="panel-animate"><PostMergeChecklistPanel checklistText={(impl as any).post_merge_checklist_text} /></div>}
+
+                {/* Amend — full width */}
+                {activePanels.includes('amend') && (
+                  <div className="panel-animate">
+                    <AmendPanel
+                      slug={props.slug}
+                      waves={props.impl.waves}
+                      onAmendComplete={() => props.onRefreshImpl?.(props.slug)}
+                    />
+                  </div>
+                )}
 
                 {/* Quality Gates — full width */}
                 {activePanels.includes('quality-gates') && (
