@@ -33,3 +33,5 @@
   - IMPL doc: docs/IMPL/complete/IMPL-integration-gap-solution.yaml
 - **ai-code-review-gate**: completed 2026-03-19, 2 waves, 5 agents
   - IMPL doc: docs/IMPL/complete/IMPL-ai-code-review-gate.yaml
+- **living-impl-docs**: completed 2026-03-19, 2 waves, 6 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-living-impl-docs.yaml

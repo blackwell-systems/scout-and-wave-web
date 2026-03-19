@@ -1,0 +1,976 @@
+completion_date: "2026-03-19"
+title: Living IMPL Docs (saw amend)
+feature_slug: living-impl-docs
+verdict: SUITABLE
+suitability_assessment: |-
+    All five suitability gate questions resolve cleanly.
+
+    1. File decomposition: Work decomposes cleanly across three repositories with disjoint
+       file ownership. Protocol spec, SDK protocol package, SDK CLI, web API handler, and web
+       frontend are each independently owned. No single file is a bottleneck.
+
+    2. Investigation-first: No unknowns. "Has an agent committed?" is definitively answerable
+       by checking (a) presence of a completion report in the IMPL doc and (b) commits on the
+       worktree branch beyond base_commit. Both checks are deterministic.
+
+    3. Interface discoverability: AmendImplOpts, AmendImplResult, and AmendImplRequest can be
+       fully specified before implementation starts. The CLI flags map directly to struct fields.
+       The web endpoint shape is determined by the CLI contract.
+
+    4. Pre-implementation status: All TODO. No amend-related logic exists anywhere in the
+       codebase. The closest thing is `update-agent-prompt` (single-field update only).
+       Agent prompts adjusted accordingly (implement from scratch).
+
+    5. Parallelization value: HIGH. Three repos with Go build cycles (go build ./... takes
+       ~5-10s each), ~3 files per agent avg, non-trivial logic in the amend engine.
+       Sequential estimate ~60 min; parallel estimate ~20 min (wave 1 runs 4 agents in parallel
+       across repos).
+
+    Design decisions codified here:
+    - Wave immutability detection: use existing completion_reports + base_commit fields (no
+      new locked: field needed). A wave is "merged and immutable" if all its agents have
+      status: complete completion reports. File ownership for those agents is frozen.
+    - --extend-scope: re-launch Scout with current IMPL YAML as context injection. Leverages
+      existing RunScout engine. A dedicated "append-only Scout mode" is deferred.
+    - --redirect-agent validation: check BOTH (a) completion report absent AND (b) no commits
+      on worktree branch beyond base_commit. Both together are authoritative (report could be
+      absent but branch could have commits if agent crashed mid-write).
+    - Amend does NOT re-run suitability gate. It runs only amend-specific invariant checks:
+      no SAW:COMPLETE marker, completed waves are frozen, new file ownership passes I1, new
+      contracts don't redefine frozen contracts.
+
+    Estimated times:
+    - Scout phase: ~15 min (3-repo analysis, interface contracts, IMPL doc)
+    - Agent execution: ~20 min (4 parallel agents in wave 1, then 1 integration wave agent)
+    - Merge and verification: ~5 min
+    Total SAW time: ~40 min
+    Sequential baseline: ~90 min
+    Time savings: ~50 min (~55% faster)
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: protocol/execution-rules.md
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: cmd/saw/amend_impl_cmd.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/amend.go
+      agent: C
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/amend_test.go
+      agent: C
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/api/amend_handler.go
+      agent: D
+      wave: 1
+      action: new
+      repo: scout-and-wave-web
+    - file: web/src/components/AmendPanel.tsx
+      agent: E
+      wave: 1
+      action: new
+      repo: scout-and-wave-web
+    - file: cmd/saw/main.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+      repo: scout-and-wave-go
+    - file: pkg/api/server.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - D
+      repo: scout-and-wave-web
+    - file: implementations/claude-code/prompts/saw-skill.md
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+      repo: scout-and-wave
+    - file: web/src/components/ReviewScreen.tsx
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - E
+      repo: scout-and-wave-web
+interface_contracts:
+    - name: AmendImplOpts
+      description: |-
+        Options struct for the amend engine. Passed to AmendImpl in pkg/protocol/amend.go.
+        Exactly one of AddWave, RedirectAgent, or ExtendScope must be true.
+      definition: |-
+        // AmendImplOpts controls which amend operation to perform.
+        type AmendImplOpts struct {
+            ManifestPath   string // absolute path to the IMPL YAML
+            AddWave        bool   // append a new empty wave skeleton to the manifest
+            RedirectAgent  bool   // re-queue an agent (update task + clear completion report)
+            AgentID        string // required when RedirectAgent=true
+            WaveNum        int    // required when RedirectAgent=true; wave the agent belongs to
+            NewTask        string // required when RedirectAgent=true; replacement task text
+            ExtendScope    bool   // re-engage Scout with current IMPL as context (handled by CLI layer)
+        }
+      location: pkg/protocol/amend.go
+    - name: AmendImplResult
+      description: |-
+        Result returned by AmendImpl. Contains the updated manifest and any warnings
+        emitted during the amend operation (e.g., "agent already has commits on worktree branch").
+      definition: |-
+        // AmendImplResult is the outcome of a successful AmendImpl call.
+        type AmendImplResult struct {
+            ManifestPath  string   // absolute path (same as input)
+            Operation     string   // "add-wave" | "redirect-agent" | "extend-scope"
+            NewWaveNumber int      // only set when Operation=="add-wave"
+            AgentID       string   // only set when Operation=="redirect-agent"
+            Warnings      []string // non-fatal issues detected during amend
+        }
+      location: pkg/protocol/amend.go
+    - name: AmendImpl
+      description: |-
+        Core engine function for amend operations. Validates preconditions (no SAW:COMPLETE,
+        target wave/agent exists, completed waves are frozen) then performs the requested
+        mutation and saves the manifest. Does NOT re-run the full suitability gate.
+        Returns ErrAmendBlocked if a hard precondition fails.
+      definition: |-
+        // AmendImpl performs the amend operation described by opts on the manifest at
+        // opts.ManifestPath, saves the updated manifest, and returns the result.
+        // Returns ErrAmendBlocked (sentinel) if a hard invariant would be violated.
+        func AmendImpl(opts AmendImplOpts) (*AmendImplResult, error)
+      location: pkg/protocol/amend.go
+    - name: ErrAmendBlocked
+      description: |-
+        Sentinel error returned by AmendImpl when a hard precondition fails.
+        Callers check errors.Is(err, ErrAmendBlocked) to distinguish protocol violations
+        from system errors.
+      definition: 'var ErrAmendBlocked = errors.New("amend blocked: protocol invariant violation")'
+      location: pkg/protocol/amend.go
+    - name: AmendImplRequest
+      description: |-
+        JSON request body for POST /api/impl/{slug}/amend in the web API.
+        Mirrors AmendImplOpts but uses JSON-friendly field names.
+      definition: |-
+        // AmendImplRequest is the JSON body for POST /api/impl/{slug}/amend.
+        type AmendImplRequest struct {
+            Operation  string `json:"operation"`   // "add-wave" | "redirect-agent" | "extend-scope"
+            AgentID    string `json:"agent_id,omitempty"`
+            WaveNum    int    `json:"wave_num,omitempty"`
+            NewTask    string `json:"new_task,omitempty"`
+        }
+      location: pkg/api/amend_handler.go
+    - name: AmendImplResponse
+      description: |-
+        JSON response body for POST /api/impl/{slug}/amend.
+        On success: HTTP 200 with result. On protocol violation: HTTP 409 with error.
+      definition: |-
+        // AmendImplResponse is returned by POST /api/impl/{slug}/amend.
+        type AmendImplResponse struct {
+            Success      bool     `json:"success"`
+            Operation    string   `json:"operation"`
+            NewWaveNumber int     `json:"new_wave_number,omitempty"`
+            AgentID      string   `json:"agent_id,omitempty"`
+            Warnings     []string `json:"warnings,omitempty"`
+            Error        string   `json:"error,omitempty"` // present only on failure
+        }
+      location: pkg/api/amend_handler.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Agent A — Protocol Spec: E36 Amend Rule + E15 Amendment
+
+            ### What to implement
+
+            Add execution rule E36 (amend semantics) to
+            `/Users/dayna.blackwell/code/scout-and-wave/protocol/execution-rules.md` and amend
+            E15 to note that amend is invalid after SAW:COMPLETE.
+
+            **E15 amendment** — add this paragraph to the end of the E15 section:
+
+            > **Amend constraint:** Once the `<!-- SAW:COMPLETE -->` marker is written, `saw amend`
+            > is invalid. The orchestrator must reject any amend attempt against a completed IMPL.
+            > To extend completed work, start a new IMPL doc (E36).
+
+            **New rule E36: IMPL Amendment** — add as the next numbered rule after E34:
+
+            ```
+            ## E36: IMPL Amendment (Living IMPL Docs)
+
+            **Trigger:** Orchestrator receives `/saw amend` subcommand on an active IMPL doc
+            (state is not COMPLETE; no SAW:COMPLETE marker present).
+
+            **Three operations:**
+
+            ### E36a: Add Wave
+            `sawtools amend-impl <manifest> --add-wave`
+            - Appends a new wave skeleton (next wave number, empty agents array) to the manifest
+            - Validates the resulting manifest passes `sawtools validate` before saving
+            - New wave starts in WAVE_PENDING state after Scout adds agents via Scout-style
+              interface contract definition
+            - Completed waves (all agents status: complete) are immutable — their file_ownership
+              and interface_contracts entries cannot be changed by this operation
+
+            ### E36b: Redirect Agent
+            `sawtools amend-impl <manifest> --redirect-agent <ID> --wave <N>`
+            - Valid only if the agent has NOT committed yet (checked by: no completion report
+              in completion_reports map AND no git commits on worktree branch beyond base_commit)
+            - Updates the agent's task field in the manifest with new content (read from stdin
+              or --new-task flag)
+            - Clears any partial completion report for the agent (if status != "complete")
+            - Does NOT recreate the worktree (agent re-reads updated task on next launch)
+            - If agent HAS committed: operation is rejected with ErrAmendBlocked
+
+            ### E36c: Extend Scope
+            `sawtools amend-impl <manifest> --extend-scope`
+            - Re-engages Scout with the current IMPL YAML injected as context
+            - Scout receives the full IMPL as a "current plan" and is instructed to append
+              new waves only (not modify existing waves or contracts)
+            - Scout produces an updated IMPL doc with additional waves appended
+            - Human reviews before any new wave executes
+            - The extend-scope path is handled by the CLI/orchestrator layer (not amend.go);
+              `--extend-scope` triggers a Scout agent launch, not a direct mutation
+
+            **Common preconditions for all E36 operations:**
+            1. IMPL doc must not have completion_date set (state != COMPLETE)
+            2. SAW:COMPLETE marker must not be present in the file
+            3. Resulting manifest must pass `sawtools validate` after mutation
+            4. File ownership for agents in completed waves is frozen (cannot be changed)
+            5. Interface contracts listed in frozen_contracts_hash are immutable
+
+            **Failure handling:** If any precondition fails, the operation returns an error
+            with `ErrAmendBlocked` as the sentinel. The IMPL doc is not modified.
+
+            **Related Rules:** See E2 (interface freeze), E14 (IMPL doc write discipline),
+            E15 (completion marker — amend invalid after SAW:COMPLETE)
+            ```
+
+            Also add E36 to the Cross-References section at the bottom of the file.
+
+            ### Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave
+            # Verify the file is valid markdown and the E36 rule is present
+            grep -n "E36" protocol/execution-rules.md
+            grep -n "ErrAmendBlocked" protocol/execution-rules.md
+            grep -n "amend" protocol/execution-rules.md | head -20
+            ```
+
+            ### Constraints
+            - Do not modify any other rule or section (only E15 and the new E36 + cross-reference)
+            - Do not write any Go code — this is a documentation-only agent
+            - Maintain the existing heading hierarchy (## E{N}: Title format)
+            - Cross-reference entry format: `- E36: IMPL Amendment — see E2, E14, E15`
+
+            ### Completion report
+            Write completion report to:
+            `/Users/dayna.blackwell/code/scout-and-wave-web/docs/IMPL/IMPL-living-impl-docs.yaml`
+          files:
+            - protocol/execution-rules.md
+        - id: B
+          task: |-
+            ## Agent B — SDK CLI: sawtools amend-impl command
+
+            ### What to implement
+
+            Create `/Users/dayna.blackwell/code/scout-and-wave-go/cmd/saw/amend_impl_cmd.go`
+            with the `newAmendImplCmd()` cobra command.
+
+            The command signature:
+            ```
+            sawtools amend-impl <manifest-path> [flags]
+
+            Flags:
+              --add-wave              append a new empty wave skeleton to the manifest
+              --redirect-agent string agent ID to redirect (e.g. "B")
+              --wave int              wave number for --redirect-agent (required with --redirect-agent)
+              --new-task string       replacement task text for --redirect-agent
+              --extend-scope          re-engage Scout with current IMPL as context
+            ```
+
+            **Exactly one of --add-wave, --redirect-agent, --extend-scope must be provided.**
+            If none or more than one is set, return a usage error.
+
+            **Implementation for --extend-scope:** Print a message instructing the orchestrator to
+            re-launch Scout with the manifest path as context, then exit 0. The actual Scout
+            re-engagement is handled by the /saw amend orchestrator layer, not this CLI command.
+            Output JSON: `{"operation": "extend-scope", "manifest_path": "<path>", "message": "Re-engage Scout with --impl-context <path>"}`
+
+            **Implementation for --add-wave and --redirect-agent:**
+            Call `protocol.AmendImpl(protocol.AmendImplOpts{...})` and output the result as JSON.
+
+            **JSON output format** (mirrors AmendImplResult):
+            ```json
+            {
+              "success": true,
+              "operation": "add-wave",
+              "new_wave_number": 3,
+              "warnings": []
+            }
+            ```
+            On failure:
+            ```json
+            {
+              "success": false,
+              "operation": "redirect-agent",
+              "error": "amend blocked: agent B has committed work on branch saw/my-feature/wave1-agent-B"
+            }
+            ```
+
+            **For --redirect-agent without --new-task flag:** read new task text from stdin
+            (print "Reading new task from stdin..." to stderr, then read until EOF).
+
+            **For --redirect-agent worktree commit check:** use `git log <base_commit>..<branch> --oneline`
+            in the worktree repo to count commits. If base_commit is empty, skip the git check
+            and rely solely on completion report presence.
+
+            ### Interface contract (from AmendImpl in pkg/protocol/amend.go)
+            Import and call:
+            ```go
+            import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+
+            result, err := protocol.AmendImpl(protocol.AmendImplOpts{
+                ManifestPath:  manifestPath,
+                AddWave:       addWave,
+                RedirectAgent: redirectAgent != "",
+                AgentID:       redirectAgent,
+                WaveNum:       waveNum,
+                NewTask:       newTask,
+            })
+            ```
+
+            ### Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./cmd/saw
+            go vet ./cmd/saw/...
+            go test ./cmd/saw/... -run TestAmend 2>/dev/null || echo "no tests yet, build ok"
+            ```
+
+            ### Constraints
+            - Do NOT edit main.go (that is Agent F's job in wave 2)
+            - Use cobra pattern matching all other commands in cmd/saw/ (see finalize_wave.go for style)
+            - Output JSON on both success and failure (do not use fmt.Println for errors; use os.Exit(1)
+              with JSON error output)
+            - Keep the command file under 150 lines
+
+            ### Completion report
+            Write completion report to:
+            `/Users/dayna.blackwell/code/scout-and-wave-web/docs/IMPL/IMPL-living-impl-docs.yaml`
+          files:
+            - cmd/saw/amend_impl_cmd.go
+        - id: C
+          task: |-
+            ## Agent C — SDK Protocol: AmendImpl engine function
+
+            ### What to implement
+
+            Create `/Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/amend.go` with
+            the `AmendImpl` function, `AmendImplOpts` struct, `AmendImplResult` struct, and
+            `ErrAmendBlocked` sentinel error.
+
+            ### Full implementation spec
+
+            ```go
+            package protocol
+
+            import (
+                "errors"
+                "fmt"
+                "os"
+                "strings"
+            )
+
+            // ErrAmendBlocked is returned when a hard protocol invariant prevents the amend.
+            var ErrAmendBlocked = errors.New("amend blocked: protocol invariant violation")
+
+            type AmendImplOpts struct {
+                ManifestPath  string
+                AddWave       bool
+                RedirectAgent bool
+                AgentID       string
+                WaveNum       int
+                NewTask       string
+                ExtendScope   bool
+            }
+
+            type AmendImplResult struct {
+                ManifestPath  string
+                Operation     string
+                NewWaveNumber int
+                AgentID       string
+                Warnings      []string
+            }
+
+            func AmendImpl(opts AmendImplOpts) (*AmendImplResult, error)
+            ```
+
+            **Precondition checks (in order, fail fast):**
+            1. Load manifest from opts.ManifestPath
+            2. Check `m.CompletionDate != ""` → if set, return `fmt.Errorf("%w: IMPL is complete (completion_date=%s); cannot amend", ErrAmendBlocked, m.CompletionDate)`
+            3. Check raw file for SAW:COMPLETE marker using `strings.Contains(rawBytes, "SAW:COMPLETE")` → same error
+
+            **For AddWave:**
+            1. Find the highest wave number in m.Waves (gaps are fine; new wave = maxWave+1)
+            2. Construct the candidate new wave: `newWave := Wave{Number: maxWave+1, Agents: []Agent{}}`
+            3. Validate BEFORE mutating: append newWave to a copy, run `protocol.Validate(mCopy)`.
+               If validation fails, return error wrapping ErrAmendBlocked — do NOT save the manifest.
+               This avoids needing rollback logic (validate-first pattern).
+            4. If validation passes, append to the real manifest and save
+            5. Return `&AmendImplResult{Operation: "add-wave", NewWaveNumber: maxWave+1}`
+
+            **For RedirectAgent:**
+            1. Find the agent by AgentID in wave WaveNum. If not found: `fmt.Errorf("%w: agent %s not found in wave %d", ErrAmendBlocked, AgentID, WaveNum)`
+            2. Check if completion report exists AND status=="complete":
+               `if cr, ok := m.CompletionReports[AgentID]; ok && cr.Status == "complete" { return ErrAmendBlocked }`
+            3. Check worktree branch for commits (see below)
+            4. Update agent task: find agent in m.Waves[waveIdx].Agents[agentIdx].Task = NewTask
+            5. If partial completion report exists (status != "complete"), delete it from m.CompletionReports
+            6. Save manifest
+            7. Return `&AmendImplResult{Operation: "redirect-agent", AgentID: AgentID}`
+
+            **Worktree commit check for RedirectAgent:**
+            - Construct branch name: `saw/<slug>/wave<N>-agent-<ID>` (use m.FeatureSlug)
+            - If m.Waves[waveIdx].BaseCommit is empty: skip git check, emit Warning "base_commit not set; skipping worktree commit check"
+            - Otherwise: find repo root using `git -C <manifestDir> rev-parse --show-toplevel`
+              (do NOT walk parent directories manually — this approach fails when manifest is
+              in a subdirectory like docs/IMPL/ that is several levels from .git).
+              If git rev-parse fails, emit Warning "could not find repo root; skipping worktree commit check" and skip.
+            - Run `exec.Command("git", "-C", repoRoot, "log", baseCommit+".."+branchName, "--oneline")`
+              (use exec.Command with separate args — not sh -c — to avoid any shell injection risk
+              from baseCommit or branchName values containing special characters)
+            - If git command fails (branch not found): no commits, proceed
+            - If output is non-empty: return `fmt.Errorf("%w: agent %s has commits on branch %s; cannot redirect a committed agent", ErrAmendBlocked, AgentID, branchName)`
+
+            ### Tests to write
+            Create `amend_test.go` in the same package (or `amend_test.go` with `package protocol_test`).
+            Test cases:
+            - `TestAmendImpl_RejectsComplete`: manifest with completion_date set → ErrAmendBlocked
+            - `TestAmendImpl_AddWave`: valid manifest → new wave appended, wave number correct
+            - `TestAmendImpl_AddWave_EmptyWaves`: manifest with no waves → wave 1 added
+            - `TestAmendImpl_RedirectAgent_RejectsComplete`: agent with status:complete report → ErrAmendBlocked
+            - `TestAmendImpl_RedirectAgent_NotFound`: nonexistent agentID → ErrAmendBlocked
+            - `TestAmendImpl_RedirectAgent_Success`: agent with no report → task updated, report cleared
+
+            Use os.MkdirTemp + os.WriteFile for fixture manifests in tests (see existing tests in pkg/protocol/ for patterns).
+
+            ### Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./pkg/protocol/...
+            go vet ./pkg/protocol/...
+            go test ./pkg/protocol/... -run TestAmend -v
+            ```
+
+            ### Constraints
+            - Keep git exec calls using `exec.Command("git", ...)` matching the pattern in worktree.go
+            - Do not import any non-standard library packages beyond what pkg/protocol already uses
+            - ErrAmendBlocked must be a package-level sentinel var so callers can use errors.Is()
+
+            ### Completion report
+            Write completion report to:
+            `/Users/dayna.blackwell/code/scout-and-wave-web/docs/IMPL/IMPL-living-impl-docs.yaml`
+          files:
+            - pkg/protocol/amend.go
+            - pkg/protocol/amend_test.go
+        - id: D
+          task: |-
+            ## Agent D — Web API: POST /api/impl/{slug}/amend handler
+
+            ### What to implement
+
+            Create `/Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/amend_handler.go`
+            with the HTTP handler for amend operations.
+
+            ### Types to define (in amend_handler.go)
+
+            ```go
+            // AmendImplRequest is the JSON body for POST /api/impl/{slug}/amend.
+            type AmendImplRequest struct {
+                Operation string `json:"operation"`          // "add-wave" | "redirect-agent" | "extend-scope"
+                AgentID   string `json:"agent_id,omitempty"`
+                WaveNum   int    `json:"wave_num,omitempty"`
+                NewTask   string `json:"new_task,omitempty"`
+            }
+
+            // AmendImplResponse is returned by POST /api/impl/{slug}/amend.
+            type AmendImplResponse struct {
+                Success       bool     `json:"success"`
+                Operation     string   `json:"operation"`
+                NewWaveNumber int      `json:"new_wave_number,omitempty"`
+                AgentID       string   `json:"agent_id,omitempty"`
+                Warnings      []string `json:"warnings,omitempty"`
+                Error         string   `json:"error,omitempty"`
+            }
+            ```
+
+            ### Handler function
+
+            ```go
+            // handleAmendImpl handles POST /api/impl/{slug}/amend.
+            // Accepts AmendImplRequest JSON body. Returns AmendImplResponse.
+            // HTTP 200 on success, HTTP 409 on ErrAmendBlocked, HTTP 400 on bad input,
+            // HTTP 500 on system errors.
+            func (s *Server) handleAmendImpl(w http.ResponseWriter, r *http.Request)
+            ```
+
+            **Handler logic:**
+            1. Extract slug from `r.PathValue("slug")`
+            2. Decode `AmendImplRequest` from body
+            3. Validate operation is one of: "add-wave", "redirect-agent", "extend-scope"
+            4. Find implPath using `s.findImplPath(slug)`
+            5. Map request to `protocol.AmendImplOpts`:
+               - operation "add-wave" → `opts.AddWave = true`
+               - operation "redirect-agent" → `opts.RedirectAgent = true`, set AgentID, WaveNum, NewTask
+               - operation "extend-scope" → respond immediately with HTTP 200 and JSON:
+                 `{"success": true, "operation": "extend-scope", "warnings": ["extend-scope: re-launch Scout with IMPL as context (orchestrator-level operation)"]}`
+                 (The web UI should show this message; actual Scout re-engagement is user-triggered)
+            6. Call `protocol.AmendImpl(opts)` (import from scout-and-wave-go)
+            7. On `errors.Is(err, protocol.ErrAmendBlocked)` → HTTP 409
+            8. On other error → HTTP 500
+            9. On success → HTTP 200 with AmendImplResponse
+            10. Broadcast `s.globalBroker.broadcast("impl_list_updated")` on success
+
+            ### Also register a route helper (do NOT edit server.go — that's wave 2)
+            Add a package-level function:
+            ```go
+            // RegisterAmendRoutes registers amend-related HTTP routes on the given mux.
+            // Called from server.go New() in wave 2.
+            func (s *Server) RegisterAmendRoutes() {
+                s.mux.HandleFunc("POST /api/impl/{slug}/amend", s.handleAmendImpl)
+            }
+            ```
+
+            ### Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web
+            go build ./pkg/api/...
+            go vet ./pkg/api/...
+            go test ./pkg/api/... -run TestAmend 2>/dev/null || echo "no amend tests yet, build ok"
+            ```
+
+            ### Constraints
+            - Do NOT edit server.go — Agent F registers the route in wave 2 by calling s.RegisterAmendRoutes()
+            - Use the existing `s.findImplPath(slug)` helper (defined in impl.go) for path resolution
+            - Use `errors.Is(err, protocol.ErrAmendBlocked)` pattern for the 409 case
+            - Match the JSON style of existing handlers (json.NewEncoder(w).Encode(...))
+
+            ### Completion report
+            Write completion report to:
+            `/Users/dayna.blackwell/code/scout-and-wave-web/docs/IMPL/IMPL-living-impl-docs.yaml`
+          files:
+            - pkg/api/amend_handler.go
+        - id: E
+          task: |-
+            ## Agent E — Web Frontend: AmendPanel React component
+
+            ### What to implement
+
+            Create `/Users/dayna.blackwell/code/scout-and-wave-web/web/src/components/AmendPanel.tsx`
+            — a React panel component that lets the user perform amend operations from the web UI.
+
+            ### Component interface
+
+            ```tsx
+            interface AmendPanelProps {
+              slug: string          // IMPL slug
+              waves: WaveInfo[]     // from IMPLDocResponse
+              onAmendComplete?: () => void  // callback to refresh parent after successful amend
+            }
+
+            export default function AmendPanel(props: AmendPanelProps): JSX.Element
+            ```
+
+            Import `WaveInfo` from `../types`.
+
+            ### UI behavior
+
+            **Three tabs/sections** matching the three operations:
+
+            1. **Add Wave** tab:
+               - Single button: "Append New Wave"
+               - On click: POST /api/impl/{slug}/amend with `{"operation":"add-wave"}`
+               - On success: show "Wave N appended. Reload to see updated wave structure." toast
+               - On HTTP 409: show error text from response
+
+            2. **Redirect Agent** tab:
+               - Dropdowns: Wave (from props.waves) → Agent (auto-populated from selected wave's agents)
+               - Text area: "New Task" (required, multiline)
+               - Button: "Redirect Agent"
+               - On click: POST /api/impl/{slug}/amend with
+                 `{"operation":"redirect-agent","agent_id":"<ID>","wave_num":<N>,"new_task":"<text>"}`
+               - On success: show "Agent X redirected. New task saved." toast
+               - On HTTP 409: show error text (likely "agent already committed")
+
+            3. **Extend Scope** tab:
+               - Explanatory text: "Re-engage Scout with the current IMPL as context to add new waves.
+                 This is an orchestrator-level operation — use /saw amend --extend-scope in Claude Code."
+               - Button: "Mark for Extend Scope" (informational, sends the request to get the Scout guidance)
+               - On click: POST /api/impl/{slug}/amend with `{"operation":"extend-scope"}`
+               - On success: show the warning text from the response in a highlighted info box
+
+            **API call helper** (inline in file, do not create a separate api.ts entry):
+            ```ts
+            async function callAmend(slug: string, body: object): Promise<{
+              success: boolean
+              operation: string
+              new_wave_number?: number
+              agent_id?: string
+              warnings?: string[]
+              error?: string
+            }>
+            ```
+            Use `fetch('/api/impl/${slug}/amend', {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)})`
+
+            ### Styling
+            - Use Tailwind CSS classes matching existing components (see ReviewScreen.tsx for class patterns)
+            - Tab bar: `flex gap-2 border-b mb-4`
+            - Active tab: `border-b-2 border-blue-500 text-blue-600 font-medium`
+            - Error/warning display: `bg-red-50 text-red-700 rounded p-2` (error) or
+              `bg-yellow-50 text-yellow-700 rounded p-2` (warning)
+            - Success message: `bg-green-50 text-green-700 rounded p-2`
+
+            **Do NOT import from any new npm packages** — use only React, existing Tailwind, and
+            existing project utilities.
+
+            ### Integration note (wave 2 wires this in)
+            Agent F in wave 2 will add `<AmendPanel>` to ReviewScreen.tsx. You only need to
+            create the component file; do not edit ReviewScreen.tsx.
+
+            ### Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web
+            npm run build 2>&1 | tail -20
+            ```
+            (The build will succeed even without ReviewScreen.tsx importing AmendPanel, since
+            the component is exported and tree-shaking doesn't error on unused exports.)
+
+            ### Completion report
+            Write completion report to:
+            `/Users/dayna.blackwell/code/scout-and-wave-web/docs/IMPL/IMPL-living-impl-docs.yaml`
+          files:
+            - web/src/components/AmendPanel.tsx
+      base_commit: c0727678f465be2264feae0b027cbc440f9f9fcc
+    - number: 2
+      type: integration
+      agents:
+        - id: F
+          task: |-
+            ## Agent F — Integration: Wire amend into CLI, web server, ReviewScreen, and saw-skill.md
+
+            This is an integration wave agent. You run on the main branch after wave 1 merges.
+            Wire up the components built in wave 1.
+
+            ### 1. Register sawtools amend-impl in CLI main.go
+
+            Edit `/Users/dayna.blackwell/code/scout-and-wave-go/cmd/saw/main.go`:
+            Add `newAmendImplCmd()` to the `AddCommand(...)` call list, in alphabetical order
+            (after `newAnalyzeDepsCmd()`, before `newAnalyzeSuitabilityCmd()`).
+
+            ### 2. Register amend route in web server.go
+
+            Edit `/Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/server.go`:
+            In the `New()` function, find the block of `s.mux.HandleFunc(...)` calls and add:
+            ```go
+            s.RegisterAmendRoutes()
+            ```
+            Place it after the existing `s.RegisterConflictRoutes()` call (around line 119).
+
+            ### 3. Add AmendPanel to ReviewScreen.tsx
+
+            Edit `/Users/dayna.blackwell/code/scout-and-wave-web/web/src/components/ReviewScreen.tsx`:
+
+            a. Add import at top of file:
+            ```tsx
+            import AmendPanel from './AmendPanel'
+            ```
+
+            b. Add 'amend' to the PanelKey type union:
+            ```tsx
+            type PanelKey = 'pre-mortem' | 'stub-report' | 'file-ownership' | ... | 'validation' | 'amend'
+            ```
+
+            c. Add entry to the panels array (in the Post-Execution group):
+            ```tsx
+            { key: 'amend', label: 'Amend' },
+            ```
+
+            d. Add the panel rendering (find the section that switches on activePanel and renders
+            components — add):
+            ```tsx
+            {activePanel === 'amend' && (
+              <AmendPanel
+                slug={props.slug}
+                waves={props.impl.waves}
+                onAmendComplete={() => props.onRefreshImpl?.(props.slug)}
+              />
+            )}
+            ```
+
+            ### 4. Add /saw amend documentation to saw-skill.md
+
+            Edit `/Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md`:
+
+            a. In the Invocation Modes table, add three rows after the existing `/saw status` row:
+            ```
+            | `/saw amend --add-wave` | Append new wave to active IMPL |
+            | `/saw amend --redirect-agent <ID> --wave <N>` | Re-queue a pre-commit agent |
+            | `/saw amend --extend-scope` | Re-engage Scout to expand IMPL scope |
+            ```
+
+            b. Add a new ## /saw amend section after the existing ## /saw status section:
+            ```markdown
+            ## /saw amend
+
+            Extends or adjusts an in-progress IMPL doc without starting over.
+            Invalid after SAW:COMPLETE (E36).
+
+            ### /saw amend --add-wave
+            Appends an empty wave skeleton to the IMPL doc. Use when you need additional
+            implementation work beyond what the original Scout planned. After adding the wave,
+            launch Scout in "extend" mode to populate agent definitions for the new wave.
+
+            **Orchestrator steps:**
+            1. Run: `sawtools amend-impl <manifest> --add-wave`
+            2. Review the JSON output (new wave number)
+            3. Re-engage Scout to define agents for the new wave: `/saw scout <description of new work>`
+               with instruction to append agents to wave N of the existing IMPL
+
+            ### /saw amend --redirect-agent <ID> --wave <N>
+            Updates an agent's task and re-queues it. Valid only if the agent has not yet
+            committed any work (E36b).
+
+            **Orchestrator steps:**
+            1. Run: `sawtools amend-impl <manifest> --redirect-agent <ID> --wave <N> --new-task "<new task>"`
+            2. If blocked (agent committed): use `sawtools amend-impl ... --add-wave` to add a
+               follow-up wave with corrected work instead
+            3. Re-launch the agent: `/saw wave --impl <slug>`
+
+            ### /saw amend --extend-scope
+            Re-engages Scout with the full current IMPL as context to produce additional waves.
+
+            **Orchestrator steps:**
+            1. Prepare context: read the current IMPL doc (use raw API or Read tool on the YAML file)
+            2. Launch Scout: `Agent(subagent_type=scout)` with prompt:
+               "The following is the current IMPL doc in progress. Analyze the existing waves and
+               contracts (treat them as frozen — do not modify). Add new waves for the following
+               additional work: <description>. Output the full updated IMPL YAML."
+            3. Validate the Scout output: `sawtools validate --fix <manifest>`
+            4. Present updated IMPL for human review before executing new waves
+            ```
+
+            ### Verification gates
+            ```bash
+            # Gate 1: SDK CLI builds with new command
+            cd /Users/dayna.blackwell/code/scout-and-wave-go
+            go build ./cmd/saw
+            go vet ./cmd/saw/...
+
+            # Gate 2: Web builds
+            cd /Users/dayna.blackwell/code/scout-and-wave-web
+            go build ./...
+            go vet ./pkg/api/...
+
+            # Gate 3: Frontend builds
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web
+            npm run build 2>&1 | tail -5
+
+            # Gate 4: saw-skill.md contains amend docs
+            grep -n "amend" /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md | head -10
+            ```
+
+            ### Completion report
+            Write completion report to:
+            `/Users/dayna.blackwell/code/scout-and-wave-web/docs/IMPL/IMPL-living-impl-docs.yaml`
+          files:
+            - cmd/saw/main.go
+            - pkg/api/server.go
+            - web/src/components/ReviewScreen.tsx
+            - implementations/claude-code/prompts/saw-skill.md
+          dependencies:
+            - B
+            - C
+            - D
+            - E
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          description: Build scout-and-wave-go SDK
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./...
+          required: true
+          description: Full test suite for scout-and-wave-go SDK
+          repo: scout-and-wave-go
+        - type: build
+          command: go build ./...
+          required: true
+          description: Build scout-and-wave-web binary
+          repo: scout-and-wave-web
+post_merge_checklist:
+    groups:
+        - title: SDK Build Verification
+          items:
+            - description: Build scout-and-wave-go CLI with new amend-impl command
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./cmd/saw && go test ./pkg/protocol/... -run TestAmend
+            - description: Run full Go SDK test suite
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go test ./...
+        - title: Web App Build Verification
+          items:
+            - description: Build scout-and-wave-web binary with new amend handler
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./...
+            - description: Build frontend with AmendPanel and updated ReviewScreen
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build
+        - title: Route Registration Check
+          items:
+            - description: Verify amend route is registered in server
+              command: grep -n "amend" /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/server.go
+            - description: Verify amend-impl is registered in sawtools main.go
+              command: grep -n "amend" /Users/dayna.blackwell/code/scout-and-wave-go/cmd/saw/main.go
+        - title: Protocol Documentation Check
+          items:
+            - description: Verify E36 rule is present in execution-rules.md
+              command: grep -n "E36" /Users/dayna.blackwell/code/scout-and-wave/protocol/execution-rules.md
+            - description: Verify saw-skill.md documents /saw amend
+              command: grep -n "amend" /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md
+completion_reports:
+    A:
+        status: complete
+        branch: saw/living-impl-docs/wave1-agent-A
+        commit: 8823c6c
+        files_changed:
+            - protocol/execution-rules.md
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/living-impl-docs/wave1-agent-B
+        commit: 1f8b0d5
+        files_changed:
+            - cmd/saw/amend_impl_cmd.go
+        files_created:
+            - cmd/saw/amend_impl_cmd.go
+        verification: 'PASS (syntax only) -- pkg/protocol/amend.go is in Agent C parallel worktree; finalize-wave post-merge build will verify full linkage. Only undefined symbols: protocol.AmendImpl, protocol.AmendImplOpts, protocol.ErrAmendBlocked.'
+    C:
+        status: complete
+        branch: saw/living-impl-docs/wave1-agent-C
+        commit: e4b331c
+        files_changed:
+            - pkg/protocol/amend.go
+            - pkg/protocol/amend_test.go
+        files_created:
+            - pkg/protocol/amend.go
+            - pkg/protocol/amend_test.go
+        tests_added:
+            - TestAmendImpl_RejectsComplete
+            - TestAmendImpl_RejectsComplete_SAWMarker
+            - TestAmendImpl_AddWave
+            - TestAmendImpl_AddWave_EmptyWaves
+            - TestAmendImpl_RedirectAgent_RejectsComplete
+            - TestAmendImpl_RedirectAgent_NotFound
+            - TestAmendImpl_RedirectAgent_Success
+            - TestAmendImpl_RedirectAgent_ClearsPartialReport
+            - TestAmendImpl_RedirectAgent_NoBaseCommit
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/living-impl-docs/wave1-agent-D
+        commit: c5da2ac
+        files_changed:
+            - pkg/api/amend_handler.go
+        files_created:
+            - pkg/api/amend_handler.go
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/living-impl-docs/wave1-agent-E
+        commit: 6f2ee7b
+        files_changed:
+            - web/src/components/AmendPanel.tsx
+        files_created:
+            - web/src/components/AmendPanel.tsx
+        verification: PASS
+    F:
+        status: complete
+        branch: main
+        commit: 32a4871
+        files_changed:
+            - cmd/saw/main.go
+            - pkg/api/server.go
+            - web/src/components/ReviewScreen.tsx
+            - implementations/claude-code/prompts/saw-skill.md
+        verification: PASS
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: |-
+            Agent C's AmendImpl worktree commit check fails to find .git directory when
+            walking up from the manifest path (manifest is in docs/IMPL/ which is several
+            levels from repo root). The fallback uses manifest directory, which doesn't
+            have .git, so git commands fail silently.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            The worktree commit check should use a robust git root finder: run
+            `git -C <manifestDir> rev-parse --show-toplevel` to find repo root reliably,
+            then use that for subsequent git log calls. If git rev-parse fails, emit a
+            Warning and skip the commit check rather than hard-failing.
+        - scenario: |-
+            Agent F edits ReviewScreen.tsx and accidentally breaks the PanelKey type
+            by missing existing entries in the union, causing TypeScript compile errors
+            in the frontend build.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Agent F must read ReviewScreen.tsx in full before editing. The PanelKey
+            type currently has 13 entries; adding 'amend' brings it to 14. TypeScript
+            errors surface immediately in npm run build — gate 3 catches this.
+        - scenario: |-
+            The scout-and-wave-web repo depends on scout-and-wave-go via go.mod replace
+            directive pointing to .engine (see CI workflow). Agent D's amend_handler.go
+            imports protocol.AmendImpl which is new in wave 1. If the replace directive
+            isn't updated or the .engine symlink is stale, Agent D's build will fail.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent D should verify `go build ./pkg/api/...` succeeds before completing.
+            If it fails with "protocol.AmendImpl undefined", add a note in the completion
+            report. The integration agent (F) should run go mod tidy in scout-and-wave-web
+            after ensuring the engine dependency is up to date.
+        - scenario: |-
+            protocol.Load() in manifest.go rejects manifests with completion reports for
+            agent IDs not found in waves. If AmendImpl adds a new wave with no agents
+            (empty Agents slice), and a stale completion report somehow references a
+            wave-2 agent from a prior amend, Load() will reject it.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            AmendImpl adds only an empty Wave{} with no agents — no completion reports
+            are written. The Load() guard only fires for completion_reports keys not
+            found in any wave.Agents. Empty waves have no agents to conflict with.
+        - scenario: |-
+            The /saw amend saw-skill.md documentation in wave 2 conflicts with Agent A's
+            E36 protocol rule updates if Agent F edits saw-skill.md based on a stale
+            understanding of E36's finalized semantics.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Agent F should read the updated execution-rules.md E36 section (written by
+            Agent A in wave 1, merged before wave 2 runs) and ensure saw-skill.md
+            documentation is consistent. Wave sequencing (I3) guarantees Agent A's work
+            is merged before Agent F runs.
+state: WAVE_PENDING
