@@ -58,6 +58,19 @@ export interface PreMortem {
   rows: PreMortemRow[]
 }
 
+export interface ReactionEntry {
+  action: 'retry' | 'send-fix-prompt' | 'pause' | 'auto-scout'
+  max_attempts?: number
+}
+
+export interface ReactionsConfig {
+  transient?:    ReactionEntry
+  timeout?:      ReactionEntry
+  fixable?:      ReactionEntry
+  needs_replan?: ReactionEntry
+  escalate?:     ReactionEntry
+}
+
 export interface AgentPromptEntry {
   wave: number
   agent: string
@@ -83,6 +96,7 @@ export interface IMPLDocResponse {
   stub_report_text: string
   agent_prompts: AgentPromptEntry[]
   pre_mortem?: PreMortem
+  reactions?: ReactionsConfig
 }
 
 export interface IMPLListEntry {
