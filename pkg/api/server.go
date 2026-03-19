@@ -28,6 +28,7 @@ type Server struct {
 	mux              *http.ServeMux
 	broker           *sseBroker      // unexported; used by wave.go handlers
 	globalBroker     *globalBroker   // fans out global SSE events (impl_list_updated, etc.)
+	notificationBus  *NotificationBus // central hub for user-facing notifications
 	activeRuns       sync.Map        // slug -> struct{}; tracks in-progress wave runs
 	scoutRuns        sync.Map        // runID -> context.CancelFunc; tracks in-progress scout runs
 	reviseCancels    sync.Map        // runID -> context.CancelFunc; tracks in-progress revise runs
@@ -61,13 +62,15 @@ func (s *Server) getConfiguredRepos() []RepoEntry {
 
 // New creates a Server with the given Config and registers all routes.
 func New(cfg Config) *Server {
+	globalBroker := newGlobalBroker()
 	s := &Server{
 		cfg: cfg,
 		mux: http.NewServeMux(),
 		broker: &sseBroker{
 			clients: make(map[string][]chan SSEEvent),
 		},
-		globalBroker:    newGlobalBroker(),
+		globalBroker:    globalBroker,
+		notificationBus: NewNotificationBus(globalBroker),
 		stages:          newStageManager(cfg.IMPLDir),
 		pipelineTracker: newPipelineTracker(cfg.IMPLDir),
 		progressTracker: NewProgressTracker(),
@@ -138,6 +141,10 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("GET /api/config", s.handleGetConfig)
 	s.mux.HandleFunc("POST /api/config", s.handleSaveConfig)
 
+	// Notification preferences
+	s.mux.HandleFunc("GET /api/notifications/preferences", s.handleGetNotificationPrefs)
+	s.mux.HandleFunc("POST /api/notifications/preferences", s.handleSaveNotificationPrefs)
+
 	// v0.18.0-G — CONTEXT.md viewer
 	s.mux.HandleFunc("GET /api/context", s.handleGetContext)
 	s.mux.HandleFunc("PUT /api/context", s.handlePutContext)
@@ -169,6 +176,15 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("GET /api/journal/{wave}/{agent}/summary", s.handleJournalSummary)
 	s.mux.HandleFunc("GET /api/journal/{wave}/{agent}/checkpoints", s.handleJournalCheckpoints)
 	s.mux.HandleFunc("POST /api/journal/{wave}/{agent}/restore", s.handleJournalRestore)
+
+	// Program layer — PROGRAM manifest management, tier execution, contracts, replan
+	s.mux.HandleFunc("GET /api/programs", s.handleListPrograms)
+	s.mux.HandleFunc("GET /api/program/{slug}", s.handleGetProgramStatus)
+	s.mux.HandleFunc("GET /api/program/{slug}/tier/{n}", s.handleGetTierStatus)
+	s.mux.HandleFunc("POST /api/program/{slug}/tier/{n}/execute", s.handleExecuteTier)
+	s.mux.HandleFunc("GET /api/program/{slug}/contracts", s.handleGetProgramContracts)
+	s.mux.HandleFunc("POST /api/program/{slug}/replan", s.handleReplanProgram)
+	s.mux.HandleFunc("GET /api/program/events", s.handleProgramEvents)
 
 	// Autonomy layer (v0.58.0)
 	// Note: pipeline_updated is broadcast by queue and daemon handlers when state changes.

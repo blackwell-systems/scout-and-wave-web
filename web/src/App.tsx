@@ -15,10 +15,17 @@ import { ChevronLeft, ChevronRight, Settings, Search } from 'lucide-react'
 import ModelPicker from './components/ModelPicker'
 import ResumeBanner from './components/ResumeBanner'
 import PipelineView from './components/PipelineView'
+import ProgramBoard from './components/ProgramBoard'
+import { listPrograms } from './programApi'
 import { InterruptedSession } from './types'
+import type { ProgramDiscovery } from './types/program'
+import { useNotifications } from './hooks/useNotifications'
+import ToastContainer from './components/ToastContainer'
 
 
 export default function App() {
+  const { toasts, dismissToast } = useNotifications()
+
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
   const [entries, setEntries] = useState<IMPLListEntry[]>([])
   const [liveView, setLiveView] = useState<LiveView>(null)
@@ -44,6 +51,9 @@ export default function App() {
   const [sseRefreshTick, setSseRefreshTick] = useState(0)
   const [showPalette, setShowPalette] = useState(false)
   const [showPipeline, setShowPipeline] = useState(false)
+  const [showPrograms, setShowPrograms] = useState(false)
+  const [programs, setPrograms] = useState<ProgramDiscovery[]>([])
+  const [selectedProgramSlug, setSelectedProgramSlug] = useState<string | null>(null)
 
   // Close model picker on Escape
   useEffect(() => {
@@ -76,7 +86,7 @@ export default function App() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
 
-  const [rightWidthPx, setRightWidthPx] = useState(() => Math.min(340, Math.round(window.innerWidth * 0.30)))
+  const [rightWidthPx, setRightWidthPx] = useState(() => Math.min(680, Math.round(window.innerWidth * 0.60)))
   const rightDividerMouseDown = (e: React.MouseEvent) => {
     e.preventDefault()
     const onMove = (mv: MouseEvent) => {
@@ -107,6 +117,7 @@ export default function App() {
 
   useEffect(() => {
     listImpls().then(setEntries).catch(() => {})
+    listPrograms().then(setPrograms).catch(() => {})
     fetchInterruptedSessions().then(setInterruptedSessions).catch(() => {})
     getConfig().then(config => {
       if (config.repos && config.repos.length > 0) {
@@ -292,6 +303,16 @@ export default function App() {
             Pipeline
           </button>
           <button
+            onClick={() => {
+              setShowPrograms(v => !v)
+              if (!showPrograms) { setShowPipeline(false); setSelectedSlug(null); setImpl(null); setLiveView(null) }
+              if (!showPrograms && programs.length > 0) setSelectedProgramSlug(programs[0].slug)
+            }}
+            className={`flex items-center justify-center text-sm font-medium px-6 transition-colors border-r ${showPrograms ? 'bg-violet-100 text-violet-800 border-violet-300 dark:bg-violet-950/60 dark:text-violet-400 dark:border-violet-800' : 'bg-violet-50/40 hover:bg-violet-100/60 text-violet-700 border-violet-200 dark:bg-violet-950/20 dark:hover:bg-violet-900/40 dark:text-violet-500 dark:border-violet-900'}`}
+          >
+            Programs
+          </button>
+          <button
             onClick={() => setLiveView(v => v === 'scout' ? null : 'scout')}
             className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-r bg-blue-50/60 hover:bg-blue-100/80 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-400 dark:border-blue-800"
           >
@@ -398,7 +419,19 @@ export default function App() {
 
         {/* Center column */}
         <div className="flex-1 overflow-y-auto min-w-0">
-          {showPipeline ? (
+          {showPrograms ? (
+            selectedProgramSlug ? (
+              <ProgramBoard
+                programSlug={selectedProgramSlug}
+                onSelectImpl={(slug) => { setShowPrograms(false); handleSelect(slug) }}
+              />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
+                <p className="text-sm font-medium text-foreground">No programs found</p>
+                <p className="text-xs text-muted-foreground mt-1">Run <code className="font-mono">/saw program plan</code> to create a PROGRAM manifest</p>
+              </div>
+            )
+          ) : showPipeline ? (
             <PipelineView
               onSelectImpl={(slug) => { setShowPipeline(false); handleSelect(slug) }}
               onClose={() => setShowPipeline(false)}
@@ -494,6 +527,8 @@ export default function App() {
         onClose={() => setShowPalette(false)}
       />
     )}
+
+    <ToastContainer toasts={toasts} onDismiss={dismissToast} />
     </>
   )
 }
