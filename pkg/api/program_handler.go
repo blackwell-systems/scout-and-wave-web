@@ -3,6 +3,7 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -172,7 +173,7 @@ func (s *Server) handleExecuteTier(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, _, err = s.resolveProgramPath(slug)
+	programPath, repoPath, err := s.resolveProgramPath(slug)
 	if err != nil {
 		activeProgramRuns.Delete(slug)
 		http.Error(w, err.Error(), http.StatusNotFound)
@@ -188,24 +189,18 @@ func (s *Server) handleExecuteTier(w http.ResponseWriter, r *http.Request) {
 	// Notify that execution started
 	s.globalBroker.broadcast("program_list_updated")
 
-	// Launch tier execution in background (stub for now — implementation by Agent D)
 	go func() {
 		defer activeProgramRuns.Delete(slug)
 		defer s.globalBroker.broadcast("program_list_updated")
 
-		// Placeholder: runProgramTier will be implemented by Agent D
-		// For now, just emit a started and complete event for testing
-		publish("program_tier_started", map[string]interface{}{
-			"program_slug": slug,
-			"tier":         tierNum,
-		})
-
-		// TODO: Call runProgramTier(programPath, slug, tierNum, repoPath, publish)
-		// programPath and repoPath will be resolved again inside runProgramTier
-		publish("program_tier_complete", map[string]interface{}{
-			"program_slug": slug,
-			"tier":         tierNum,
-		})
+		if err := runProgramTier(programPath, slug, tierNum, repoPath, publish); err != nil {
+			log.Printf("runProgramTier(%s, tier=%d) error: %v", slug, tierNum, err)
+			publish("program_tier_failed", map[string]interface{}{
+				"program_slug": slug,
+				"tier":         tierNum,
+				"error":        err.Error(),
+			})
+		}
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
