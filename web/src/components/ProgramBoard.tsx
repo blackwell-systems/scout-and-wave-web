@@ -42,9 +42,19 @@ function getImplStatusBadge(status: string): JSX.Element {
   }
 }
 
-function ImplCard({ impl, onClick }: { impl: ImplTierStatus; onClick?: () => void }): JSX.Element {
+function ImplCard({
+  impl,
+  onClick,
+  waveProgress,
+}: {
+  impl: ImplTierStatus
+  onClick?: () => void
+  waveProgress?: string
+}): JSX.Element {
   const borderColor = getImplStatusColor(impl.status)
   const clickable = onClick !== undefined
+  // Prefer SSE-updated waveProgress over impl.wave_progress (SSE is more current)
+  const progressLabel = waveProgress ?? impl.wave_progress
 
   return (
     <div
@@ -61,13 +71,17 @@ function ImplCard({ impl, onClick }: { impl: ImplTierStatus; onClick?: () => voi
         <span className="text-sm font-semibold text-foreground truncate">{impl.slug}</span>
         {getImplStatusBadge(impl.status)}
       </div>
-      {/* Progress bar placeholder - would need wave data to show accurate progress */}
       {(impl.status === 'executing' || impl.status === 'in-progress' || impl.status === 'scouting') && (
-        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-          <div
-            className="bg-blue-500 h-1.5 rounded-full animate-pulse"
-            style={{ width: '50%' }}
-          />
+        <div className="flex items-center gap-2">
+          <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+            <div
+              className="bg-blue-500 h-1.5 rounded-full animate-pulse"
+              style={{ width: '50%' }}
+            />
+          </div>
+          {progressLabel && (
+            <span className="text-xs text-muted-foreground whitespace-nowrap">{progressLabel}</span>
+          )}
         </div>
       )}
     </div>
@@ -80,12 +94,14 @@ function TierSection({
   isBlocked,
   onExecuteTier,
   onSelectImpl,
+  waveProgress,
 }: {
   tier: TierStatus
   isActive: boolean
   isBlocked: boolean
   onExecuteTier?: () => void
   onSelectImpl?: (implSlug: string) => void
+  waveProgress?: Record<string, string>
 }): JSX.Element {
   const [executing, setExecuting] = useState(false)
 
@@ -138,6 +154,7 @@ function TierSection({
               key={impl.slug}
               impl={impl}
               onClick={onSelectImpl ? () => onSelectImpl(impl.slug) : undefined}
+              waveProgress={waveProgress?.[impl.slug]}
             />
           ))}
         </div>
@@ -151,8 +168,12 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
+  const [waveProgress, setWaveProgress] = useState<Record<string, string>>({})
 
   useEffect(() => {
+    // Reset wave progress when programSlug changes
+    setWaveProgress({})
+
     // Initial fetch
     const loadStatus = async () => {
       try {
@@ -167,9 +188,12 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
     }
     void loadStatus()
 
-    // Subscribe to SSE events
-    const eventSource = new EventSource('/api/program/events')
-    
+    // SSE reconnection with exponential backoff
+    let retryDelay = 1000  // ms, start at 1s
+    const maxRetryDelay = 30000  // cap at 30s
+    let retryTimeout: ReturnType<typeof setTimeout> | null = null
+    let currentEventSource: EventSource | null = null
+
     const handleEvent = (e: MessageEvent) => {
       const data = JSON.parse(e.data)
       if (data.program_slug === programSlug) {
@@ -178,18 +202,51 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
       }
     }
 
-    eventSource.addEventListener('program_tier_started', handleEvent)
-    eventSource.addEventListener('program_tier_complete', handleEvent)
-    eventSource.addEventListener('program_impl_started', handleEvent)
-    eventSource.addEventListener('program_impl_complete', handleEvent)
-    eventSource.addEventListener('program_complete', handleEvent)
-    eventSource.addEventListener('program_blocked', handleEvent)
+    const handleWaveProgress = (e: MessageEvent) => {
+      const data = JSON.parse(e.data)
+      if (data.program_slug === programSlug && data.impl_slug && data.total_waves > 0) {
+        setWaveProgress(prev => ({
+          ...prev,
+          [data.impl_slug]: `Wave ${data.current_wave}/${data.total_waves}`
+        }))
+      }
+    }
 
-    eventSource.onopen = () => setConnected(true)
-    eventSource.onerror = () => setConnected(false)
+    const connect = () => {
+      if (currentEventSource) {
+        currentEventSource.close()
+      }
+      const es = new EventSource('/api/program/events')
+      currentEventSource = es
+
+      es.addEventListener('program_tier_started', handleEvent)
+      es.addEventListener('program_tier_complete', handleEvent)
+      es.addEventListener('program_impl_started', handleEvent)
+      es.addEventListener('program_impl_complete', handleEvent)
+      es.addEventListener('program_complete', handleEvent)
+      es.addEventListener('program_blocked', handleEvent)
+      // Listen for wave progress events (U3)
+      es.addEventListener('program_impl_wave_progress', handleWaveProgress)
+
+      es.onopen = () => {
+        setConnected(true)
+        retryDelay = 1000  // reset on successful connection
+      }
+      es.onerror = () => {
+        setConnected(false)
+        es.close()
+        retryTimeout = setTimeout(() => {
+          retryDelay = Math.min(retryDelay * 2, maxRetryDelay)
+          connect()
+        }, retryDelay)
+      }
+    }
+
+    connect()
 
     return () => {
-      eventSource.close()
+      if (retryTimeout) clearTimeout(retryTimeout)
+      if (currentEventSource) currentEventSource.close()
     }
   }, [programSlug])
 
@@ -294,6 +351,7 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
                 isBlocked={isBlocked}
                 onExecuteTier={isActive && !tier.complete ? () => handleExecuteTier(tier.number) : undefined}
                 onSelectImpl={onSelectImpl}
+                waveProgress={waveProgress}
               />
             )
           })}
