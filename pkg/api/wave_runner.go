@@ -782,6 +782,13 @@ func (s *Server) handleWaveFinalize(w http.ResponseWriter, r *http.Request) {
 					"wave":  wave,
 					"error": err.Error(),
 				})
+				s.notificationBus.Notify(NotificationEvent{
+					Type:     NotifyMergeFailed,
+					Slug:     slug,
+					Title:    fmt.Sprintf("Wave %d Merge Failed", wave),
+					Message:  fmt.Sprintf("Finalization failed: %s", err.Error()),
+					Severity: "error",
+				})
 				return
 			}
 		} else {
@@ -796,6 +803,18 @@ func (s *Server) handleWaveFinalize(w http.ResponseWriter, r *http.Request) {
 				for _, gate := range finalizeResult.GateResults {
 					publish("quality_gate_result", gate)
 				}
+				// Emit cleanup results (worktree/branch removal)
+				if finalizeResult.CleanupResult != nil {
+					for _, status := range finalizeResult.CleanupResult.Agents {
+						if status.WorktreeRemoved || status.BranchDeleted {
+							publish("merge_output", map[string]interface{}{
+								"slug":  slug,
+								"wave":  wave,
+								"chunk": fmt.Sprintf("Cleaned up agent %s: worktree=%v, branch=%v\n", status.Agent, status.WorktreeRemoved, status.BranchDeleted),
+							})
+						}
+					}
+				}
 			}
 
 			if err != nil {
@@ -803,6 +822,13 @@ func (s *Server) handleWaveFinalize(w http.ResponseWriter, r *http.Request) {
 					"slug":  slug,
 					"wave":  wave,
 					"error": err.Error(),
+				})
+				s.notificationBus.Notify(NotificationEvent{
+					Type:     NotifyMergeFailed,
+					Slug:     slug,
+					Title:    fmt.Sprintf("Wave %d Merge Failed", wave),
+					Message:  fmt.Sprintf("Finalization failed: %s", err.Error()),
+					Severity: "error",
 				})
 				return
 			}
@@ -819,6 +845,13 @@ func (s *Server) handleWaveFinalize(w http.ResponseWriter, r *http.Request) {
 			"slug":   slug,
 			"wave":   wave,
 			"status": "success",
+		})
+		s.notificationBus.Notify(NotificationEvent{
+			Type:     NotifyWaveComplete,
+			Slug:     slug,
+			Title:    fmt.Sprintf("Wave %d Complete", wave),
+			Message:  "Wave finalized successfully and merged to main",
+			Severity: "success",
 		})
 	}()
 }

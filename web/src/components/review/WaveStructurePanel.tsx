@@ -84,10 +84,10 @@ function Orb({ color, filled, filling, size = 20, type }: {
       width={size}
       height={size}
       viewBox={`0 0 ${size} ${size}`}
-      className="flex-shrink-0"
+      className={`flex-shrink-0 ${filling && !justFilled ? 'scale-110' : ''}`}
       style={{
         filter: filled ? `drop-shadow(0 0 ${justFilled ? 12 : 6}px ${color}${justFilled ? 'aa' : '60'})` : undefined,
-        transform: justFilled ? 'scale(1.35)' : filling ? 'scale(1.1)' : 'scale(1)',
+        transform: justFilled ? 'scale(1.35)' : undefined,
         transition: justFilled
           ? 'transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.15s ease-out'
           : 'transform 0.5s cubic-bezier(0.22, 1, 0.36, 1), filter 0.5s ease-out',
@@ -199,43 +199,46 @@ function getAgentBoxClassName(
 }
 
 export default function WaveStructurePanel({ impl, executionState }: WaveStructurePanelProps): JSX.Element {
-  const sortedWaves = [...impl.waves].sort((a, b) => a.number - b.number)
+  const sortedWaves = useMemo(() => [...impl.waves].sort((a, b) => a.number - b.number), [impl.waves])
   const isComplete = impl.doc_status === 'complete'
   const isLive = executionState?.isLive ?? false
 
-  // Build timeline nodes
-  const nodes: TimelineNode[] = []
+  // Build timeline nodes — memoized to avoid triggering the segment-layout effect on every render
+  const nodes: TimelineNode[] = useMemo(() => {
+    const result: TimelineNode[] = []
 
-  nodes.push({ type: 'orchestrator', label: 'Scout', description: 'Analyze codebase and produce IMPL doc' })
+    result.push({ type: 'orchestrator', label: 'Scout', description: 'Analyze codebase and produce IMPL doc' })
 
-  if (impl.scaffold.required) {
-    nodes.push({
-      type: 'scaffold',
-      label: 'Scaffold',
-      scaffoldFiles: impl.scaffold.files?.length ?? 0,
+    if (impl.scaffold.required) {
+      result.push({
+        type: 'scaffold',
+        label: 'Scaffold',
+        scaffoldFiles: impl.scaffold.files?.length ?? 0,
+      })
+    }
+
+    sortedWaves.forEach((wave, i) => {
+      const agents = wave.agents ?? []
+      result.push({
+        type: 'wave',
+        label: `Wave ${wave.number}`,
+        agents,
+        agentCount: agents.length,
+        waveNum: wave.number,
+      })
+      result.push({
+        type: 'merge',
+        label: 'Merge',
+        description: i < sortedWaves.length - 1
+          ? `Merge ${wave.agents.length} branches, verify, gate Wave ${wave.number + 1}`
+          : `Merge ${wave.agents.length} branches, final verification`,
+        waveNum: wave.number,
+      })
     })
-  }
 
-  sortedWaves.forEach((wave, i) => {
-    const agents = wave.agents ?? []
-    nodes.push({
-      type: 'wave',
-      label: `Wave ${wave.number}`,
-      agents,
-      agentCount: agents.length,
-      waveNum: wave.number,
-    })
-    nodes.push({
-      type: 'merge',
-      label: 'Merge',
-      description: i < sortedWaves.length - 1
-        ? `Merge ${wave.agents.length} branches, verify, gate Wave ${wave.number + 1}`
-        : `Merge ${wave.agents.length} branches, final verification`,
-      waveNum: wave.number,
-    })
-  })
-
-  nodes.push({ type: 'complete', label: 'Complete', description: 'All waves merged and verified' })
+    result.push({ type: 'complete', label: 'Complete', description: 'All waves merged and verified' })
+    return result
+  }, [impl.scaffold.required, impl.scaffold.files, sortedWaves])
 
   // Compute filled state per node.
   // Uses executionState when available (live or disk-seeded), falls back to
@@ -394,7 +397,11 @@ export default function WaveStructurePanel({ impl, executionState }: WaveStructu
 
           {nodes.map((node, i) => {
             const filled = isNodeFilled(node)
-            const filling = isLive && filled
+            let filling = isLive && filled
+            // Scaffold orb only fills when scaffold execution completes
+            if (node.type === 'scaffold' && isLive && executionState) {
+              filling = executionState.scaffoldStatus === 'complete'
+            }
             const color = getNodeColor(node)
             const orbSize = node.type === 'merge' ? 12 : 20
 

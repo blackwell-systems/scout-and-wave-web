@@ -1,0 +1,699 @@
+completion_date: "2026-03-18"
+title: Program Layer Web App Integration
+feature_slug: program-layer-web-integration
+verdict: SUITABLE
+suitability_assessment: |
+    The Program Layer Web App Integration (Phase 3 from the roadmap) adds program-level
+    views, API endpoints, SSE events, and a background runner to the scout-and-wave-web
+    application. The Go SDK (scout-and-wave-go) already has all required types, parsing,
+    validation, status computation, discovery, tier gates, and contract freezing — these
+    are prerequisites from Phases 1-2.
+
+    This IMPL creates 6 deliverables: (1) Program API handlers (6 endpoints), (2) Program
+    SSE events (7 event types), (3) TypeScript types and API client functions, (4) Program
+    runner background loop, (5) Program Board React component, (6) Cross-IMPL dependency
+    graph and contracts panel components.
+
+    All work is in the scout-and-wave-web repo. No changes needed in scout-and-wave-go
+    since the SDK types are already complete.
+
+    ## Scout Verification Summary
+
+    **Prerequisites verified:**
+    - ✓ All Go SDK types exist in scout-and-wave-go/pkg/protocol/program_types.go
+    - ✓ All Go SDK functions exist: ParseProgramManifest, ValidateProgram, GetProgramStatus,
+      ListPrograms, RunTierGate, FreezeContracts
+    - ✓ Supporting types exist: ProgramStatusResult, TierStatusDetail, ContractStatus,
+      ProgramDiscovery, ImplTierStatus, TierGateResult, FreezeContractsResult
+    - ✓ Existing infrastructure: globalBroker.broadcastJSON, runWaveLoopFunc seam,
+      DependencyGraphPanel pattern reference
+
+    **File ownership verification:**
+    - ✓ All 11 target files are new (none exist yet)
+    - ✓ Wave 1 agents (A, B, C, D) have disjoint file ownership
+    - ✓ Wave 2 agents (E, F) have disjoint file ownership
+    - ✓ No cross-wave file conflicts
+
+    **Dependency structure:**
+    - ✓ Wave 1: 4 independent agents (parallel execution)
+    - ✓ Wave 2: 2 agents depending ONLY on Agent C outputs (parallel after Wave 1)
+    - ✓ No same-wave dependencies (I2 compliance)
+    - ✓ Integration connectors identified for post-Wave-2 wiring
+test_command: go test -v ./... && cd web && npx vitest run
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/api/program_handler.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/api/program_handler_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/api/program_events.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/api/program_events_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: web/src/types/program.ts
+      agent: C
+      wave: 1
+      action: new
+    - file: web/src/programApi.ts
+      agent: C
+      wave: 1
+      action: new
+    - file: pkg/api/program_runner.go
+      agent: D
+      wave: 1
+      action: new
+    - file: pkg/api/program_runner_test.go
+      agent: D
+      wave: 1
+      action: new
+    - file: web/src/components/ProgramBoard.tsx
+      agent: E
+      wave: 2
+      action: new
+    - file: web/src/components/ProgramContractsPanel.tsx
+      agent: E
+      wave: 2
+      action: new
+    - file: web/src/components/ProgramDependencyGraph.tsx
+      agent: F
+      wave: 2
+      action: new
+interface_contracts:
+    - name: ProgramStatusResponse
+      description: |
+        JSON response shape for GET /api/program/{slug}. Wraps the Go SDK's
+        ProgramStatusResult with additional web-specific fields.
+      definition: |
+        type ProgramStatusResponse struct {
+          ProgramSlug      string                         `json:"program_slug"`
+          Title            string                         `json:"title"`
+          State            string                         `json:"state"`
+          CurrentTier      int                            `json:"current_tier"`
+          TierStatuses     []protocol.TierStatusDetail    `json:"tier_statuses"`
+          ContractStatuses []protocol.ContractStatus       `json:"contract_statuses"`
+          Completion       protocol.ProgramCompletion      `json:"completion"`
+          IsExecuting      bool                            `json:"is_executing"`
+        }
+      location: pkg/api/program_handler.go
+    - name: ProgramListResponse
+      description: |
+        JSON response shape for GET /api/programs. Returns all discovered programs.
+      definition: |
+        type ProgramListResponse struct {
+          Programs []protocol.ProgramDiscovery `json:"programs"`
+        }
+      location: pkg/api/program_handler.go
+    - name: TierExecuteRequest
+      description: |
+        JSON request body for POST /api/program/{slug}/tier/{n}/execute.
+      definition: |
+        type TierExecuteRequest struct {
+          Auto bool `json:"auto,omitempty"`
+        }
+      location: pkg/api/program_handler.go
+    - name: ProgramSSEEvents
+      description: |
+        SSE event names and payload shapes for program lifecycle events.
+        Published via globalBroker.broadcastJSON for program-level events.
+      definition: |
+        // Event names (string constants):
+        // "program_tier_started"    - {program_slug, tier}
+        // "program_tier_complete"   - {program_slug, tier}
+        // "program_impl_started"    - {program_slug, impl_slug}
+        // "program_impl_complete"   - {program_slug, impl_slug}
+        // "program_contract_frozen" - {program_slug, contract_name, tier}
+        // "program_complete"        - {program_slug}
+        // "program_blocked"         - {program_slug, reason, impl_slug?}
+      location: pkg/api/program_events.go
+    - name: TypeScript ProgramTypes
+      description: |
+        Frontend TypeScript types mirroring Go SDK program types. Used by
+        ProgramBoard and dependency graph components.
+      definition: |
+        export interface ProgramStatus {
+          program_slug: string
+          title: string
+          state: string
+          current_tier: number
+          tier_statuses: TierStatus[]
+          contract_statuses: ContractStatus[]
+          completion: ProgramCompletion
+          is_executing: boolean
+        }
+        export interface TierStatus {
+          number: number
+          description: string
+          impl_statuses: ImplTierStatus[]
+          complete: boolean
+        }
+        export interface ImplTierStatus {
+          slug: string
+          status: string
+        }
+        export interface ContractStatus {
+          name: string
+          location: string
+          freeze_at: string
+          frozen: boolean
+          frozen_at_tier?: number
+        }
+        export interface ProgramCompletion {
+          tiers_complete: number
+          tiers_total: number
+          impls_complete: number
+          impls_total: number
+          total_agents: number
+          total_waves: number
+        }
+        export interface ProgramDiscovery {
+          path: string
+          slug: string
+          state: string
+          title: string
+        }
+      location: web/src/types/program.ts
+    - name: programApi functions
+      description: |
+        TypeScript API client functions for program endpoints. Follows the
+        pattern established in api.ts.
+      definition: |
+        export async function listPrograms(): Promise<ProgramDiscovery[]>
+        export async function fetchProgramStatus(slug: string): Promise<ProgramStatus>
+        export async function fetchTierStatus(slug: string, tier: number): Promise<TierStatus>
+        export async function executeTier(slug: string, tier: number, auto?: boolean): Promise<void>
+        export async function fetchProgramContracts(slug: string): Promise<ContractStatus[]>
+        export async function replanProgram(slug: string): Promise<void>
+      location: web/src/programApi.ts
+    - name: runProgramTier
+      description: |
+        Background goroutine that drives tier execution for a program.
+        Analogous to runWaveLoop in wave_runner.go. Iterates through tiers,
+        launching Scouts and wave execution for each IMPL in the current tier.
+      definition: |
+        func runProgramTier(
+          programPath string,
+          programSlug string,
+          tierNumber int,
+          repoPath string,
+          publish func(event string, data interface{}),
+        ) error
+      location: pkg/api/program_runner.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+            Program API HTTP handlers — 6 endpoints that expose program-level operations
+            to the web frontend. These handlers delegate to the existing Go SDK functions
+            in `github.com/blackwell-systems/scout-and-wave-go/pkg/protocol`.
+
+            ## Interfaces to Implement
+            Implement these HTTP handlers on the `*Server` receiver:
+
+            1. `handleListPrograms` — GET /api/programs
+               - Call `protocol.ListPrograms(dir)` scanning all configured repos for
+                 PROGRAM-*.yaml files (same multi-repo pattern as `handleListImpls`)
+               - Return JSON array of ProgramDiscovery objects
+
+            2. `handleGetProgramStatus` — GET /api/program/{slug}
+               - Find PROGRAM-{slug}.yaml across configured repos
+               - Call `protocol.ParseProgramManifest(path)` then `protocol.GetProgramStatus(manifest, repoPath)`
+               - Add `is_executing` field by checking `s.activeProgramRuns` sync.Map
+               - Return ProgramStatusResponse JSON
+
+            3. `handleGetTierStatus` — GET /api/program/{slug}/tier/{n}
+               - Parse manifest, extract tier N from status result
+               - Return single TierStatusDetail JSON
+
+            4. `handleExecuteTier` — POST /api/program/{slug}/tier/{n}/execute
+               - Guard against concurrent runs via `s.activeProgramRuns` sync.Map
+               - Launch `runProgramTier` in background goroutine (defined by Agent D)
+               - Return 202 Accepted
+
+            5. `handleGetProgramContracts` — GET /api/program/{slug}/contracts
+               - Parse manifest, return contract statuses from GetProgramStatus result
+
+            6. `handleReplanProgram` — POST /api/program/{slug}/replan
+               - Placeholder: return 501 Not Implemented with message
+                 "Planner re-engagement not yet implemented (Phase 4)"
+
+            Add `activeProgramRuns sync.Map` field to Server struct (in this file, not server.go).
+
+            ## Helper: resolveProgramPath
+            Create a `resolveProgramPath(slug string) (string, string, error)` method on Server
+            that searches configured repos for PROGRAM-{slug}.yaml. Pattern:
+            - Read saw.config.json for repos list (same as resolveIMPLPath)
+            - Search `docs/` directory in each repo for PROGRAM-{slug}.yaml
+            - Return (programPath, repoPath, nil) or error
+
+            ## Tests to Write
+            1. TestHandleListPrograms_Empty — no programs found returns empty array
+            2. TestHandleGetProgramStatus_NotFound — returns 404
+            3. TestHandleGetProgramStatus_Valid — returns correct JSON shape
+            4. TestHandleExecuteTier_Conflict — returns 409 when already running
+            5. TestHandleReplanProgram_NotImplemented — returns 501
+
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/api/ -run TestProgram -count=1
+            ```
+
+            ## Constraints
+            - Do NOT modify server.go — route registration will be done by Integration Agent
+            - Use `r.PathValue("slug")` and `r.PathValue("n")` for path parameters (Go 1.22+ style)
+            - Follow the same error handling pattern as wave_runner.go and impl_handlers.go
+            - Import protocol types from "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+            - All response types use json tags matching the TypeScript interfaces
+          files:
+            - pkg/api/program_handler.go
+            - pkg/api/program_handler_test.go
+        - id: B
+          task: |
+            ## What to Implement
+            Program-level SSE event infrastructure. Define event name constants and a
+            program-specific publish helper that broadcasts through the existing globalBroker.
+
+            ## Interfaces to Implement
+            1. String constants for 7 program SSE event types:
+               - ProgramEventTierStarted = "program_tier_started"
+               - ProgramEventTierComplete = "program_tier_complete"
+               - ProgramEventImplStarted = "program_impl_started"
+               - ProgramEventImplComplete = "program_impl_complete"
+               - ProgramEventContractFrozen = "program_contract_frozen"
+               - ProgramEventComplete = "program_complete"
+               - ProgramEventBlocked = "program_blocked"
+
+            2. `ProgramPublisher` — a function type and constructor:
+               ```go
+               type ProgramPublisher func(event string, data interface{})
+
+               func newProgramPublisher(broker *globalBroker) ProgramPublisher
+               ```
+               The publisher wraps `broker.broadcastJSON(event, data)` which already exists
+               in global_events.go. Do NOT create a new broadcastWithData method.
+
+            3. `handleProgramEvents` — GET /api/program/events SSE endpoint
+               - Same pattern as handleGlobalEvents but filters to program_* events only
+               - Clients subscribe to this for program-level updates
+               - Include keepalive pings every 30 seconds
+
+            ## Tests to Write
+            1. TestProgramEventConstants — verify all 7 constants are defined
+            2. TestNewProgramPublisher — verify it broadcasts correctly
+            3. TestHandleProgramEvents_Connection — verify SSE headers and initial heartbeat
+
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/api/ -run TestProgram -count=1
+            ```
+
+            ## Constraints
+            - Do NOT modify global_events.go — extend the broker pattern in this new file
+            - Use existing globalBroker.broadcastJSON method (already exists, see line 69 of global_events.go)
+            - Follow the same SSE format as handleGlobalEvents (Content-Type, Cache-Control, etc.)
+          files:
+            - pkg/api/program_events.go
+            - pkg/api/program_events_test.go
+        - id: C
+          task: |
+            ## What to Implement
+            TypeScript type definitions and API client functions for the program layer.
+            These are consumed by Wave 2 React components.
+
+            ## Interfaces to Implement
+            1. Create `web/src/types/program.ts` with these types (mirror Go SDK types):
+               - ProgramStatus (matches ProgramStatusResponse from handler)
+               - TierStatus (matches TierStatusDetail)
+               - ImplTierStatus
+               - ContractStatus
+               - ProgramCompletion
+               - ProgramDiscovery
+
+            2. Create `web/src/programApi.ts` with API client functions:
+               - `listPrograms()` — GET /api/programs
+               - `fetchProgramStatus(slug)` — GET /api/program/{slug}
+               - `fetchTierStatus(slug, tier)` — GET /api/program/{slug}/tier/{tier}
+               - `executeTier(slug, tier, auto?)` — POST /api/program/{slug}/tier/{tier}/execute
+               - `fetchProgramContracts(slug)` — GET /api/program/{slug}/contracts
+               - `replanProgram(slug)` — POST /api/program/{slug}/replan
+
+            Follow the exact pattern from `web/src/api.ts`:
+            - `fetch()` with error checking
+            - Throw on non-ok status
+            - Type-safe return types
+
+            3. Add a `useProgramEvents` hook pattern comment at the bottom of programApi.ts
+               showing how to subscribe to the program SSE stream:
+               ```typescript
+               // Usage: const es = new EventSource('/api/program/events')
+               // es.addEventListener('program_tier_complete', handler)
+               ```
+
+            ## Tests to Write
+            No unit tests needed — these are type definitions and thin fetch wrappers.
+            TypeScript compilation via `npm run build` is the verification gate.
+
+            ## Verification Gate
+            ```bash
+            cd web && npm run build
+            ```
+
+            ## Constraints
+            - Type field names must use snake_case to match Go JSON tags
+            - Do NOT re-export from types.ts — keep program types in their own module
+            - Follow existing code style: async functions, explicit return types
+          files:
+            - web/src/types/program.ts
+            - web/src/programApi.ts
+        - id: D
+          task: |
+            ## What to Implement
+            The program runner — a background loop analogous to `wave_runner.go` that drives
+            tier execution. It iterates through IMPLs in a tier, launching Scout and wave
+            execution for each, then runs tier gates and freezes contracts.
+
+            ## Interfaces to Implement
+            ```go
+            // runProgramTier executes all IMPLs in a single tier.
+            // Called from handleExecuteTier (Agent A) in a background goroutine.
+            // For each IMPL in the tier:
+            //   1. Find or create the IMPL doc (scout if needed)
+            //   2. Execute waves via runWaveLoop (reuses existing wave runner)
+            //   3. After all IMPLs complete, run tier gates
+            //   4. Freeze contracts at this tier boundary
+            func runProgramTier(
+              programPath string,
+              programSlug string,
+              tierNumber int,
+              repoPath string,
+              publish func(event string, data interface{}),
+            ) error
+            ```
+
+            ## Implementation Details
+            The function should:
+            1. Parse the PROGRAM manifest via `protocol.ParseProgramManifest(programPath)`
+            2. Find the tier by number
+            3. For each IMPL slug in the tier:
+               a. Publish "program_impl_started" event
+               b. Resolve the IMPL doc path (search docs/IMPL/ directories)
+               c. Call `runWaveLoopFunc(implPath, implSlug, repoPath, implPublish, onStage)`
+                  where implPublish wraps both the IMPL-level and program-level publishers
+               d. On success, publish "program_impl_complete"
+               e. On failure, publish "program_blocked" and return error
+            4. After all IMPLs complete:
+               a. Run tier gates: `protocol.RunTierGate(manifest, tierNumber, repoPath)`
+               b. If gates pass, freeze contracts: `protocol.FreezeContracts(manifest, tierNumber, repoPath)`
+               c. Publish "program_tier_complete"
+            5. Return nil on success
+
+            Note: IMPLs within a tier execute SEQUENTIALLY in this initial implementation.
+            Parallel IMPL execution within a tier is a future enhancement (requires concurrent
+            runWaveLoop goroutines with proper locking).
+
+            ## Tests to Write
+            1. TestRunProgramTier_TierNotFound — returns error for invalid tier number
+            2. TestRunProgramTier_PublishesEvents — verify correct event sequence
+            3. TestRunProgramTier_GateFailure — verify program_blocked on gate failure
+
+            Use the existing test pattern: override `runWaveLoopFunc` with a test double
+            (same seam used by wave_runner_test.go).
+
+            ## Verification Gate
+            ```bash
+            go build ./...
+            go vet ./...
+            go test ./pkg/api/ -run TestRunProgram -count=1
+            ```
+
+            ## Constraints
+            - Reuse `runWaveLoopFunc` variable (the test seam from wave_runner.go) — do NOT
+              call runWaveLoop directly
+            - Import protocol from "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+            - Sequential IMPL execution only (no goroutine fan-out within a tier yet)
+            - Create a no-op onStage callback for the runWaveLoopFunc call (program runner
+              does not track per-IMPL stage state in this initial version)
+          files:
+            - pkg/api/program_runner.go
+            - pkg/api/program_runner_test.go
+      base_commit: 920869b72366db5f86b5729b4afbd1001221ea1b
+    - number: 2
+      agents:
+        - id: E
+          task: |
+            ## What to Implement
+            Two React components: ProgramBoard (the main program view) and
+            ProgramContractsPanel (cross-IMPL contract display with freeze status).
+
+            ## ProgramBoard Component
+            A top-level view showing the tier structure with IMPL progress bars.
+            Layout (reference the ASCII art in roadmap Section 10.1):
+
+            ```
+            Tier 1 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+              [data-model] ████████████ COMPLETE
+              [auth]       ████████░░░░ Wave 2/3
+
+            Tier 2 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ (blocked on Tier 1)
+              [api-routes]     ░░░░░░░░░░░░ Pending
+              [frontend-shell] ░░░░░░░░░░░░ Pending
+            ```
+
+            Props:
+            ```typescript
+            interface ProgramBoardProps {
+              programSlug: string
+              onSelectImpl?: (implSlug: string) => void  // navigate to WaveBoard
+            }
+            ```
+
+            Implementation:
+            1. Fetch program status via `fetchProgramStatus(programSlug)` on mount
+            2. Subscribe to program SSE events via EventSource('/api/program/events')
+            3. Render tiers as horizontal sections with IMPL cards inside each
+            4. Each IMPL card shows: slug, status badge, progress bar (based on wave completion)
+            5. Clicking an IMPL card calls `onSelectImpl(implSlug)` to navigate to WaveBoard
+            6. Blocked tiers show a lock icon and "Blocked on Tier N" label
+            7. Include an "Execute Tier" button for the current tier (calls executeTier API)
+            8. Show overall program completion: "3/6 IMPLs complete, Tier 2 active"
+
+            Use existing UI patterns:
+            - Card/CardHeader/CardTitle from `components/ui/card`
+            - ProgressBar component for IMPL progress
+            - Status badges similar to WaveBoard agent status indicators
+            - Tailwind classes matching existing dark theme
+
+            ## ProgramContractsPanel Component
+            Shows cross-IMPL contracts with freeze status.
+
+            Props:
+            ```typescript
+            interface ProgramContractsPanelProps {
+              programSlug: string
+            }
+            ```
+
+            Implementation:
+            1. Fetch contracts via `fetchProgramContracts(programSlug)`
+            2. Render as a table/list: Name | Location | Freeze At | Status
+            3. Frozen contracts show a lock icon and green badge
+            4. Pending contracts show an unlocked icon and yellow badge
+            5. Listen for "program_contract_frozen" SSE events to update status
+
+            ## Tests to Write
+            No unit tests — TypeScript compilation is the verification gate.
+            Components follow existing patterns (WaveBoard, PipelineView) which
+            also have no unit tests.
+
+            ## Verification Gate
+            ```bash
+            cd web && npm run build
+            ```
+
+            ## Constraints
+            - Import types from '../types/program' (NOT from '../types')
+            - Import API functions from '../programApi'
+            - Follow existing component patterns: functional components, useState/useEffect hooks
+            - Use Tailwind CSS classes consistent with existing dark/light theme support
+            - Do NOT modify App.tsx — Integration Agent will wire ProgramBoard into navigation
+          files:
+            - web/src/components/ProgramBoard.tsx
+            - web/src/components/ProgramContractsPanel.tsx
+          dependencies:
+            - C
+        - id: F
+          task: |
+            ## What to Implement
+            ProgramDependencyGraph — a visual DAG showing IMPL dependencies colored
+            by status. Extends the existing DependencyGraphPanel pattern from
+            feature-level to program-level.
+
+            ## Component Design
+            Props:
+            ```typescript
+            interface ProgramDependencyGraphProps {
+              programSlug: string
+              status?: ProgramStatus  // optional pre-fetched status to avoid double-fetch
+            }
+            ```
+
+            Implementation:
+            1. If `status` prop not provided, fetch via `fetchProgramStatus(programSlug)`
+            2. Build a DAG from the program's tier structure:
+               - Nodes = IMPL slugs
+               - Edges = depends_on relationships (from tier_statuses -> impl_statuses)
+               - Node color = status (complete=green, executing=blue, pending=gray, blocked=red)
+            3. Render using Canvas 2D (same approach as DependencyGraphPanel):
+               - Tiers laid out left-to-right (Tier 1 leftmost)
+               - IMPLs within a tier stacked vertically
+               - Arrows from dependency IMPL to dependent IMPL
+               - Node labels show IMPL slug + status text
+            4. Support click on nodes to navigate to IMPL detail
+
+            Reference `web/src/components/review/DependencyGraphPanel.tsx` for:
+            - Canvas rendering pattern
+            - Node layout algorithm
+            - Color scheme from agentColors
+            - Click hit-testing
+
+            The key difference: DependencyGraphPanel shows agents within waves;
+            ProgramDependencyGraph shows IMPLs within tiers. The layout logic is
+            analogous but the data source is ProgramStatus instead of IMPL manifest.
+
+            ## Interfaces to Call
+            - `fetchProgramStatus` from '../programApi'
+            - ProgramStatus, TierStatus, ImplTierStatus from '../types/program'
+
+            ## Tests to Write
+            No unit tests — Canvas-based components are verified by build + visual inspection.
+
+            ## Verification Gate
+            ```bash
+            cd web && npm run build
+            ```
+
+            ## Constraints
+            - Import types from '../types/program'
+            - Use Canvas 2D API (not SVG or a third-party graph library)
+            - Follow the color conventions from DependencyGraphPanel
+            - Support both dark and light mode via CSS variables
+            - Keep the component self-contained (no global state)
+          files:
+            - web/src/components/ProgramDependencyGraph.tsx
+          dependencies:
+            - C
+      base_commit: 78d18a9ba5784cbd665a3c84a07daf0c7add02b5
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: false
+        - type: test
+          command: go test ./pkg/api/ -run TestProgram
+          required: true
+        - type: custom
+          command: cd web && npm run build
+          required: true
+          description: Verify frontend builds without TypeScript errors
+post_merge_checklist:
+    groups: []
+completion_reports:
+    A:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/saw/program-layer-web-integration/wave1-agent-A
+        branch: saw/program-layer-web-integration/wave1-agent-A
+        commit: 8ccd5a5d2a4a5e454688be4fdfe14b165340dde7
+        files_changed:
+            - pkg/api/program_handler.go
+            - pkg/api/program_handler_test.go
+        notes: auto-committed by orchestrator (API agent)
+    B:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/saw/program-layer-web-integration/wave1-agent-B
+        branch: saw/program-layer-web-integration/wave1-agent-B
+        commit: 4e09ee21504baf83581111824b6cab5cf35dba52
+        files_changed:
+            - pkg/api/program_events.go
+            - pkg/api/program_events_test.go
+        notes: auto-committed by orchestrator (API agent)
+    C:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/saw/program-layer-web-integration/wave1-agent-C
+        branch: saw/program-layer-web-integration/wave1-agent-C
+        commit: 8fe1ded9813110411742ab7be3a0b660aaf8fbf5
+        files_changed:
+            - web/src/programApi.ts
+            - web/src/types/program.ts
+        notes: auto-committed by orchestrator (API agent)
+    D:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/saw/program-layer-web-integration/wave1-agent-D
+        branch: saw/program-layer-web-integration/wave1-agent-D
+        commit: 95a37e6ff55fcf8eeef5500cbb5f42760a51adf2
+        files_changed:
+            - pkg/api/program_runner.go
+            - pkg/api/program_runner_test.go
+        notes: auto-committed by orchestrator (API agent)
+    E:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/saw/program-layer-web-integration/wave2-agent-E
+        branch: saw/program-layer-web-integration/wave2-agent-E
+        commit: 0840fe5723771690afc8869f41546534a627a8c8
+        files_changed:
+            - web/src/components/ProgramBoard.tsx
+            - web/src/components/ProgramContractsPanel.tsx
+        notes: auto-committed by orchestrator (API agent)
+    F:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/saw/program-layer-web-integration/wave2-agent-F
+        branch: saw/program-layer-web-integration/wave2-agent-F
+        commit: cbf50502e433c773ae814fe9b28306f729b67069
+        files_changed:
+            - web/src/components/ProgramDependencyGraph.tsx
+        notes: auto-committed by orchestrator (API agent)
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: Program runner calls runWaveLoopFunc which has side effects (git operations)
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Agent D tests override runWaveLoopFunc with a test double (same pattern
+            as wave_runner_test.go). Integration testing with real git operations
+            deferred to manual verification.
+        - scenario: Wave 2 React components depend on exact TypeScript type shapes from Wave 1
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Interface contracts specify exact field names and types. Agent C's types
+            are verified by npm build before Wave 2 begins.
+        - scenario: Integration Agent fails to wire routes into server.go
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Route registration follows the exact pattern of existing routes (one line per endpoint).
+            Integration connectors are explicitly documented. Manual fallback is straightforward.
+state: WAVE_PENDING

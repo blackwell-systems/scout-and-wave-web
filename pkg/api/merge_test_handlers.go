@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
@@ -185,9 +186,12 @@ func (s *Server) handleWaveTest(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Run test command via sh -c to support compound commands like
-		// "go test ./... && cd web && npm test --watchAll=false".
+		// "go test -v ./... && cd web && npx vitest run".
+		// Setpgid puts the process in its own group so killing the group
+		// also terminates grandchildren (vitest workers, etc.).
 		cmd := exec.CommandContext(ctx, "sh", "-c", manifest.TestCommand)
 		cmd.Dir = repoPath
+		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 
 		// Combine stdout and stderr into a single io.Pipe so we can stream
 		// output line-by-line. (Setting cmd.Stderr = cmd.Stdout is not valid
@@ -209,10 +213,15 @@ func (s *Server) handleWaveTest(w http.ResponseWriter, r *http.Request) {
 
 		// Wait for the command in a separate goroutine and close the pipe
 		// write-end so the scanner below sees EOF when the process exits.
+		// After Wait returns, kill the entire process group to clean up any
+		// orphaned grandchildren (e.g. vitest worker threads).
 		doneCh := make(chan error, 1)
 		go func() {
 			waitErr := cmd.Wait()
 			_ = pw.Close()
+			if cmd.Process != nil {
+				_ = syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			}
 			doneCh <- waitErr
 		}()
 

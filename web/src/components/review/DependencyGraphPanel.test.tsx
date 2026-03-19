@@ -227,7 +227,8 @@ describe('DependencyGraphPanel', () => {
     )
 
     // There's an edge from A (wave 1) to D (wave 2) because D depends on A
-    const activeEdges = document.querySelectorAll('line.exec-edge-active')
+    // Edges are rendered as <path> elements (bezier curves for particle animations)
+    const activeEdges = document.querySelectorAll('path.exec-edge-active')
     expect(activeEdges.length).toBeGreaterThan(0)
   })
 
@@ -246,8 +247,8 @@ describe('DependencyGraphPanel', () => {
       />
     )
 
-    // Active edges should exist (A→D)
-    const activeEdges = document.querySelectorAll('line.exec-edge-active')
+    // Active edges should exist (A→D); edges are <path> elements
+    const activeEdges = document.querySelectorAll('path.exec-edge-active')
     expect(activeEdges.length).toBeGreaterThan(0)
   })
 

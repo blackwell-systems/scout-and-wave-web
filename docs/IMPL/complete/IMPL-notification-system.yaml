@@ -1,0 +1,509 @@
+completion_date: "2026-03-18"
+title: Notification System - In-Browser Notifications with Extensible Backend
+feature_slug: notification-system
+verdict: SUITABLE
+suitability_assessment: |
+    Verdict: SUITABLE
+
+    The notification system decomposes cleanly into backend (Go) and frontend (TypeScript)
+    work with no shared files between agents. The backend notification bus and SSE emission
+    are independent of the frontend toast/browser notification components. Preferences
+    storage extends the existing SAWConfig pattern.
+
+    App.tsx already calls Notification.requestPermission() on mount (line 123) but does
+    nothing further. The new useNotifications hook will replace this with proper event
+    handling.
+
+    Phase 2 extensibility (webhooks, Slack, desktop) is achieved through the NotificationBus
+    abstraction - new channels subscribe to the same bus without modifying existing code.
+test_command: cd web && npx vitest run && cd .. && go test ./pkg/api/...
+lint_command: go vet ./pkg/api/...
+file_ownership:
+    - file: pkg/api/notification_bus.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/api/notification_bus_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/api/notification_prefs_handler.go
+      agent: B
+      wave: 1
+      action: new
+    - file: pkg/api/notification_prefs_handler_test.go
+      agent: B
+      wave: 1
+      action: new
+    - file: web/src/components/ToastContainer.tsx
+      agent: C
+      wave: 1
+      action: new
+    - file: web/src/components/__tests__/ToastContainer.test.tsx
+      agent: C
+      wave: 1
+      action: new
+    - file: web/src/hooks/useNotifications.ts
+      agent: D
+      wave: 2
+      action: new
+    - file: web/src/hooks/__tests__/useNotifications.test.ts
+      agent: D
+      wave: 2
+      action: new
+    - file: web/src/components/NotificationSettings.tsx
+      agent: D
+      wave: 2
+      action: new
+interface_contracts:
+    - name: NotificationBus
+      description: |
+        Central notification hub. Handlers call Notify() to emit events.
+        The bus formats the event and broadcasts it to all SSE clients via
+        globalBroker. Frontend reads these events and decides whether to show
+        a toast, browser notification, or both based on user preferences.
+      definition: |
+        type NotificationBus struct {
+          broker *globalBroker
+        }
+
+        func NewNotificationBus(broker *globalBroker) *NotificationBus
+        func (nb *NotificationBus) Notify(event NotificationEvent)
+      location: pkg/api/notification_bus.go
+    - name: handleGetNotificationPrefs
+      description: |
+        GET /api/notifications/preferences - Returns the current notification
+        preferences from saw.config.json. Returns default preferences if none
+        are configured.
+      definition: |
+        func (s *Server) handleGetNotificationPrefs(w http.ResponseWriter, r *http.Request)
+      location: pkg/api/notification_prefs_handler.go
+    - name: handleSaveNotificationPrefs
+      description: |
+        POST /api/notifications/preferences - Saves notification preferences
+        to saw.config.json under the "notifications" key.
+      definition: |
+        func (s *Server) handleSaveNotificationPrefs(w http.ResponseWriter, r *http.Request)
+      location: pkg/api/notification_prefs_handler.go
+    - name: useNotifications
+      description: |
+        React hook that listens for "notification" events on the global SSE
+        stream (/api/events), checks user preferences, and dispatches to
+        either toast display or Browser Notification API (or both).
+      definition: |
+        function useNotifications(): {
+          toasts: Toast[];
+          dismissToast: (id: string) => void;
+          preferences: NotificationPreferences;
+          updatePreferences: (prefs: NotificationPreferences) => Promise<void>;
+        }
+      location: web/src/hooks/useNotifications.ts
+    - name: ToastContainer
+      description: |
+        Renders a stack of toast/snackbar notifications. Positioned fixed
+        bottom-right. Each toast auto-dismisses after 5 seconds. Supports
+        severity-based coloring (success=green, error=red, warning=amber, info=blue).
+      definition: |
+        interface Toast {
+          id: string;
+          type: NotificationEventType;
+          title: string;
+          message: string;
+          severity: 'info' | 'success' | 'warning' | 'error';
+          timestamp: number;
+        }
+
+        interface NotificationPreferences {
+          enabled: boolean;
+          muted_types: string[];
+          browser_notify: boolean;
+          toast_notify: boolean;
+        }
+
+        function ToastContainer({ toasts, onDismiss }: {
+          toasts: Toast[];
+          onDismiss: (id: string) => void;
+        }): JSX.Element
+      location: web/src/components/ToastContainer.tsx
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+            Create the NotificationBus - a central hub that handlers call to emit
+            user-facing notifications. The bus broadcasts events to all SSE clients
+            via the existing globalBroker.
+
+            ## Interfaces to Implement
+            - `NewNotificationBus(broker *globalBroker) *NotificationBus`
+            - `func (nb *NotificationBus) Notify(event NotificationEvent)`
+
+            The Notify method should:
+            1. Marshal the NotificationEvent to JSON
+            2. Broadcast it via globalBroker as a "notification" SSE event with the
+               JSON data payload (not just the event name like impl_list_updated)
+
+            Modify the globalBroker.broadcast method or add a new broadcastWithData
+            method that sends both `event:` and `data:` fields in the SSE stream.
+            Currently broadcast() only sends `event: <name>\ndata: {}\n\n`. The
+            notification events need `event: notification\ndata: <json>\n\n`.
+
+            Add a `broadcastJSON(eventType string, data interface{})` method to
+            globalBroker that marshals data to JSON and writes it as the SSE data field.
+
+            ## Interfaces to Call
+            - `NotificationEvent` and `NotificationEventType` from notification_types.go (scaffold)
+            - `globalBroker` from global_events.go
+
+            ## Tests to Write
+            1. TestNotificationBus_Notify - verify that calling Notify broadcasts to subscribed clients
+            2. TestNotificationBus_NotifyJSON - verify the SSE data payload is valid JSON
+            3. TestGlobalBroker_BroadcastJSON - verify broadcastJSON sends event+data fields
+
+            ## Verification Gate
+            ```bash
+            go build ./pkg/api/...
+            go vet ./pkg/api/...
+            go test ./pkg/api/ -run TestNotification -v
+            ```
+
+            ## Constraints
+            - Do NOT modify wave_runner.go or server.go - integration wiring happens post-merge
+            - The NotificationBus must be safe for concurrent use (Notify called from goroutines)
+            - Keep the bus simple - no filtering/preferences logic on the backend; the frontend
+              decides what to show based on user preferences
+          files:
+            - pkg/api/notification_bus.go
+            - pkg/api/notification_bus_test.go
+        - id: B
+          task: |
+            ## What to Implement
+            Create HTTP handlers for notification preferences CRUD:
+            - GET /api/notifications/preferences - read preferences from saw.config.json
+            - POST /api/notifications/preferences - save preferences to saw.config.json
+
+            Preferences are stored in saw.config.json under a "notifications" key.
+            The handler reads/writes the full SAWConfig and updates only the notifications
+            field, preserving all other config.
+
+            ## Interfaces to Implement
+            - `func (s *Server) handleGetNotificationPrefs(w http.ResponseWriter, r *http.Request)`
+            - `func (s *Server) handleSaveNotificationPrefs(w http.ResponseWriter, r *http.Request)`
+
+            Default preferences (when none configured):
+            ```go
+            NotificationPreferences{
+              Enabled:       true,
+              MutedTypes:    nil,
+              BrowserNotify: true,
+              ToastNotify:   true,
+            }
+            ```
+
+            ## Interfaces to Call
+            - `NotificationPreferences` from notification_types.go (scaffold)
+            - `SAWConfig` from types.go (add a Notifications field)
+            - File I/O pattern from config_handler.go (atomic write via temp file + rename)
+
+            ## Tests to Write
+            1. TestHandleGetNotificationPrefs_Default - returns defaults when no config exists
+            2. TestHandleGetNotificationPrefs_Configured - returns saved preferences
+            3. TestHandleSaveNotificationPrefs_Valid - saves and persists preferences
+            4. TestHandleSaveNotificationPrefs_Invalid - rejects malformed JSON
+
+            ## Verification Gate
+            ```bash
+            go build ./pkg/api/...
+            go vet ./pkg/api/...
+            go test ./pkg/api/ -run TestHandleNotification -v
+            ```
+
+            ## Constraints
+            - Do NOT modify server.go to register routes - integration wiring happens post-merge
+            - Follow the atomic write pattern from config_handler.go (temp file + os.Rename)
+            - The handler must read the existing saw.config.json fully, update only the
+              notifications field, and write back - do not clobber other config fields
+            - Add `Notifications NotificationPreferences` field to a local config struct
+              in this file (the integration agent will add it to SAWConfig in types.go)
+          files:
+            - pkg/api/notification_prefs_handler.go
+            - pkg/api/notification_prefs_handler_test.go
+        - id: C
+          task: |
+            ## What to Implement
+            Create a ToastContainer React component that renders a stack of
+            toast/snackbar notifications. Fixed position bottom-right of the viewport.
+
+            Features:
+            - Renders a list of Toast objects as dismissable cards
+            - Color-coded by severity: success=green, error=red, warning=amber, info=blue
+            - Auto-dismiss after 5 seconds (configurable via prop)
+            - Manual dismiss via X button
+            - Slide-in animation from right
+            - Max 5 visible toasts; older ones auto-dismissed when limit exceeded
+            - Dark mode support using existing Tailwind dark: classes
+
+            ## Interfaces to Implement
+            ```tsx
+            interface ToastProps {
+              toasts: Toast[];
+              onDismiss: (id: string) => void;
+              autoDismissMs?: number; // default 5000
+            }
+
+            export default function ToastContainer(props: ToastProps): JSX.Element
+            ```
+
+            Where Toast is:
+            ```tsx
+            interface Toast {
+              id: string;
+              type: string;
+              title: string;
+              message: string;
+              severity: 'info' | 'success' | 'warning' | 'error';
+              timestamp: number;
+            }
+            ```
+
+            ## Interfaces to Call
+            - Tailwind CSS classes (project uses Tailwind extensively)
+            - lucide-react icons (X, CheckCircle, AlertTriangle, Info, XCircle)
+
+            ## Tests to Write
+            1. ToastContainer renders toasts with correct severity colors
+            2. ToastContainer calls onDismiss when X clicked
+            3. ToastContainer auto-dismisses after timeout
+            4. ToastContainer limits visible toasts to 5
+
+            ## Verification Gate
+            ```bash
+            cd web && npx tsc --noEmit && npx vitest run --reporter=verbose src/components/__tests__/ToastContainer.test.tsx
+            ```
+
+            ## Constraints
+            - Use Tailwind classes consistent with existing components (see ReviewScreen.tsx,
+              WaveBoard.tsx for patterns)
+            - Use lucide-react for icons (already a project dependency)
+            - Export the Toast interface from the component file
+            - Do NOT modify App.tsx - integration wiring happens post-merge
+            - Position: fixed bottom-4 right-4 z-50
+          files:
+            - web/src/components/ToastContainer.tsx
+            - web/src/components/__tests__/ToastContainer.test.tsx
+      base_commit: eb7fa7460a724b95816500458dbc8b17c74992df
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## What to Implement
+            Create the useNotifications React hook and NotificationSettings component.
+
+            ### useNotifications hook
+            Listens for "notification" events on the global SSE stream (/api/events).
+            When a notification event arrives:
+            1. Check if notifications are enabled (preferences.enabled)
+            2. Check if this event type is muted (preferences.muted_types)
+            3. If tab is focused AND toast_notify is true: add to toasts array
+            4. If tab is NOT focused AND browser_notify is true: show Browser Notification
+            5. If both are true: show both (browser notification brings attention, toast
+               shows when they switch back)
+
+            The hook manages:
+            - Toast state (array of Toast objects with auto-generated IDs)
+            - Preferences state (loaded from /api/notifications/preferences on mount)
+            - Browser Notification permission state
+            - document.visibilityState tracking for focus detection
+
+            ### NotificationSettings component
+            A settings panel (to be embedded in SettingsScreen by integration agent) with:
+            - Master enable/disable toggle
+            - Per-event-type checkboxes (wave_complete, agent_failed, merge_complete, etc.)
+            - Browser notifications toggle (with permission request button if not granted)
+            - Toast notifications toggle
+            - "Test notification" button that dispatches a test toast
+
+            ### API functions
+            Add to api.ts (or create a local fetch wrapper):
+            - getNotificationPrefs(): Promise<NotificationPreferences>
+            - saveNotificationPrefs(prefs: NotificationPreferences): Promise<void>
+
+            ## Interfaces to Implement
+            ```tsx
+            function useNotifications(): {
+              toasts: Toast[];
+              dismissToast: (id: string) => void;
+              preferences: NotificationPreferences;
+              updatePreferences: (prefs: NotificationPreferences) => Promise<void>;
+            }
+
+            function NotificationSettings({ preferences, onUpdate }: {
+              preferences: NotificationPreferences;
+              onUpdate: (prefs: NotificationPreferences) => Promise<void>;
+            }): JSX.Element
+            ```
+
+            ## Interfaces to Call
+            - Toast type from ToastContainer.tsx (Wave 1, Agent C)
+            - ToastContainer component from ToastContainer.tsx (for re-export/reference)
+            - /api/notifications/preferences endpoints (Wave 1, Agent B)
+            - /api/events SSE stream (existing global_events.go)
+            - Browser Notification API (window.Notification)
+
+            ## Tests to Write
+            1. useNotifications adds toast when notification event received and tab focused
+            2. useNotifications shows browser notification when tab hidden
+            3. useNotifications respects muted_types
+            4. useNotifications dismissToast removes toast by id
+            5. NotificationSettings toggles emit onUpdate calls
+
+            ## Verification Gate
+            ```bash
+            cd web && npx tsc --noEmit && npx vitest run --reporter=verbose src/hooks/__tests__/useNotifications.test.ts
+            ```
+
+            ## Constraints
+            - Import Toast type from '../components/ToastContainer' (Agent C, Wave 1)
+            - The hook subscribes to the EXISTING /api/events EventSource, not a new one.
+              It should accept an optional EventSource parameter or listen on a shared one.
+              The simplest approach: create a new EventSource('/api/events') in the hook
+              and close it on unmount. App.tsx already has one, but having two is fine
+              since SSE connections are lightweight and the server handles multiple clients.
+            - Do NOT modify App.tsx or SettingsScreen.tsx - integration agent wires those
+            - Store notification preferences API calls in the hook file itself (not api.ts)
+              to keep the agent's file ownership disjoint. Integration agent can move them
+              to api.ts later if desired.
+            - Use crypto.randomUUID() for toast IDs (available in all modern browsers)
+          files:
+            - web/src/hooks/useNotifications.ts
+            - web/src/hooks/__tests__/useNotifications.test.ts
+            - web/src/components/NotificationSettings.tsx
+          dependencies:
+            - B
+            - C
+      base_commit: 3ce6b44ed49c221922340ac0e6aa74b4191413a0
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: false
+        - type: test
+          command: go test ./pkg/api/...
+          required: true
+        - type: custom
+          command: cd web && npx tsc --noEmit
+          required: true
+          description: TypeScript type checking for frontend
+scaffolds:
+    - file_path: pkg/api/notification_types.go
+      contents: |
+        package api
+
+        // NotificationEventType enumerates the events that produce user-facing notifications.
+        type NotificationEventType string
+
+        const (
+          NotifyWaveComplete       NotificationEventType = "wave_complete"
+          NotifyAgentFailed        NotificationEventType = "agent_failed"
+          NotifyMergeComplete      NotificationEventType = "merge_complete"
+          NotifyMergeFailed        NotificationEventType = "merge_failed"
+          NotifyScaffoldComplete   NotificationEventType = "scaffold_complete"
+          NotifyBuildVerifyPass    NotificationEventType = "build_verify_pass"
+          NotifyBuildVerifyFail    NotificationEventType = "build_verify_fail"
+          NotifyIMPLComplete       NotificationEventType = "impl_complete"
+          NotifyRunFailed          NotificationEventType = "run_failed"
+        )
+
+        // NotificationEvent is the payload published to the notification bus and
+        // broadcast to SSE clients as a "notification" event.
+        type NotificationEvent struct {
+          Type    NotificationEventType `json:"type"`
+          Slug    string                `json:"slug"`
+          Title   string                `json:"title"`
+          Message string                `json:"message"`
+          // Severity: "info", "success", "warning", "error"
+          Severity string               `json:"severity"`
+        }
+
+        // NotificationPreferences controls which notification types are enabled.
+        // Stored in saw.config.json under the "notifications" key.
+        type NotificationPreferences struct {
+          Enabled       bool                    `json:"enabled"`
+          MutedTypes    []NotificationEventType `json:"muted_types,omitempty"`
+          BrowserNotify bool                    `json:"browser_notify"`
+          ToastNotify   bool                    `json:"toast_notify"`
+        }
+      import_path: github.com/blackwell-systems/scout-and-wave-web/pkg/api
+      status: committed (4ef1305)
+completion_reports:
+    A:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/saw/notification-system/wave1-agent-A
+        branch: saw/notification-system/wave1-agent-A
+        commit: 18282bd01f5066f41dada6d12932e5317035f758
+        files_changed:
+            - pkg/api/global_events.go
+            - pkg/api/notification_bus.go
+            - pkg/api/notification_bus_test.go
+        notes: auto-committed by orchestrator (API agent)
+    B:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/saw/notification-system/wave1-agent-B
+        branch: saw/notification-system/wave1-agent-B
+        commit: 09ee34ad05dda3f0c923359c62a0ed85c3ab6c7e
+        files_changed:
+            - pkg/api/notification_prefs_handler.go
+            - pkg/api/notification_prefs_handler_test.go
+        notes: auto-committed by orchestrator (API agent)
+    C:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/saw/notification-system/wave1-agent-C
+        branch: saw/notification-system/wave1-agent-C
+        commit: 49bf14d9a2c22a48495dcc6bddfcd7695657293f
+        files_changed:
+            - web/src/components/ToastContainer.tsx
+            - web/src/components/__tests__/ToastContainer.test.tsx
+            - web/src/index.css
+        notes: auto-committed by orchestrator (API agent)
+    D:
+        status: complete
+        worktree: /Users/dayna.blackwell/code/scout-and-wave-web/.claude/worktrees/saw/notification-system/wave2-agent-D
+        branch: saw/notification-system/wave2-agent-D
+        commit: 957bc677539e0d6653ab56279356a2b59d1c0b58
+        files_changed:
+            - web/src/components/NotificationSettings.tsx
+            - web/src/hooks/__tests__/useNotifications.test.ts
+            - web/src/hooks/useNotifications.ts
+        notes: auto-committed by orchestrator (API agent)
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
+    wave2:
+        wave: 2
+        gaps: []
+        valid: true
+        summary: 'Wave 2: all exports are integrated (no gaps detected)'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Multiple EventSource connections to /api/events cause browser connection limit issues
+          likelihood: low
+          impact: low
+          mitigation: Server already uses h2c (HTTP/2 cleartext) which multiplexes connections. If issues arise, share a single EventSource via a store pattern similar to waveEventStore.ts.
+        - scenario: Browser Notification permission denied by user
+          likelihood: medium
+          impact: low
+          mitigation: Hook gracefully degrades to toast-only mode. NotificationSettings shows permission status and re-request button.
+        - scenario: Toast z-index conflicts with existing modals (settings drawer, command palette)
+          likelihood: low
+          impact: low
+          mitigation: ToastContainer uses z-50 which matches existing overlay conventions. Integration agent can adjust if needed.
+state: "COMPLETE"

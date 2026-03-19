@@ -221,6 +221,13 @@ func (s *Server) runScoutAgent(ctx context.Context, runID, feature, repoOverride
 				"run_id": runID,
 				"error":  execErr.Error(),
 			})
+			s.notificationBus.Notify(NotificationEvent{
+				Type:     NotifyRunFailed,
+				Slug:     slug,
+				Title:    "Scout Failed",
+				Message:  fmt.Sprintf("Scout run failed: %s", execErr.Error()),
+				Severity: "error",
+			})
 		}
 		return
 	}
@@ -259,5 +266,14 @@ func (s *Server) runScoutAgent(ctx context.Context, runID, feature, repoOverride
 		"run_id":    runID,
 		"slug":      slug,
 		"impl_path": implOut,
+	})
+
+	// Notify that Scout completed successfully
+	s.notificationBus.Notify(NotificationEvent{
+		Type:     NotifyIMPLComplete,
+		Slug:     slug,
+		Title:    "IMPL Document Ready",
+		Message:  fmt.Sprintf("Scout completed: %s", feature),
+		Severity: "success",
 	})
 }

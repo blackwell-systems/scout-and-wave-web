@@ -74,7 +74,7 @@ interface UseNotificationsReturn {
 const defaultPreferences: NotificationPreferences = {
   enabled: true,
   muted_types: [],
-  browser_notify: false,
+  browser_notify: true,
   toast_notify: true,
 }
 
@@ -121,7 +121,7 @@ export function useNotifications(): UseNotificationsReturn {
         }
 
         // Check if this event type is muted
-        if (preferences.muted_types.includes(notificationEvent.type)) {
+        if ((preferences.muted_types || []).includes(notificationEvent.type)) {
           return
         }
 
@@ -185,10 +185,10 @@ export function useNotifications(): UseNotificationsReturn {
       setToasts((prev) => [...prev, toast])
     }
 
-    window.addEventListener('test-notification', handleTestNotification)
+    window.addEventListener('test-notification', handleTestNotification as EventListener)
 
     return () => {
-      window.removeEventListener('test-notification', handleTestNotification)
+      window.removeEventListener('test-notification', handleTestNotification as EventListener)
     }
   }, [])
 

@@ -12,6 +12,7 @@ import FileOwnershipTable from './FileOwnershipTable'
 import { AgentStatus, RepoEntry, FileOwnershipEntry } from '../types'
 import { mergeWave, runWaveTests, rerunAgent, resolveConflicts, batchDeleteWorktrees, startWave, retryFinalize, fixBuild, retryStep, skipStep, forceMarkComplete } from '../api'
 import RecoveryControlsPanel from './RecoveryControlsPanel'
+import LiveOutputPanel from './LiveOutputPanel'
 
 interface WaveBoardProps {
   slug: string
@@ -111,9 +112,22 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
   const [statusOverrides, setStatusOverrides] = useState<Map<string, 'pending'>>(new Map())
   const [staleDismissed, setStaleDismissed] = useState(false)
   const [fileActivityExpanded, setFileActivityExpanded] = useState(false)
+  const [testOutputOpen, setTestOutputOpen] = useState<number | null>(null)
+  const [fixBuildWave, setFixBuildWave] = useState<number | null>(null)
+  const [fixOutputOpen, setFixOutputOpen] = useState<number | null>(null)
 
   const state = useWaveEvents(slug)
   const liveStatus = useFileActivity(state)
+
+  // Auto-close test output panel when tests pass
+  useEffect(() => {
+    if (testOutputOpen !== null) {
+      const testState = (state as AppWaveState & { wavesTestState?: Map<number, WaveTestState> }).wavesTestState?.get(testOutputOpen)
+      if (testState?.status === 'pass') {
+        setTestOutputOpen(null)
+      }
+    }
+  }, [testOutputOpen, state])
 
   // Merge optimistic overrides on top of SSE-driven agent state
   function applyOverrides(agent: AgentStatus): AgentStatus {
@@ -179,10 +193,10 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
     void nextWave
   }
 
-  async function handleRetryFinalize(): Promise<void> {
-    const maxWave = Math.max(...state.waves.map(w => w.wave), 1)
+  async function handleRetryFinalize(waveNum?: number): Promise<void> {
+    const wave = waveNum ?? Math.max(...state.waves.map(w => w.wave), 1)
     try {
-      await retryFinalize(slug, maxWave)
+      await retryFinalize(slug, wave)
     } catch (err) {
       console.error('retryFinalize request failed:', err)
     }
@@ -190,6 +204,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
   async function handleFixBuild(waveNum?: number, errorLog?: string, gateType?: string): Promise<void> {
     const wave = waveNum ?? Math.max(...state.waves.map(w => w.wave), 1)
+    setFixBuildWave(wave)
     const log = errorLog ?? state.runFailed ?? ''
     // Extract gate type from error message if not provided (e.g. 'required gate "typecheck" failed')
     let gate = gateType
@@ -441,34 +456,6 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
           />
         )}
 
-        {/* AI build fixer output */}
-        {state.fixBuildStatus !== 'idle' && (
-          <div className="bg-card border border-border rounded-lg overflow-hidden">
-            <div className="flex items-center justify-between px-4 py-2 border-b border-border bg-blue-50 dark:bg-blue-950">
-              <span className="text-xs font-medium text-blue-800 dark:text-blue-300">
-                {state.fixBuildStatus === 'running' ? '✦ AI fixing build…' :
-                 state.fixBuildStatus === 'complete' ? '✦ AI fix complete' :
-                 '✦ AI fix failed'}
-              </span>
-              {state.fixBuildStatus === 'complete' && (
-                <button
-                  onClick={() => void handleRetryFinalize()}
-                  className="text-xs font-medium px-2 py-1 rounded bg-green-600 text-white hover:bg-green-700 transition-colors"
-                >
-                  &#x21BA; Retry Finalization
-                </button>
-              )}
-            </div>
-            {state.fixBuildOutput && (
-              <pre className="p-3 text-xs font-mono whitespace-pre-wrap max-h-64 overflow-y-auto text-foreground bg-background">
-                {state.fixBuildOutput}
-              </pre>
-            )}
-            {state.fixBuildError && (
-              <p className="px-4 py-2 text-xs text-red-700 dark:text-red-400">{state.fixBuildError}</p>
-            )}
-          </div>
-        )}
 
         {/* Scaffold row */}
         {state.scaffoldStatus !== 'idle' && (
@@ -565,7 +552,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
                     {/* Merging in progress */}
                     {mergeStatus === 'merging' && (
-                      <div className="mt-3 bg-violet-50 border border-violet-200 rounded-lg px-4 py-2 text-violet-700 text-sm animate-pulse dark:bg-violet-950 dark:border-violet-800 dark:text-violet-400">
+                      <div className="mt-3 bg-violet-50 border border-violet-200 rounded-none px-4 py-2 text-violet-700 text-sm animate-pulse dark:bg-violet-950 dark:border-violet-800 dark:text-violet-400">
                         Merging Wave {wave.wave}...
                       </div>
                     )}
@@ -587,17 +574,35 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                         </div>
 
                         {testStatus === 'idle' && (
-                          <button
-                            onClick={() => void handleRunTests(wave.wave)}
-                            className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-teal-500/15 text-teal-400 border border-teal-500/30 hover:bg-teal-500/25 hover:border-teal-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
-                          >
-                            Run Tests
-                          </button>
+                          <div className="flex">
+                            <button
+                              onClick={() => void handleRunTests(wave.wave)}
+                              className="flex-1 text-sm font-medium px-4 py-2.5 rounded-none bg-teal-500/15 text-teal-400 border border-teal-500/30 hover:bg-teal-500/25 hover:border-teal-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
+                            >
+                              Run Tests
+                            </button>
+                            <button
+                              onClick={() => setTestOutputOpen(testOutputOpen === wave.wave ? null : wave.wave)}
+                              className={`px-3 py-2.5 rounded-none border-l-0 border text-xs font-medium transition-all backdrop-blur-sm ${testOutputOpen === wave.wave ? 'bg-teal-500/30 border-teal-500/50 text-teal-300' : 'bg-teal-500/15 border-teal-500/30 text-teal-400 hover:bg-teal-500/25'}`}
+                              title="Toggle live output"
+                            >
+                              Watch
+                            </button>
+                          </div>
                         )}
 
                         {testStatus === 'running' && (
-                          <div className="bg-teal-50 border border-teal-200 rounded-none px-4 py-2 text-teal-700 text-sm animate-pulse dark:bg-teal-950 dark:border-teal-800 dark:text-teal-400">
-                            Running tests...
+                          <div className="flex">
+                            <div className="flex-1 bg-teal-500/15 border border-teal-500/30 rounded-none px-4 py-2.5 text-teal-400 text-sm animate-pulse">
+                              Running tests...
+                            </div>
+                            <button
+                              onClick={() => setTestOutputOpen(testOutputOpen === wave.wave ? null : wave.wave)}
+                              className={`px-3 py-2.5 rounded-none border-l-0 border text-xs font-medium transition-all backdrop-blur-sm ${testOutputOpen === wave.wave ? 'bg-teal-500/30 border-teal-500/50 text-teal-300' : 'bg-teal-500/15 border-teal-500/30 text-teal-400 hover:bg-teal-500/25'}`}
+                              title="Toggle live output"
+                            >
+                              Watch
+                            </button>
                           </div>
                         )}
 
@@ -607,7 +612,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                           </div>
                         )}
 
-                        {testStatus === 'fail' && (
+                        {testStatus === 'fail' && !(fixBuildWave === wave.wave && fixOutputOpen === wave.wave) && (
                           <div className="bg-red-50 border border-red-200 rounded-none px-4 py-3 space-y-2 dark:bg-red-950 dark:border-red-800">
                             <div className="flex items-center justify-between">
                               <p className="text-red-800 text-sm font-medium dark:text-red-400">Tests failed</p>
@@ -618,13 +623,22 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                                 >
                                   &#x21BA; Retry
                                 </button>
-                                <button
-                                  onClick={() => void handleFixBuild(wave.wave, testState?.output || 'Tests failed', 'test')}
-                                  disabled={state.fixBuildStatus === 'running'}
-                                  className="text-xs font-medium px-2 py-1 rounded bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                                >
-                                  {state.fixBuildStatus === 'running' ? 'Fixing…' : '✦ Fix with AI'}
-                                </button>
+                                <div className="flex">
+                                  <button
+                                    onClick={() => void handleFixBuild(wave.wave, testState?.output || 'Tests failed', 'test')}
+                                    disabled={state.fixBuildStatus === 'running'}
+                                    className="text-xs font-medium px-2 py-1 rounded-none rounded-l bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                                  >
+                                    {state.fixBuildStatus === 'running' ? 'Fixing…' : '✦ Fix with AI'}
+                                  </button>
+                                  <button
+                                    onClick={() => setFixOutputOpen(fixOutputOpen === wave.wave ? null : wave.wave)}
+                                    className={`text-xs font-medium px-2 py-1 rounded-none rounded-r border-l border-blue-500 transition-colors ${fixOutputOpen === wave.wave ? 'bg-blue-500 text-white' : 'bg-blue-600/60 text-blue-200 hover:bg-blue-600'}`}
+                                    title="Toggle AI fix output"
+                                  >
+                                    Watch
+                                  </button>
+                                </div>
                               </div>
                             </div>
                             {testState?.output && (
@@ -633,6 +647,40 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                               </pre>
                             )}
                           </div>
+                        )}
+
+                        {/* Live test output panel — toggled by Watch button */}
+                        {testOutputOpen === wave.wave && (
+                          <LiveOutputPanel
+                            status={testStatus === 'running' ? 'running' : testStatus === 'pass' ? 'complete' : testStatus === 'fail' ? 'failed' : 'idle'}
+                            output={testState?.output ?? ''}
+                            runningLabel="⬤ Live output"
+                            doneLabel="Test output"
+                            failedLabel="Test output"
+                            accentColor="teal"
+                            onClose={() => setTestOutputOpen(null)}
+                          />
+                        )}
+
+                        {/* AI fix output — toggled by Watch button */}
+                        {fixBuildWave === wave.wave && fixOutputOpen === wave.wave && state.fixBuildStatus !== 'idle' && (
+                          <LiveOutputPanel
+                            status={state.fixBuildStatus}
+                            output={state.fixBuildOutput + (state.fixBuildError ? `\n\nError: ${state.fixBuildError}` : '')}
+                            runningLabel="⬤ AI fixing…"
+                            doneLabel="✦ AI fix complete"
+                            failedLabel="✦ AI fix failed"
+                            accentColor="blue"
+                            onClose={() => setFixOutputOpen(null)}
+                            actions={state.fixBuildStatus === 'complete' ? (
+                              <button
+                                onClick={() => void handleRetryFinalize(wave.wave)}
+                                className="text-xs font-medium px-2 py-1 rounded-none bg-green-600 text-white hover:bg-green-700 transition-colors"
+                              >
+                                &#x21BA; Retry Finalization
+                              </button>
+                            ) : undefined}
+                          />
                         )}
 
                         {/* Start Next Wave — show after merge success if next wave is still fully pending and no gate is active */}

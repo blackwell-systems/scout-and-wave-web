@@ -15,3 +15,7 @@
   - IMPL doc: docs/IMPL/IMPL-autonomy-web-ui.yaml
 - **external-wave-event-store**: completed 2026-03-18, 2 waves, 2 agents
   - IMPL doc: docs/IMPL/IMPL-external-wave-event-store.yaml
+- **notification-system**: completed 2026-03-18, 2 waves, 4 agents
+  - IMPL doc: docs/IMPL/IMPL-notification-system.yaml
+- **program-layer-web-integration**: completed 2026-03-18, 2 waves, 6 agents
+  - IMPL doc: docs/IMPL/IMPL-program-layer-web-integration.yaml

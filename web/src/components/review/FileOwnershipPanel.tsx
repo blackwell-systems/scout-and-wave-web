@@ -94,6 +94,7 @@ export default function FileOwnershipPanel({ impl, repos = [], onFileClick }: Fi
               col4Name={impl.file_ownership_col4_name}
               onFileClick={onFileClick}
               renderViewButton={renderViewButton}
+              defaultRepoName={impl.repo}
             />
           </CardContent>
         </Card>

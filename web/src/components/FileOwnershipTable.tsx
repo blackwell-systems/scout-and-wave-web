@@ -18,6 +18,7 @@ interface FileOwnershipTableProps {
   onFileClick?: (file: string, agent: string, wave: number) => void
   renderViewButton?: (entry: FileOwnershipEntry) => React.ReactNode
   liveStatus?: Map<string, FileActivityEntry>
+  defaultRepoName?: string
 }
 
 // Wave-level colors (border wrapper + badge) - middle hierarchy
@@ -84,7 +85,7 @@ function renderStatusIndicator(entry: FileActivityEntry): JSX.Element {
   )
 }
 
-export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileClick: _onFileClick, renderViewButton, liveStatus }: FileOwnershipTableProps): JSX.Element {
+export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileClick: _onFileClick, renderViewButton, liveStatus, defaultRepoName }: FileOwnershipTableProps): JSX.Element {
   // Build agent color map (excluding Scaffold which gets grey)
   const agents = Array.from(new Set(fileOwnership.map(e => e.agent))).sort()
   const nonScaffoldAgents = agents.filter(a => a.toLowerCase() !== 'scaffold')
@@ -102,6 +103,7 @@ export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileC
   const repos = Array.from(new Set(fileOwnership.map(e => e.repo || '').filter(r => r !== '')))
   const hasMultipleRepos = repos.length > 1
   const hasRepo = hasMultipleRepos // Only show Repo column if multiple repos
+  const hasAnyRepo = repos.length > 0 // Show repo hierarchy if any repo is specified
   
   // Show status column only when liveStatus is provided
   const hasStatus = liveStatus !== undefined
@@ -122,55 +124,35 @@ export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileC
   })
 
 
-  // Group by repo first (if multi-repo), then by wave
+  // Always use repo grouping hierarchy for consistent visual structure
   const groupedByRepo: { repo: string; waveGroups: { wave: number; entries: FileOwnershipEntry[] }[] }[] = []
 
-  if (hasMultipleRepos) {
-    // Sort repos by their earliest non-scaffold wave so waves display in order
-    const sortedRepos = [...repos].sort((a, b) => {
-      const minWave = (r: string) => {
-        let min = Infinity
-        for (const e of sorted) {
-          if ((e.repo || '') === r && e.wave > 0 && e.wave < min) min = e.wave
-        }
-        return min === Infinity ? 0 : min
+  // Use single default repo if none specified, otherwise use actual repos
+  const reposToUse = hasAnyRepo ? repos : [defaultRepoName || '']
+
+  // Sort repos by their earliest non-scaffold wave so waves display in order
+  const fallbackRepo = defaultRepoName || ''
+  const sortedRepos = [...reposToUse].sort((a, b) => {
+    const minWave = (r: string) => {
+      let min = Infinity
+      for (const e of sorted) {
+        if ((e.repo || fallbackRepo) === r && e.wave > 0 && e.wave < min) min = e.wave
       }
-      return minWave(a) - minWave(b)
-    })
-    // Group by repo
-    sortedRepos.forEach(repo => {
-      const repoEntries = sorted.filter(e => (e.repo || '') === repo)
+      return min === Infinity ? 0 : min
+    }
+    return minWave(a) - minWave(b)
+  })
 
-      // Within each repo, group by wave
-      const waveGroups: { wave: number; entries: FileOwnershipEntry[] }[] = []
-      let currentWave = -1
-      let currentGroup: FileOwnershipEntry[] = []
+  // Group by repo
+  sortedRepos.forEach(repo => {
+    const repoEntries = sorted.filter(e => (e.repo || fallbackRepo) === repo)
 
-      repoEntries.forEach(entry => {
-        const wave = entry.wave || 0
-        if (wave !== currentWave) {
-          if (currentGroup.length > 0) {
-            waveGroups.push({ wave: currentWave, entries: currentGroup })
-          }
-          currentWave = wave
-          currentGroup = [entry]
-        } else {
-          currentGroup.push(entry)
-        }
-      })
-      if (currentGroup.length > 0) {
-        waveGroups.push({ wave: currentWave, entries: currentGroup })
-      }
-
-      groupedByRepo.push({ repo, waveGroups })
-    })
-  } else {
-    // Single repo: just group by wave (existing behavior)
+    // Within each repo, group by wave
     const waveGroups: { wave: number; entries: FileOwnershipEntry[] }[] = []
     let currentWave = -1
     let currentGroup: FileOwnershipEntry[] = []
 
-    sorted.forEach(entry => {
+    repoEntries.forEach(entry => {
       const wave = entry.wave || 0
       if (wave !== currentWave) {
         if (currentGroup.length > 0) {
@@ -186,8 +168,8 @@ export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileC
       waveGroups.push({ wave: currentWave, entries: currentGroup })
     }
 
-    groupedByRepo.push({ repo: '', waveGroups })
-  }
+    groupedByRepo.push({ repo, waveGroups })
+  })
 
   return (
     <div className="mb-8">
@@ -195,7 +177,7 @@ export default function FileOwnershipTableNew({ fileOwnership, col4Name, onFileC
       <div className="space-y-6">
         {groupedByRepo.map((repoGroup, repoIdx) => {
           const repoColor = getRepoColor(repoIdx)
-          const showRepoHeader = hasMultipleRepos && repoGroup.repo
+          const showRepoHeader = repoGroup.repo // Always show header with repo grouping
 
           return (
             <div key={repoIdx} className={`${showRepoHeader ? `${repoColor.border} ${repoColor.bg} pl-4 pb-4 rounded-r-lg` : ''}`}>

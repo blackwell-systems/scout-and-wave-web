@@ -66,10 +66,11 @@ export default function NotificationSettings({
   }
 
   const handleToggleEventType = async (eventType: NotificationEventType) => {
-    const isMuted = preferences.muted_types.includes(eventType)
+    const mutedTypes = preferences.muted_types || []
+    const isMuted = mutedTypes.includes(eventType)
     const newMutedTypes = isMuted
-      ? preferences.muted_types.filter((t) => t !== eventType)
-      : [...preferences.muted_types, eventType]
+      ? mutedTypes.filter((t) => t !== eventType)
+      : [...mutedTypes, eventType]
 
     await onUpdate({
       ...preferences,
@@ -179,7 +180,7 @@ export default function NotificationSettings({
         </p>
         <div className="space-y-2">
           {ALL_EVENT_TYPES.map((eventType) => {
-            const isEnabled = !preferences.muted_types.includes(eventType)
+            const isEnabled = !(preferences.muted_types || []).includes(eventType)
             return (
               <div
                 key={eventType}

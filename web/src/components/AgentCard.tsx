@@ -24,8 +24,8 @@ const getStatusStyle = (status: string) => {
       }
     case 'complete':
       return {
-        borderColor: 'rgb(63, 185, 80)',
-        boxShadow: '0 0 10px rgba(63, 185, 80, 0.3), 0 0 20px rgba(63, 185, 80, 0.15)',
+        borderColor: 'rgba(63, 185, 80, 0.5)',
+        boxShadow: '0 0 4px rgba(63, 185, 80, 0.12)',
       }
     case 'failed':
       return {

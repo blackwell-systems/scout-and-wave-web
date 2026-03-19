@@ -1,0 +1,140 @@
+title: Program Web Integration Wiring
+feature_slug: program-web-integration
+verdict: NOT_SUITABLE
+state: REVIEWED
+suitability_assessment: |
+  This is post-merge integration for Phase 3 (IMPL-program-layer-web-integration.yaml,
+  completed 2026-03-18). All components are implemented and tested:
+
+  - ✅ Backend handlers: program_handler.go (6 endpoints), program_events.go (SSE), program_runner.go (tier execution)
+  - ✅ Frontend components: ProgramBoard.tsx, ProgramContractsPanel.tsx, ProgramDependencyGraph.tsx
+  - ✅ API layer: programApi.ts (6 functions), types/program.ts (5 types)
+  - ✅ All tests passing: go test ./pkg/api/ -run TestProgram, npm run build
+
+  **Missing integration (NOT suitable for SAW):**
+
+  1. Backend route registration in server.go (7 lines):
+     - GET /api/programs                            → handleListPrograms
+     - GET /api/program/{slug}                      → handleGetProgramStatus
+     - GET /api/program/{slug}/tier/{n}             → handleGetTierStatus
+     - POST /api/program/{slug}/tier/{n}/execute    → handleExecuteTier
+     - GET /api/program/{slug}/contracts            → handleGetProgramContracts
+     - POST /api/program/{slug}/replan              → handleReplanProgram
+     - GET /api/program/events                      → handleProgramEvents
+
+  2. Frontend navigation in App.tsx (~10 lines):
+     - Add "Programs" button to header (next to Pipeline)
+     - Add showPrograms state + toggle handler
+     - Render ProgramBoard in center column (similar to PipelineView pattern)
+     - Add program slug selection + onSelectImpl callback to navigate to WaveBoard
+
+  **Why NOT suitable for SAW:**
+
+  - Only 2 files need modification (~20 lines total)
+  - No logic implementation — just wiring existing functions
+  - No parallelization opportunity (both edits are trivial)
+  - Both changes are append-only (no conflicts)
+  - SAW overhead (Scout analysis, wave setup, worktree creation, merge ceremony)
+    would take longer than making the edits directly
+
+  **Recommended approach:**
+  Direct edits in a single commit. Pattern matching against existing routes and
+  navigation (Pipeline button, PipelineView) makes this a 5-minute task.
+
+  **File decomposition check:** Cannot decompose into ≥2 agents with disjoint ownership.
+  Backend and frontend changes are in separate files but neither change is substantial
+  enough to justify SAW coordination overhead.
+
+  **Time estimate:**
+  - Direct implementation: 5-10 minutes (pattern matching, test, commit)
+  - SAW workflow: 15-20 minutes (Scout, validate, wave setup, merge, cleanup)
+
+  **Verdict:** Sequential implementation recommended. Mark as NOT_SUITABLE and
+  provide direct implementation guidance below.
+
+test_command: go test ./pkg/api/ -run TestProgram && cd web && npm run build
+lint_command: go vet ./...
+
+# Direct Implementation Guidance (for human implementer)
+
+## Backend: pkg/api/server.go
+
+Add these 7 lines after line 122 (after s.mux.HandleFunc("POST /api/impl/{slug}/archive", s.handleArchiveImpl)):
+
+```go
+	// Program layer routes (Phase 3 post-merge integration)
+	s.mux.HandleFunc("GET /api/programs", s.handleListPrograms)
+	s.mux.HandleFunc("GET /api/program/{slug}", s.handleGetProgramStatus)
+	s.mux.HandleFunc("GET /api/program/{slug}/tier/{n}", s.handleGetTierStatus)
+	s.mux.HandleFunc("POST /api/program/{slug}/tier/{n}/execute", s.handleExecuteTier)
+	s.mux.HandleFunc("GET /api/program/{slug}/contracts", s.handleGetProgramContracts)
+	s.mux.HandleFunc("POST /api/program/{slug}/replan", s.handleReplanProgram)
+	s.mux.HandleFunc("GET /api/program/events", s.handleProgramEvents)
+```
+
+## Frontend: web/src/App.tsx
+
+### 1. Add import (after line 20):
+```typescript
+import ProgramBoard from './components/ProgramBoard'
+```
+
+### 2. Add state variable (after line 50, with other show* state):
+```typescript
+const [showPrograms, setShowPrograms] = useState(false)
+const [selectedProgramSlug, setSelectedProgramSlug] = useState<string | null>(null)
+```
+
+### 3. Add Programs button to header (after line 297, next to Pipeline button):
+```typescript
+          <button
+            onClick={() => { setShowPrograms(v => !v); if (!showPrograms) { setSelectedSlug(null); setImpl(null); setLiveView(null); setShowPipeline(false) } }}
+            className={`flex items-center justify-center text-sm font-medium px-6 transition-colors border-r ${showPrograms ? 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950/60 dark:text-purple-400 dark:border-purple-800' : 'bg-purple-50/40 hover:bg-purple-100/60 text-purple-700 border-purple-200 dark:bg-purple-950/20 dark:hover:bg-purple-900/40 dark:text-purple-500 dark:border-purple-900'}`}
+          >
+            Programs
+          </button>
+```
+
+### 4. Add ProgramBoard to center column (after line 409, inside the showPipeline ternary):
+```typescript
+          {showPipeline ? (
+            <PipelineView
+              onSelectImpl={(slug) => { setShowPipeline(false); handleSelect(slug) }}
+              onClose={() => setShowPipeline(false)}
+            />
+          ) : showPrograms && selectedProgramSlug ? (
+            <ProgramBoard
+              programSlug={selectedProgramSlug}
+              onSelectImpl={(slug) => { setShowPrograms(false); handleSelect(slug) }}
+            />
+          ) : showPrograms ? (
+            <div className="p-6">
+              <h2 className="text-xl font-semibold mb-4">Programs</h2>
+              <p className="text-sm text-muted-foreground">
+                Program list UI coming soon. For now, access programs via direct URL: /program/&lt;slug&gt;
+              </p>
+            </div>
+          ) : (
+          <>
+          {/* existing content */}
+```
+
+### 5. Verification:
+```bash
+cd /Users/dayna.blackwell/code/scout-and-wave-web
+go build ./...
+go test ./pkg/api/ -run TestProgram
+cd web && npm run build
+```
+
+### 6. Test manually:
+- Click "Programs" button → should show placeholder
+- Navigate to http://localhost:7432 and test routes via curl or browser devtools
+- Verify SSE connection at /api/program/events
+
+## Notes
+
+- This is NOT a SAW workflow — no agents, no waves, no IMPL execution
+- Implementation should be a single commit: "feat: wire program layer routes and navigation"
+- All business logic already implemented and tested in Phase 3
+- This is purely integration (connecting existing components)

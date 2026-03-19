@@ -170,7 +170,12 @@ describe('useExecutionSync', () => {
   })
 
   it('TestIsLive — connected + not runComplete = true', () => {
-    mockUseWaveEvents.mockReturnValue(makeIdleState({ connected: true, runComplete: false }))
+    // isLive also requires hasActiveWork (running/pending agent) to avoid false-live on completed IMPLs
+    mockUseWaveEvents.mockReturnValue(makeIdleState({
+      connected: true,
+      runComplete: false,
+      agents: [{ agent: 'A', wave: 1, status: 'running', files: [] }],
+    }))
     const { result } = renderHook(() => useExecutionSync('test-slug'))
     expect(result.current.isLive).toBe(true)
   })

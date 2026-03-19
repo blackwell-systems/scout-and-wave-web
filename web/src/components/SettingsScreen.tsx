@@ -5,6 +5,8 @@ import { SAWConfig, RepoEntry } from '../types'
 import DirPicker from './DirPicker'
 import ModelPicker from './ModelPicker'
 import { Button } from './ui/button'
+import NotificationSettings from './NotificationSettings'
+import { useNotifications } from '../hooks/useNotifications'
 
 
 interface SettingsScreenProps {
@@ -13,6 +15,8 @@ interface SettingsScreenProps {
 }
 
 export default function SettingsScreen({ onClose, onReposChange }: SettingsScreenProps): JSX.Element {
+  const { preferences, updatePreferences, browserPermission, requestPermission } = useNotifications()
+
   const [config, setConfig] = useState<SAWConfig>({
     repos: [],
     repo: { path: '' },
@@ -247,6 +251,16 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
             <option value="dark">Dark</option>
           </select>
         </div>
+      </div>
+
+      {/* Notifications section */}
+      <div className="rounded-lg border border-border bg-card p-4">
+        <NotificationSettings
+          preferences={preferences}
+          onUpdate={updatePreferences}
+          browserPermission={browserPermission}
+          onRequestPermission={requestPermission}
+        />
       </div>
 
       {/* Action buttons */}
