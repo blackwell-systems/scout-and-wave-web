@@ -309,7 +309,7 @@ export default function App() {
           </button>
           <button
             onClick={() => setLiveView(v => v === 'scout' ? null : 'scout')}
-            className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-r bg-blue-50/60 hover:bg-blue-100/80 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-400 dark:border-blue-800"
+            className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-r bg-emerald-50/20 hover:bg-emerald-50/50 text-emerald-500 border-emerald-100 dark:bg-emerald-950/10 dark:hover:bg-emerald-900/20 dark:text-emerald-600 dark:border-emerald-900/50"
           >
             New Plan
           </button>
@@ -325,7 +325,7 @@ export default function App() {
           </button>
           <button
             onClick={() => setLiveView(v => v === 'planner' ? null : 'planner')}
-            className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-r bg-violet-50/60 hover:bg-violet-100/80 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:hover:bg-violet-900/60 dark:text-violet-400 dark:border-violet-800"
+            className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-r bg-violet-50/20 hover:bg-violet-50/50 text-violet-400 border-violet-100 dark:bg-violet-950/10 dark:hover:bg-violet-900/20 dark:text-violet-500 dark:border-violet-900/50"
           >
             New Program
           </button>
