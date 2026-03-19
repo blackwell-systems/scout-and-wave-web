@@ -321,6 +321,33 @@ func implDocResponseFromManifest(slug string, m *protocol.IMPLManifest) IMPLDocR
 		preMortem = &PreMortemEntry{OverallRisk: m.PreMortem.OverallRisk, Rows: rows}
 	}
 
+	// Wiring declarations (E35)
+	var wiringEntries []WiringEntry
+	if len(m.Wiring) > 0 {
+		wiringEntries = make([]WiringEntry, 0, len(m.Wiring))
+		for _, w := range m.Wiring {
+			status := "declared"
+			// Check integration_reports for wiring gap status
+			// If a wiring_validation_report exists and this symbol has a gap, set "gap"
+			// For now, derive from wiring_report in integration reports if available.
+			// Simple heuristic: if any integration_report wave has Valid=false and
+			// the manifest has wiring entries, mark as potentially gap.
+			// Full status resolution done by Agent G's SSE events.
+			wiringEntries = append(wiringEntries, WiringEntry{
+				Symbol:             w.Symbol,
+				DefinedIn:          w.DefinedIn,
+				MustBeCalledFrom:   w.MustBeCalledFrom,
+				Agent:              w.Agent,
+				Wave:               w.Wave,
+				IntegrationPattern: w.IntegrationPattern,
+				Status:             status,
+			})
+		}
+	}
+	if wiringEntries == nil {
+		wiringEntries = []WiringEntry{}
+	}
+
 	// Interface contracts as text (name + definition per contract)
 	var contractsBuf strings.Builder
 	for _, ic := range m.InterfaceContracts {
@@ -439,6 +466,7 @@ func implDocResponseFromManifest(slug string, m *protocol.IMPLManifest) IMPLDocR
 		PostMergeChecklist:     convertPostMergeChecklist(m.PostMergeChecklist),
 		StubReportText:         formatStubReports(m.StubReports),
 		KnownIssuesStructured:  convertKnownIssues(m.KnownIssues),
+		Wiring:                 wiringEntries,
 	}
 }
 

@@ -16,6 +16,22 @@ type PreMortemEntry struct {
 	Rows        []PreMortemRowEntry `json:"rows"`
 }
 
+// WiringEntry is the API representation of one wiring declaration from
+// the IMPL manifest wiring: block. Included in IMPLDocResponse so the
+// ReviewScreen can display the Wiring panel (E35).
+type WiringEntry struct {
+	Symbol             string `json:"symbol"`
+	DefinedIn          string `json:"defined_in"`
+	MustBeCalledFrom   string `json:"must_be_called_from"`
+	Agent              string `json:"agent"`
+	Wave               int    `json:"wave"`
+	IntegrationPattern string `json:"integration_pattern,omitempty"`
+	// Status is "declared" before finalize-wave runs; "verified" when
+	// wiring report shows Valid=true; "gap" when a WiringGap exists for
+	// this declaration.
+	Status string `json:"status"`
+}
+
 // IMPLDocResponse is the JSON body for GET /api/impl/{slug}.
 type IMPLDocResponse struct {
 	Slug                   string               `json:"slug"`
@@ -40,6 +56,7 @@ type IMPLDocResponse struct {
 	QualityGates           *QualityGates        `json:"quality_gates,omitempty"`
 	PostMergeChecklist     *PostMergeChecklist  `json:"post_merge_checklist,omitempty"`
 	KnownIssuesStructured  []KnownIssue         `json:"known_issues_structured,omitempty"`
+	Wiring                 []WiringEntry        `json:"wiring,omitempty"`
 }
 
 // SuitabilityInfo is the suitability sub-object in IMPLDocResponse.
