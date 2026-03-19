@@ -31,6 +31,7 @@ type Server struct {
 	notificationBus  *NotificationBus // central hub for user-facing notifications
 	activeRuns       sync.Map        // slug -> struct{}; tracks in-progress wave runs
 	scoutRuns        sync.Map        // runID -> context.CancelFunc; tracks in-progress scout runs
+	plannerRuns      sync.Map        // runID -> context.CancelFunc; tracks in-progress planner runs
 	reviseCancels    sync.Map        // runID -> context.CancelFunc; tracks in-progress revise runs
 	mergingRuns      sync.Map        // slug -> struct{}; tracks in-progress merge operations
 	testingRuns      sync.Map        // slug -> struct{}; tracks in-progress test runs
@@ -176,6 +177,11 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("GET /api/journal/{wave}/{agent}/summary", s.handleJournalSummary)
 	s.mux.HandleFunc("GET /api/journal/{wave}/{agent}/checkpoints", s.handleJournalCheckpoints)
 	s.mux.HandleFunc("POST /api/journal/{wave}/{agent}/restore", s.handleJournalRestore)
+
+	// Planner layer — launch Planner agent to produce PROGRAM manifests
+	s.mux.HandleFunc("POST /api/planner/run", s.handlePlannerRun)
+	s.mux.HandleFunc("GET /api/planner/{runID}/events", s.handlePlannerEvents)
+	s.mux.HandleFunc("POST /api/planner/{runID}/cancel", s.handlePlannerCancel)
 
 	// Program layer — PROGRAM manifest management, tier execution, contracts, replan
 	s.mux.HandleFunc("GET /api/programs", s.handleListPrograms)

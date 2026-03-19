@@ -4,9 +4,10 @@
 import { useEffect } from 'react'
 import ScoutLauncher from './ScoutLauncher'
 import WaveBoard from './WaveBoard'
+import PlannerLauncher from './PlannerLauncher'
 import { X } from 'lucide-react'
 
-export type LiveView = null | 'scout' | 'wave'
+export type LiveView = null | 'scout' | 'wave' | 'planner'
 
 export interface LiveRailProps {
   slug: string | null
@@ -14,13 +15,14 @@ export interface LiveRailProps {
   widthPx: number
   onScoutComplete: (slug: string) => void
   onScoutReady?: () => void
+  onPlannerComplete?: (slug: string) => void
   onClose: () => void
   repos?: import('../types').RepoEntry[]
   activeRepo?: import('../types').RepoEntry | null
   onRepoSwitch?: (index: number) => void
 }
 
-export default function LiveRail({ slug, liveView, onScoutComplete, onScoutReady, onClose, repos, activeRepo }: LiveRailProps): JSX.Element {
+export default function LiveRail({ slug, liveView, onScoutComplete, onScoutReady, onPlannerComplete, onClose, repos, activeRepo }: LiveRailProps): JSX.Element {
 
   // Escape key handler to close the rail
   useEffect(() => {
@@ -38,7 +40,7 @@ export default function LiveRail({ slug, liveView, onScoutComplete, onScoutReady
       {/* Rail header */}
       <div className="flex items-center justify-between px-3 py-2 border-b shrink-0">
         <span className="text-xs font-medium text-muted-foreground">
-          {liveView === 'scout' ? 'New Plan' : liveView === 'wave' ? 'Wave Execution' : ''}
+          {liveView === 'planner' ? 'New Program' : liveView === 'scout' ? 'New Plan' : liveView === 'wave' ? 'Wave Execution' : ''}
         </span>
         <button
           onClick={onClose}
@@ -48,6 +50,13 @@ export default function LiveRail({ slug, liveView, onScoutComplete, onScoutReady
           <X size={14} />
         </button>
       </div>
+
+      {/* Planner view */}
+      {liveView === 'planner' && (
+        <div className="flex-1 overflow-y-auto">
+          <PlannerLauncher onComplete={slug => { onPlannerComplete?.(slug) }} repos={repos} activeRepo={activeRepo} />
+        </div>
+      )}
 
       {/* Scout view */}
       {liveView === 'scout' && (

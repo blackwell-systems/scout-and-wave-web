@@ -317,6 +317,12 @@ export default function App() {
             Programs
           </button>
           <button
+            onClick={() => setLiveView(v => v === 'planner' ? null : 'planner')}
+            className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-r bg-violet-50/60 hover:bg-violet-100/80 text-violet-700 border-violet-200 dark:bg-violet-950/40 dark:hover:bg-violet-900/60 dark:text-violet-400 dark:border-violet-800"
+          >
+            New Program
+          </button>
+          <button
             onClick={() => setLiveView(v => v === 'scout' ? null : 'scout')}
             className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-r bg-blue-50/60 hover:bg-blue-100/80 text-blue-700 border-blue-200 dark:bg-blue-950/40 dark:hover:bg-blue-900/60 dark:text-blue-400 dark:border-blue-800"
           >
@@ -490,6 +496,14 @@ export default function App() {
               widthPx={rightWidthPx}
               onScoutComplete={handleScoutComplete}
               onScoutReady={handleScoutReady}
+              onPlannerComplete={(slug) => {
+                setLiveView(null)
+                listPrograms().then(p => { setPrograms(p); if (slug) setSelectedProgramSlug(slug) }).catch(() => {})
+                setShowPrograms(true)
+                setShowPipeline(false)
+                setSelectedSlug(null)
+                setImpl(null)
+              }}
               onClose={() => setLiveView(null)}
               repos={repos}
               activeRepo={activeRepo}

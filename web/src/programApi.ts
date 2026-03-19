@@ -61,6 +61,32 @@ export async function replanProgram(slug: string): Promise<void> {
   }
 }
 
+// ── Planner API ──────────────────────────────────────────────────────────────
+
+export async function runPlanner(
+  description: string,
+  repo?: string,
+): Promise<{ runId: string }> {
+  const response = await fetch('/api/planner/run', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ description, repo }),
+  })
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${await response.text()}`)
+  }
+  const data = await response.json() as { run_id: string }
+  return { runId: data.run_id }
+}
+
+export function subscribePlannerEvents(runId: string): EventSource {
+  return new EventSource(`/api/planner/${encodeURIComponent(runId)}/events`)
+}
+
+export async function cancelPlanner(runId: string): Promise<void> {
+  await fetch(`/api/planner/${encodeURIComponent(runId)}/cancel`, { method: 'POST' })
+}
+
 // Program SSE event subscription
 // Usage example:
 //   const es = new EventSource('/api/program/events')
