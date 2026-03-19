@@ -231,6 +231,61 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
           />
           <span className="text-sm">Block on failure</span>
         </label>
+        {/* Code Review section within Quality Gates */}
+        <div className="pt-2 border-t border-border mt-1 flex flex-col gap-2">
+          <p className="text-xs text-muted-foreground font-medium">AI Code Review</p>
+          <label className="flex items-center gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={config.quality.code_review?.enabled ?? false}
+              onChange={e => setConfig(c => ({
+                ...c,
+                quality: {
+                  ...c.quality,
+                  code_review: { ...c.quality.code_review, enabled: e.target.checked,
+                    blocking: c.quality.code_review?.blocking ?? false,
+                    model: c.quality.code_review?.model ?? '',
+                    threshold: c.quality.code_review?.threshold ?? 70 }
+                }
+              }))}
+              className="rounded border-border accent-primary"
+            />
+            <span className="text-sm">Enable AI code review</span>
+          </label>
+          {config.quality.code_review?.enabled && (
+            <>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={config.quality.code_review?.blocking ?? false}
+                  onChange={e => setConfig(c => ({
+                    ...c,
+                    quality: { ...c.quality, code_review: { ...c.quality.code_review!, blocking: e.target.checked } }
+                  }))}
+                  className="rounded border-border accent-primary"
+                />
+                <span className="text-sm">Block on failing review</span>
+              </label>
+              <div className="flex items-center gap-3">
+                <label className="text-xs text-muted-foreground w-20" htmlFor="review-threshold">
+                  Pass threshold
+                </label>
+                <input
+                  id="review-threshold"
+                  type="number"
+                  min={0} max={100}
+                  value={config.quality.code_review?.threshold ?? 70}
+                  onChange={e => setConfig(c => ({
+                    ...c,
+                    quality: { ...c.quality, code_review: { ...c.quality.code_review!, threshold: Number(e.target.value) } }
+                  }))}
+                  className="w-16 text-xs font-mono px-2 py-1 rounded-md border border-border bg-background text-foreground"
+                />
+                <span className="text-xs text-muted-foreground">/ 100</span>
+              </div>
+            </>
+          )}
+        </div>
       </div>
 
       {/* Appearance section */}
