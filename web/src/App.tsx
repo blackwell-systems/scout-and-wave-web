@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { listImpls, fetchImpl, approveImpl, rejectImpl, startWave, deleteImpl, getConfig, saveConfig, fetchInterruptedSessions } from './api'
 import { IMPLDocResponse, IMPLListEntry, RepoEntry } from './types'
@@ -21,6 +21,7 @@ import { listPrograms } from './programApi'
 import { InterruptedSession } from './types'
 import type { ProgramDiscovery } from './types/program'
 import { useNotifications } from './hooks/useNotifications'
+import { useGlobalEvents } from './hooks/useGlobalEvents'
 import ToastContainer from './components/ToastContainer'
 
 
@@ -104,18 +105,16 @@ export default function App() {
 
   // Subscribe to global server events so the IMPL list stays in sync
   // with any external changes (CLI scout runs, wave completion, approve/reject).
-  useEffect(() => {
-    const es = new EventSource('/api/events')
-    es.onopen = () => setSseConnected(true)
-    es.onerror = () => setSseConnected(false)
-    es.addEventListener('impl_list_updated', () => {
-      setSseConnected(true)
-      listImpls().then(setEntries).catch(() => {})
-      fetchInterruptedSessions().then(setInterruptedSessions).catch(() => {})
-      setSseRefreshTick(t => t + 1)
-    })
-    return () => es.close()
+  // Note: sseConnected becomes true on first impl_list_updated event and does not
+  // become false on disconnect (the singleton has no per-consumer error callback).
+  // This is acceptable for a local single-user tool.
+  const handleImplListUpdated = useCallback(() => {
+    setSseConnected(true)
+    listImpls().then(setEntries).catch(() => {})
+    fetchInterruptedSessions().then(setInterruptedSessions).catch(() => {})
+    setSseRefreshTick(t => t + 1)
   }, [])
+  useGlobalEvents({ impl_list_updated: handleImplListUpdated })
 
   useEffect(() => {
     listImpls().then(setEntries).catch(() => {})

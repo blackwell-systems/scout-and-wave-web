@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { PipelineEntry, PipelineMetrics, AutonomyLevel } from '../types/autonomy'
 import { fetchPipeline } from '../autonomyApi'
+import { useGlobalEvents } from './useGlobalEvents'
 
 export interface UsePipelineReturn {
   entries: PipelineEntry[]
@@ -28,8 +29,6 @@ export function usePipeline(): UsePipelineReturn {
   const [autonomyLevel, setAutonomyLevel] = useState<AutonomyLevel>('gated')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const esRef = useRef<EventSource | null>(null)
-
   // Fetch pipeline data
   const loadPipeline = async () => {
     try {
@@ -49,29 +48,15 @@ export function usePipeline(): UsePipelineReturn {
   useEffect(() => {
     // Initial fetch
     loadPipeline()
-
-    // Subscribe to global SSE events
-    const es = new EventSource('/api/events')
-    esRef.current = es
-
-    es.addEventListener('pipeline_updated', () => {
-      loadPipeline()
-    })
-
-    es.addEventListener('impl_list_updated', () => {
-      loadPipeline()
-    })
-
-    es.onerror = () => {
-      // EventSource will automatically reconnect, no action needed
-      console.warn('Pipeline SSE connection error (will auto-reconnect)')
-    }
-
-    return () => {
-      es.close()
-      esRef.current = null
-    }
   }, [])
+
+  const handlePipelineUpdated = useCallback(() => { void loadPipeline() }, [])
+  const handleImplListUpdated = useCallback(() => { void loadPipeline() }, [])
+
+  useGlobalEvents({
+    pipeline_updated: handlePipelineUpdated,
+    impl_list_updated: handleImplListUpdated,
+  })
 
   return { entries, metrics, autonomyLevel, loading, error }
 }
