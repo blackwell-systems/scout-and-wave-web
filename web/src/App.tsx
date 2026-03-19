@@ -332,8 +332,8 @@ export default function App() {
           </button>
         </div>
         <div className="flex items-stretch">
-          {(['scout', 'scaffold', 'wave', 'integration', 'planner', 'chat'] as const).map(field => {
-            const model = field === 'scout' ? scoutModel : field === 'scaffold' ? scaffoldModel : field === 'wave' ? waveModel : field === 'integration' ? integrationModel : field === 'planner' ? plannerModel : chatModel
+          {(['planner', 'scout', 'scaffold', 'wave', 'integration', 'chat'] as const).map(field => {
+            const model = field === 'planner' ? plannerModel : field === 'scout' ? scoutModel : field === 'scaffold' ? scaffoldModel : field === 'wave' ? waveModel : field === 'integration' ? integrationModel : chatModel
             const label = field.charAt(0).toUpperCase() + field.slice(1)
             return (
               <div key={field} className="relative flex items-stretch border-r border-border">
