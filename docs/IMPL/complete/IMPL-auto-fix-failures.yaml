@@ -1,0 +1,993 @@
+completion_date: "2026-03-19"
+title: Auto-fix Transient/Fixable Agent Failures
+feature_slug: auto-fix-failures
+verdict: SUITABLE
+suitability_assessment: |-
+    File decomposition: Changes span 4 distinct files across 2 repos with no conflicting
+    ownership. Protocol doc (saw-skill.md), Go engine retryctx (retryctx.go), Go
+    orchestrator wave runner (orchestrator.go), and web app wave runner
+    (wave_runner.go). Each file is independently ownable.
+
+    Investigation-first: Not required. The failure classification system already exists
+    (RouteFailure, FailureType constants, build-retry-context). The gap is purely
+    mechanical: the routed action is published as an SSE event but never executed.
+    No root-cause investigation needed.
+
+    Interface discoverability: All cross-agent interfaces can be defined upfront.
+    Agent A delivers a new retryctx function signature that Agent B calls; Agent C
+    delivers engine changes that Agent D references. No circular dependencies.
+
+    Pre-implementation status check (findings against codebase):
+    - E19 protocol rule (execution-rules.md): EXISTS but enforcement is incomplete.
+      RouteFailure() maps failure_type to OrchestratorAction; agent_blocked event is
+      published but no retry loop executes. The CLI skill (saw-skill.md) restricts
+      E7a auto-remediation to --auto mode. Protocol says E19 applies regardless of
+      --auto mode — this is the gap to close.
+    - RetryContext building (retryctx.go): EXISTS. BuildRetryContext classifies errors
+      from notes/verification text. Does not read failure_type field — it performs
+      independent classification. Used in web rerun handler and RunSingleAgent but not
+      in the automatic post-wave failure path.
+    - AutoRemediate (auto_remediate.go): EXISTS but addresses build-fix loop after
+      merge, not pre-merge agent failure retry. Unrelated to this feature.
+    - Wave runner retry loop: DOES NOT EXIST. RunWave in orchestrator.go publishes
+      agent_blocked but immediately returns nil (success). No retry loop. The web
+      wave_runner.go calls RunSingleWave and treats any agent completion as done.
+    - saw-skill.md E7a: EXISTS but explicitly scoped to --auto mode. E19 in
+      execution-rules.md says it applies in all modes.
+
+    Parallelization value: HIGH. Wave 1 has 2 agents across different repos (go vs
+    web) with fully independent file ownership. Build cycles for Go are >30s.
+    Agent A touches 1 file in scout-and-wave, Agent B touches 1 file in
+    scout-and-wave-go (retryctx), Agent C touches 1 file in scout-and-wave-go
+    (orchestrator), Agent D touches 1 file in scout-and-wave-web. All 4 agents are
+    independent and can run in parallel.
+
+    Estimated times:
+    - Scout phase: ~15 min (deep cross-repo dependency analysis)
+    - Agent execution: ~4 agents x ~12 min avg = ~12 min (parallel Wave 1)
+    - Merge and verification: ~8 min
+    Total SAW time: ~35 min
+    Sequential baseline: ~4 x 15 min = ~60 min
+    Time savings: ~25 min (~40% faster)
+    Recommendation: Clear speedup with cross-repo parallel agents.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: implementations/claude-code/prompts/saw-skill.md
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: pkg/retryctx/retryctx.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/orchestrator/orchestrator.go
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/retryctx/retryctx_test.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/orchestrator/orchestrator_test.go
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/api/wave_runner.go
+      agent: D
+      wave: 1
+      action: modify
+      repo: scout-and-wave-web
+    - file: pkg/api/wave_runner_test.go
+      agent: D
+      wave: 1
+      action: modify
+      repo: scout-and-wave-web
+interface_contracts:
+    - name: BuildRetryContextWithFailureType
+      description: |-
+        Enhanced BuildRetryContext that also reads the failure_type field from the
+        completion report and includes it in the returned RetryContext. The PromptText
+        field is enriched with failure_type-specific guidance. The FailureType field
+        is exposed on RetryContext so callers can check it without re-reading the manifest.
+      definition: |-
+        // In pkg/retryctx/retryctx.go
+
+        // RetryContext (existing struct) gains one new field:
+        type RetryContext struct {
+            AttemptNumber  int        `json:"attempt_number"`
+            AgentID        string     `json:"agent_id"`
+            ErrorClass     ErrorClass `json:"error_class"`
+            ErrorExcerpt   string     `json:"error_excerpt"`
+            GateResults    []string   `json:"gate_results"`
+            SuggestedFixes []string   `json:"suggested_fixes"`
+            PriorNotes     string     `json:"prior_notes"`
+            PromptText     string     `json:"prompt_text"`
+            FailureType    string     `json:"failure_type,omitempty"` // NEW: "transient"|"fixable"|"needs_replan"|"escalate"|"timeout"
+        }
+
+        // BuildRetryContext signature is unchanged; the new FailureType field is
+        // populated from report.FailureType when present.
+        func BuildRetryContext(manifestPath string, agentID string, attemptNum int) (*RetryContext, error)
+      location: pkg/retryctx/retryctx.go
+    - name: AgentRetryState
+      description: |-
+        Per-agent retry counter tracked in transient engine state (not written to IMPL doc).
+        Used by the orchestrator wave runner to enforce the 2-retry limit for transient failures
+        and 1-retry limit for fixable failures. Defined as a package-level map in orchestrator.go,
+        keyed by "wave:agentLetter" and reset at RunWave entry.
+      definition: |-
+        // In pkg/orchestrator/orchestrator.go
+
+        // retryCount tracks how many times each agent has been retried in this wave run.
+        // Key format: "<slug>:<waveNum>:<agentLetter>" e.g. "my-feature:1:A"
+        // Slug-scoped to prevent interference between concurrent IMPL executions in the same process.
+        // This is transient state — not persisted to the IMPL doc.
+        var retryCount sync.Map // map[string]int
+
+        // MaxTransientRetries is the retry limit for transient failures (E19).
+        const MaxTransientRetries = 2
+
+        // MaxFixableRetries is the retry limit for fixable failures (E19).
+        const MaxFixableRetries = 1
+      location: pkg/orchestrator/orchestrator.go
+    - name: executeRetryLoop
+      description: |-
+        New private function in orchestrator.go that implements the E19 retry loop.
+        Called from launchAgent after detecting a partial/blocked completion report.
+        Returns nil if the retry eventually succeeds or if the failure type should
+        escalate (no retry). Returns error if retries are exhausted.
+      definition: |-
+        // In pkg/orchestrator/orchestrator.go (unexported)
+
+        // executeRetryLoop implements E19 automatic retry for transient and fixable failures.
+        // It calls launchAgent again with an enriched prompt prefix. On exhaustion or
+        // non-retryable failure type, it publishes agent_blocked and returns a descriptive error.
+        func (o *Orchestrator) executeRetryLoop(
+            ctx context.Context,
+            runner *agent.Runner,
+            wm *worktree.Manager,
+            waveNum int,
+            agentSpec types.AgentSpec,
+            report *protocol.CompletionReport,
+        ) error
+      location: pkg/orchestrator/orchestrator.go
+    - name: SSE event auto_retry_started
+      description: |-
+        New SSE event published when the orchestrator automatically retries an agent
+        due to transient or fixable failure_type. Consumed by the web UI to display
+        retry status without human gate.
+      definition: |-
+        // Event name: "auto_retry_started"
+        // Published by: orchestrator.go launchAgent (via publish)
+        // Payload:
+        {
+          "agent":        string,  // agent letter e.g. "A"
+          "wave":         int,     // wave number
+          "failure_type": string,  // "transient" | "fixable"
+          "attempt":      int,     // 1-based retry attempt number
+          "max_attempts": int      // 2 for transient, 1 for fixable
+        }
+      location: pkg/orchestrator/orchestrator.go
+    - name: SSE event auto_retry_exhausted
+      description: |-
+        New SSE event published when automatic retries are exhausted and the failure
+        is escalated to the human. Signals the UI to surface the failure prominently.
+      definition: |-
+        // Event name: "auto_retry_exhausted"
+        // Payload:
+        {
+          "agent":        string,
+          "wave":         int,
+          "failure_type": string,
+          "attempts":     int
+        }
+      location: pkg/orchestrator/orchestrator.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |-
+            ## Context
+
+            You are updating the CLI orchestrator skill (saw-skill.md) in the scout-and-wave
+            protocol repo. The goal is to remove the --auto mode restriction on E19 automatic
+            retry behavior, so that transient and fixable failures are always retried
+            automatically, not just in --auto mode.
+
+            ## File to Modify
+
+            `/Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md`
+
+            This file is the Claude Code skill that acts as the CLI orchestrator.
+
+            ## What to Change
+
+            Find the E7a and E8 section in the wave execution step (step 7 in the skill).
+            Currently saw-skill.md says:
+
+            > **E7a: Automatic failure remediation in --auto mode.** When --auto is active
+            > and an agent fails with a correctable issue...
+
+            And at the end of the same paragraph describes the E19 failure_type routing.
+
+            ### Required Changes
+
+            1. **Remove the --auto restriction from E19 behavior.** The E19 decision tree
+               (failure_type routing) must apply in ALL modes. Update the text so that
+               `transient` and `fixable` failures are automatically retried regardless of
+               whether --auto is active. Only `needs_replan` and `escalate` surface to the
+               human.
+
+            2. **Update the E7a reference.** E7a originally scoped correctable-failure retries
+               to --auto mode. Now that E19 covers all modes, update the reference to note
+               that E7a's correctable-failure auto-retry now applies in all modes (not just
+               --auto). Keep the E7a label for protocol traceability.
+
+            3. **Clarify the retry limit.** Make explicit that:
+               - `transient` → up to 2 retries without human gate
+               - `fixable` → 1 retry (read notes, inject fix context, relaunch)
+               - `needs_replan` → re-engage Scout (still requires human review of new IMPL)
+               - `escalate` → surface to human immediately
+               - `timeout` → retry once with scope-reduction note
+
+            4. **Keep `sawtools build-retry-context` call.** The retry flow still uses
+               `sawtools build-retry-context "<manifest-path>" --agent "<ID>"` to build the
+               structured retry prompt. The `FailureType` field (now surfaced in the JSON
+               output) should be read to confirm the failure classification before deciding
+               which retry path to take.
+
+            ## What NOT to Change
+
+            - Do not remove the E7a label (it is a protocol anchor for cross-referencing)
+            - Do not change the `--auto` behavior for inter-wave gates (those are unrelated)
+            - Do not change the wave execution flow for steps 1-6, 8-11
+            - Do not change any other section of the skill (scout, bootstrap, program, status)
+
+            ## Verification
+
+            After editing:
+            1. Grep for "--auto" in the modified file to confirm the E7a/E19 auto-retry
+               logic no longer mentions "--auto" as a prerequisite
+            2. Confirm "transient" and "fixable" are described as automatic (no gate)
+            3. Confirm "needs_replan" and "escalate" still surface to human
+
+            Write a completion report with status: complete, notes summarizing what changed,
+            and verification results. Use sawtools set-completion to write it.
+          files:
+            - implementations/claude-code/prompts/saw-skill.md
+        - id: B
+          task: |-
+            ## Context
+
+            You are modifying `pkg/retryctx/retryctx.go` in the scout-and-wave-go SDK repo
+            at `/Users/dayna.blackwell/code/scout-and-wave-go`.
+
+            The `RetryContext` struct and `BuildRetryContext` function exist and work correctly
+            for error classification. However, they do not read or expose the `failure_type`
+            field from the agent's completion report. The orchestrator needs this field surfaced
+            in the RetryContext so it can decide which retry path to take (transient vs fixable)
+            without re-reading the manifest.
+
+            ## Changes Required
+
+            ### 1. Add `FailureType` field to `RetryContext` struct
+
+            Add one new exported field to the existing `RetryContext` struct:
+
+            ```go
+            type RetryContext struct {
+                AttemptNumber  int        `json:"attempt_number"`
+                AgentID        string     `json:"agent_id"`
+                ErrorClass     ErrorClass `json:"error_class"`
+                ErrorExcerpt   string     `json:"error_excerpt"`
+                GateResults    []string   `json:"gate_results"`
+                SuggestedFixes []string   `json:"suggested_fixes"`
+                PriorNotes     string     `json:"prior_notes"`
+                PromptText     string     `json:"prompt_text"`
+                FailureType    string     `json:"failure_type,omitempty"` // NEW
+            }
+            ```
+
+            ### 2. Populate `FailureType` in `BuildRetryContext`
+
+            In `BuildRetryContext`, after loading `report` from the manifest:
+
+            ```go
+            rc := &RetryContext{
+                // ... existing fields ...
+                FailureType: report.FailureType,  // NEW: propagate from completion report
+            }
+            ```
+
+            ### 3. Enrich `buildPromptText` for fixable failures
+
+            When `report.FailureType == "fixable"`, the retry prompt should include the agent's
+            notes prominently with a specific instruction header. Update `buildPromptText` to
+            accept an optional `failureType` parameter and add a `## Fix Required` section
+            when `failureType == "fixable"`:
+
+            ```go
+            // When failure_type is "fixable", prepend a fix-required section
+            if failureType == "fixable" && priorNotes != "" {
+                sb.WriteString("## Fix Required\n\n")
+                sb.WriteString("The previous attempt identified a specific fix needed:\n\n")
+                sb.WriteString(priorNotes)
+                sb.WriteString("\n\nApply this fix before proceeding with your task.\n\n")
+            }
+            ```
+
+            The function signature of `buildPromptText` changes from:
+            ```go
+            func buildPromptText(attemptNum int, class ErrorClass, excerpt string, fixes []string, priorNotes string) string
+            ```
+            to:
+            ```go
+            func buildPromptText(attemptNum int, class ErrorClass, excerpt string, fixes []string, priorNotes string, failureType string) string
+            ```
+
+            Update the single call site in `BuildRetryContext` accordingly.
+
+            ## Verification
+
+            Run: `go test ./pkg/retryctx/... -v` from repo root
+            `/Users/dayna.blackwell/code/scout-and-wave-go`
+
+            Add a test in `retryctx_test.go` that:
+            1. Creates a manifest with a completion report that has `failure_type: "fixable"` and `notes: "install missing dep"`
+            2. Calls `BuildRetryContext` and verifies `rc.FailureType == "fixable"`
+            3. Verifies `rc.PromptText` contains "Fix Required"
+
+            Write a completion report with status: complete, notes summarizing the changes,
+            and verification showing tests pass. Use sawtools set-completion to write it.
+          files:
+            - pkg/retryctx/retryctx.go
+            - pkg/retryctx/retryctx_test.go
+        - id: C
+          task: |-
+            ## Context
+
+            You are modifying `pkg/orchestrator/orchestrator.go` in the scout-and-wave-go SDK
+            repo at `/Users/dayna.blackwell/code/scout-and-wave-go`.
+
+            Currently the `launchAgent` function (around line 773) detects `partial`/`blocked`
+            status and calls `RouteFailure` to get an `OrchestratorAction`, then publishes an
+            `agent_blocked` SSE event — but takes **no automated action**. The agent failure
+            is just observed, not acted upon.
+
+            The goal is to implement the E19 retry loop directly in the orchestrator so that
+            `transient` and `fixable` failures are automatically retried without human gate.
+
+            ## Changes Required
+
+            ### 1. Add retry state tracking
+
+            Near the top of orchestrator.go (after existing package-level vars), add:
+
+            ```go
+            // retryCount tracks how many times each agent has been retried in this wave run.
+            // Key format: "<slug>:<waveNum>:<agentLetter>" e.g. "my-feature:1:A". Transient state only.
+            var retryCountMap sync.Map
+
+            // retryPrefixMap stores the retry prompt prefix for injection AFTER E23 extraction.
+            // Key format same as retryCountMap. Set by executeRetryLoop, read in launchAgent.
+            // Using a sync.Map avoids needing to modify types.AgentSpec.
+            var retryPrefixMap sync.Map
+
+            // MaxTransientRetries is the retry limit per E19 for transient failures.
+            const MaxTransientRetries = 2
+
+            // MaxFixableRetries is the retry limit per E19 for fixable failures.
+            const MaxFixableRetries = 1
+            ```
+
+            `sync.Map` is already imported (it's used by `reportMu`... actually `reportMu` is
+            a `sync.Mutex` not a `sync.Map`, so add `sync` to imports if not already present).
+            Check imports; `sync` is already imported.
+
+            ### 2. Reset retry counts at wave start
+
+            At the top of `RunWave`, after finding the wave, add:
+
+            ```go
+            // Reset per-agent retry counts for this wave run (transient state).
+            // Use slug-scoped key to avoid interference between concurrent IMPL executions.
+            // Obtain slug via o.implSlug() or derive from manifest path (filepath.Base strips ext).
+            implSlug := o.implSlug() // or: strings.TrimSuffix(filepath.Base(o.manifestPath), ".yaml")
+            for _, a := range wave.Agents {
+                retryCountMap.Delete(fmt.Sprintf("%s:%d:%s", implSlug, waveNum, a.Letter))
+            }
+            ```
+
+            ### 3. Add new SSE event payload types
+
+            After `AgentBlockedPayload`, add:
+
+            ```go
+            // AutoRetryStartedPayload is published when the orchestrator auto-retries an agent (E19).
+            type AutoRetryStartedPayload struct {
+                Agent       string `json:"agent"`
+                Wave        int    `json:"wave"`
+                FailureType string `json:"failure_type"`
+                Attempt     int    `json:"attempt"`
+                MaxAttempts int    `json:"max_attempts"`
+            }
+
+            // AutoRetryExhaustedPayload is published when auto-retries are exhausted (E19).
+            type AutoRetryExhaustedPayload struct {
+                Agent       string `json:"agent"`
+                Wave        int    `json:"wave"`
+                FailureType string `json:"failure_type"`
+                Attempts    int    `json:"attempts"`
+            }
+            ```
+
+            ### 4. Implement `executeRetryLoop`
+
+            Add a new unexported method after `launchAgent`:
+
+            ```go
+            // executeRetryLoop implements E19 automatic retry for transient and fixable failures.
+            // It is called from launchAgent when a completion report has partial/blocked status
+            // and a failure_type of "transient" or "fixable". Returns nil if retry eventually
+            // succeeds (report.Status == "complete"), or an error if retries are exhausted
+            // or if the failure_type does not warrant automatic retry.
+            func (o *Orchestrator) executeRetryLoop(
+                ctx context.Context,
+                runner *agent.Runner,
+                wm *worktree.Manager,
+                waveNum int,
+                agentSpec types.AgentSpec,
+                report *protocol.CompletionReport,
+            ) error {
+                failureType := report.FailureType
+
+                // Determine max retries per E19.
+                // timeout uses MaxFixableRetries (1) not MaxTransientRetries (2):
+                // failure.go maps timeout → ActionRetryWithScope (retry once with scope-reduction note).
+                var maxRetries int
+                switch failureType {
+                case "transient":
+                    maxRetries = MaxTransientRetries
+                case "timeout":
+                    maxRetries = MaxFixableRetries // E19: timeout retries once with scope-reduction note
+                case "fixable":
+                    maxRetries = MaxFixableRetries
+                default:
+                    // needs_replan or escalate: do not retry automatically.
+                    return fmt.Errorf("orchestrator: agent %s: failure_type=%q requires human intervention", agentSpec.Letter, failureType)
+                }
+
+                // Check and increment retry count.
+                // Use slug-scoped key to prevent cross-IMPL contamination in concurrent server runs.
+                implSlug := o.implSlug()
+                key := fmt.Sprintf("%s:%d:%s", implSlug, waveNum, agentSpec.Letter)
+                count := 0
+                if v, ok := retryCountMap.Load(key); ok {
+                    if n, ok := v.(int); ok { // safe assertion; panics if wrong type otherwise
+                        count = n
+                    }
+                }
+                if count >= maxRetries {
+                    o.publish(OrchestratorEvent{
+                        Event: "auto_retry_exhausted",
+                        Data: AutoRetryExhaustedPayload{
+                            Agent:       agentSpec.Letter,
+                            Wave:        waveNum,
+                            FailureType: failureType,
+                            Attempts:    count,
+                        },
+                    })
+                    return fmt.Errorf("orchestrator: agent %s: auto-retry exhausted after %d attempts (failure_type=%s)", agentSpec.Letter, count, failureType)
+                }
+                count++
+                retryCountMap.Store(key, count)
+
+                // Build retry context using retryctx package (enriched prompt with fix guidance).
+                var promptPrefix string
+                if o.implDocPath != "" {
+                    rc, rcErr := retryctx.BuildRetryContext(o.implDocPath, agentSpec.Letter, count)
+                    if rcErr != nil {
+                        fmt.Fprintf(os.Stderr, "orchestrator: retry context build (best-effort): %v\n", rcErr)
+                    } else if rc != nil && rc.PromptText != "" {
+                        promptPrefix = rc.PromptText
+                    }
+                }
+
+                // Publish auto_retry_started event.
+                o.publish(OrchestratorEvent{
+                    Event: "auto_retry_started",
+                    Data: AutoRetryStartedPayload{
+                        Agent:       agentSpec.Letter,
+                        Wave:        waveNum,
+                        FailureType: failureType,
+                        Attempt:     count,
+                        MaxAttempts: maxRetries,
+                    },
+                })
+
+                // Store retry prefix in retryPrefixMap BEFORE calling launchAgent.
+                // DO NOT set retrySpec.Prompt here — E23 extraction in launchAgent will
+                // overwrite it (GAP-4 fix). Instead, launchAgent reads from retryPrefixMap
+                // after E23 extraction and injects the prefix there.
+                if promptPrefix != "" {
+                    retryPrefixMap.Store(key, promptPrefix)
+                }
+                retrySpec := agentSpec // Prompt NOT modified here
+
+                // Re-launch agent (recursive call to launchAgent; retry count prevents infinite loop).
+                return o.launchAgent(ctx, runner, wm, waveNum, retrySpec)
+            }
+            ```
+
+            Note: `retryctx` package must be imported. Add to imports:
+            `"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"`
+
+            ### 5. Wire `executeRetryLoop` into `launchAgent`
+
+            In `launchAgent`, find the E19 block (around line 772):
+
+            ```go
+            // E19: If agent reported partial or blocked, route the failure and publish an event.
+            if report != nil && (report.Status == "partial" || report.Status == "blocked") {
+                // ... existing RouteFailure + agent_blocked publish ...
+            }
+            return nil
+            ```
+
+            Replace it with:
+
+            ```go
+            // E19: If agent reported partial or blocked, apply the decision tree.
+            if report != nil && (report.Status == "partial" || report.Status == "blocked") {
+                var failureType types.FailureType
+                switch report.FailureType {
+                case "transient":
+                    failureType = types.FailureTypeTransient
+                case "fixable":
+                    failureType = types.FailureTypeFixable
+                case "needs_replan":
+                    failureType = types.FailureTypeNeedsReplan
+                case "escalate":
+                    failureType = types.FailureTypeEscalate
+                case "timeout":
+                    failureType = types.FailureTypeTimeout
+                default:
+                    failureType = types.FailureTypeEscalate
+                }
+
+                action := RouteFailure(failureType)
+                o.publish(OrchestratorEvent{
+                    Event: "agent_blocked",
+                    Data: AgentBlockedPayload{
+                        Agent:       agentSpec.Letter,
+                        Wave:        waveNum,
+                        Status:      report.Status,
+                        FailureType: report.FailureType,
+                        Action:      action,
+                    },
+                })
+
+                switch action {
+                case ActionRetry, ActionApplyAndRelaunch, ActionRetryWithScope:
+                    // E19: transient/fixable/timeout — execute retry loop (no human gate).
+                    if retryErr := o.executeRetryLoop(ctx, runner, wm, waveNum, agentSpec, report); retryErr != nil {
+                        return retryErr
+                    }
+                case ActionReplan, ActionEscalate:
+                    // E19: needs_replan/escalate — return error to surface to human.
+                    return fmt.Errorf("orchestrator: agent %s: %s failure (failure_type=%s): requires human intervention",
+                        agentSpec.Letter, report.Status, report.FailureType)
+                }
+            }
+            return nil
+            ```
+
+            ### 6. Fix GAP-4: Preserve retry prefix through E23 extraction
+
+            **Problem:** `executeRetryLoop` (section 4) stores the retry prefix in
+            `retryPrefixMap` before calling `launchAgent`. But inside `launchAgent`, the E23
+            extraction block (around line 641) unconditionally overwrites `agentSpec.Prompt`
+            with the E23 JSON payload — discarding any retry prefix set before the call.
+
+            **Fix:** In `launchAgent`, immediately AFTER the E23 extraction block, inject the
+            retry prefix if one is stored in `retryPrefixMap` for this agent:
+
+            ```go
+            // Inject retry prefix after E23 extraction (GAP-4 fix).
+            // retryPrefixMap is set by executeRetryLoop; read here after E23 so the prefix
+            // is preserved even though E23 overwrites the base prompt.
+            retryKey := fmt.Sprintf("%s:%d:%s", o.implSlug(), waveNum, agentSpec.Letter)
+            if prefix, ok := retryPrefixMap.Load(retryKey); ok {
+                if prefixStr, ok2 := prefix.(string); ok2 && prefixStr != "" {
+                    agentSpec.Prompt = prefixStr + "\n\n" + agentSpec.Prompt
+                    retryPrefixMap.Delete(retryKey) // consume once; recursive retries store fresh
+                }
+            }
+            ```
+
+            Place this block immediately after the closing `}` of the E23 extraction block
+            (after the `else { fmt.Fprintf(os.Stderr, "orchestrator: failed to load manifest...") }`
+            line), before the `// b. Execute the agent...` comment.
+
+            ### 7. Fix BUG-5: Defer agent_complete publish past the retry decision
+
+            **Problem:** `agent_complete` is published with `status: "partial"` BEFORE the E19
+            retry block runs. Late SSE clients cache this partial status permanently, even if
+            the retry eventually succeeds.
+
+            **Fix:** Suppress the `agent_complete` publish when a retry is about to be
+            triggered. Only publish after the outcome is settled.
+
+            Replace the unconditional `agent_complete` publish + E19 block with:
+
+            ```go
+            // Determine whether E19 will trigger an automatic retry before publishing
+            // agent_complete. If retry is coming, suppress the publish here — the recursive
+            // launchAgent call (from executeRetryLoop) will publish agent_complete with the
+            // final settled status.
+            willAutoRetry := report != nil &&
+                (report.Status == "partial" || report.Status == "blocked") &&
+                (report.FailureType == "transient" || report.FailureType == "fixable" || report.FailureType == "timeout")
+
+            if !willAutoRetry {
+                status := "complete"
+                if report != nil {
+                    status = string(report.Status)
+                }
+                o.publish(OrchestratorEvent{
+                    Event: "agent_complete",
+                    Data: AgentCompletePayload{
+                        Agent:  agentSpec.Letter,
+                        Wave:   waveNum,
+                        Status: status,
+                        Branch: branch,
+                    },
+                })
+            }
+
+            // E19: If agent reported partial or blocked, apply the decision tree.
+            if report != nil && (report.Status == "partial" || report.Status == "blocked") {
+                // ... (same switch + action routing + executeRetryLoop call as section 5)
+                // The inner launchAgent call from executeRetryLoop will publish agent_complete
+                // with the final status. No additional publish needed here.
+            }
+            return nil
+            ```
+
+            ### 8. Fix BUG-4: Preserve existing partial report when auto-synthesize runs on retry
+
+            **Problem:** When a retried agent (API/vanilla Claude) fails to write a completion
+            report, `report == nil` → auto-synthesize creates `{status: "complete"}` and
+            persists it to the main IMPL doc — overwriting the `partial` report that the
+            FIRST run wrote. The retry is then indistinguishable from success.
+
+            **Fix:** In section (d), before auto-synthesizing, check if the main IMPL doc
+            already has a `partial` or `blocked` report for this agent. If it does, preserve
+            it rather than overwriting with `complete`.
+
+            Change the section (d) block from:
+            ```go
+            if report == nil {
+                commitSHA, filesChanged, autoErr := autoCommitWorktree(...)
+                // ...
+                report = &protocol.CompletionReport{Status: "complete", ...}
+            }
+            ```
+
+            To:
+            ```go
+            if report == nil {
+                // BUG-4 fix: Before synthesizing "complete", check if a previous retry wrote
+                // a partial/blocked report to the main IMPL doc. If so, reuse it rather than
+                // masking the failure with a spurious "complete".
+                // Use direct map lookup — IMPLManifest.CompletionReports is keyed by agent letter.
+                // NOTE: FindWave() does NOT exist on protocol.IMPLManifest. Do NOT use it.
+                if manifest, checkErr := protocol.Load(o.implDocPath); checkErr == nil {
+                    if cr, ok := manifest.CompletionReports[agentSpec.Letter]; ok &&
+                        (cr.Status == "partial" || cr.Status == "blocked") {
+                        report = cr
+                    }
+                }
+            }
+            if report == nil {
+                // Only auto-synthesize complete if no existing partial/blocked report was found.
+                commitSHA, filesChanged, autoErr := autoCommitWorktree(wtPath, waveNum, agentSpec.Letter, baseSHA)
+                if autoErr != nil {
+                    fmt.Fprintf(os.Stderr, "orchestrator: auto-commit failed for agent %s: %v\n", agentSpec.Letter, autoErr)
+                }
+                notes := "auto-committed by orchestrator (API agent)"
+                if commitSHA == "" {
+                    commitSHA, _ = git.RevParse(wtPath, "HEAD")
+                    notes = "no changes produced (API agent)"
+                }
+                report = &protocol.CompletionReport{
+                    Status:       "complete",
+                    Worktree:     wtPath,
+                    Branch:       branch,
+                    Commit:       commitSHA,
+                    FilesChanged: filesChanged,
+                    Notes:        notes,
+                }
+            }
+            ```
+
+            Note: Check whether `manifest.FindWave` or direct iteration `manifest.Waves[waveNum-1].Agents`
+            is the correct access pattern for the loaded manifest — use whichever matches the
+            `protocol.IMPLManifest` structure. The completion report field on an agent may be
+            `CompletionReport` or accessed via a helper; check the protocol package API.
+
+            ## Import requirements
+
+            Ensure the following imports are present in orchestrator.go:
+            - `"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"` (new)
+            - `"sync"` (already present via sync.Mutex for reportMu)
+            - `"fmt"` (already present)
+            - `"os"` (already present)
+
+            ## Verification
+
+            Run: `go build ./...` from `/Users/dayna.blackwell/code/scout-and-wave-go`
+            Then: `go test ./pkg/orchestrator/...`
+
+            Verify that existing tests still pass (especially TestRunWave_LaunchesAllAgents,
+            TestRunWave_ReturnsErrorOnAgentFailure).
+
+            Add a test `TestExecuteRetryLoop_TransientRetries` in orchestrator_test.go (or a
+            new file retry_test.go) that:
+            1. Sets up an agent that returns partial/transient on first call, complete on second
+            2. Verifies that RunWave returns nil (no error)
+            3. Verifies that auto_retry_started event was published
+
+            Write a completion report with status: complete. Use sawtools set-completion.
+          files:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/orchestrator_test.go
+        - id: D
+          task: |-
+            ## Context
+
+            You are modifying `pkg/api/wave_runner.go` in the scout-and-wave-web repo at
+            `/Users/dayna.blackwell/code/scout-and-wave-web`.
+
+            The web app's `runWaveLoop` calls `engine.RunSingleWave` which calls
+            `orchestrator.RunWave`. With the changes in Agent C (scout-and-wave-go),
+            `RunWave` will now automatically retry transient/fixable failures. However,
+            the web app's SSE pipeline needs to handle two new events:
+            - `auto_retry_started` — display to user that a retry is happening
+            - `auto_retry_exhausted` — display escalation notice
+
+            Additionally, the existing `agent_blocked` event handler in the web app (in
+            `makePublisher`) currently caches it alongside `agent_failed` events. Ensure
+            `auto_retry_started` and `auto_retry_exhausted` events are also cached for
+            late-connecting SSE clients.
+
+            ## Changes Required
+
+            ### 1. Handle new auto-retry SSE events in `makePublisher`
+
+            In `makePublisher` (around line 902), update the switch statement to cache the
+            new events:
+
+            ```go
+            func (s *Server) makePublisher(slug string) func(event string, data interface{}) {
+                return func(event string, data interface{}) {
+                    ev := SSEEvent{Event: event, Data: data}
+                    switch event {
+                    case "run_started":
+                        s.clearAgentSnapshot(slug)
+                    case "agent_started", "agent_complete", "agent_failed",
+                         "auto_retry_started", "auto_retry_exhausted":  // NEW
+                        s.cacheAgentEvent(slug, ev)
+                    }
+                    s.broker.Publish(slug, ev)
+                }
+            }
+            ```
+
+            ### 2. Log auto-retry events in `runWaveLoop`
+
+            In `runWaveLoop`, the `enginePublisher` closure (around line 216) forwards all
+            engine events to `publish`. Since auto_retry_started and auto_retry_exhausted
+            are published by the engine, they will flow through automatically. No additional
+            wiring is needed in the engine publisher closure.
+
+            However, add a comment at the engine publisher closure to document this:
+
+            ```go
+            enginePublisher := func(ev engine.Event) {
+                // auto_retry_started and auto_retry_exhausted events from E19 flow through here.
+                publish(ev.Event, ev.Data)
+            }
+            ```
+
+            ### 3. Handle `auto_retry_exhausted` in `makeEnginePublisher`
+
+            In `makeEnginePublisher` (around line 917), add caching for new events:
+
+            ```go
+            func (s *Server) makeEnginePublisher(slug string) func(engine.Event) {
+                return func(ev engine.Event) {
+                    sseEv := SSEEvent{Event: ev.Event, Data: ev.Data}
+                    switch ev.Event {
+                    case "agent_started", "agent_complete", "agent_failed",
+                         "auto_retry_started", "auto_retry_exhausted":  // NEW
+                        s.cacheAgentEvent(slug, sseEv)
+                    }
+                    s.broker.Publish(slug, sseEv)
+                }
+            }
+            ```
+
+            ### 4. Notification for auto_retry_exhausted
+
+            In `runWaveLoop`, after the `RunSingleWave` call fails (the error return path),
+            currently it publishes `run_failed`. With E19 exhausted retries now returning
+            an error from `RunSingleWave`, the existing error path handles it correctly.
+            No additional change is needed for the failure case — the existing `run_failed`
+            publish covers it.
+
+            However, for observability, ensure the `notificationBus` (used in merge
+            failures) is also notified when auto-retry is exhausted. This is already handled
+            by the `run_failed` notification path in `runWaveLoop`. No additional change needed.
+
+            ## What NOT to Change
+
+            - Do not modify `handleWaveAgentRerun` — manual reruns are separate from E19 auto-retry
+            - Do not modify the finalize pipeline steps
+            - Do not add a new API endpoint for retry control (E19 is fully automatic)
+            - Do not modify any other handler files
+
+            ## Verification
+
+            Run: `go build ./...` from `/Users/dayna.blackwell/code/scout-and-wave-web`
+            Then: `go test ./pkg/api/...`
+
+            Verify that existing tests in wave_runner_test.go still pass.
+
+            Add a test `TestMakePublisher_CachesAutoRetryEvents` in wave_runner_test.go (or
+            a new test file) that verifies `auto_retry_started` and `auto_retry_exhausted`
+            are cached by cacheAgentEvent.
+
+            Write a completion report with status: complete. Use sawtools set-completion.
+          files:
+            - pkg/api/wave_runner.go
+            - pkg/api/wave_runner_test.go
+      base_commit: 8d8cca848ae54a000c3c6c21ea89952ce9ad04bc
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./pkg/orchestrator/... ./pkg/retryctx/...
+          required: true
+          repo: scout-and-wave-go
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-web
+        - type: test
+          command: go test ./pkg/api/...
+          required: true
+          repo: scout-and-wave-web
+completion_reports:
+    A:
+        status: complete
+        branch: saw/auto-fix-failures/wave1-agent-A
+        commit: dee9d8d
+        files_changed:
+            - implementations/claude-code/prompts/saw-skill.md
+        verification: 'PASS: E7a updated to all modes; transient auto-retry (2 max), fixable (1 max), needs_replan/escalate surface to human; no --auto in E19 decision tree'
+    B:
+        status: complete
+        branch: saw/auto-fix-failures/wave1-agent-B
+        commit: e5cca63
+        files_changed:
+            - pkg/retryctx/retryctx.go
+            - pkg/retryctx/retryctx_test.go
+        tests_added:
+            - TestBuildRetryContext_FixableFailureType
+        verification: 'PASS: go test ./pkg/retryctx/... all 11 tests pass; go build ./... clean'
+    C:
+        status: complete
+        branch: saw/auto-fix-failures/wave1-agent-C
+        commit: 2e4b2e6
+        files_changed:
+            - pkg/orchestrator/orchestrator.go
+            - pkg/orchestrator/orchestrator_test.go
+            - pkg/orchestrator/events.go
+            - pkg/retryctx/retryctx.go
+        tests_added:
+            - TestExecuteRetryLoop_TransientRetries
+            - TestLaunchAgentE19BlockedEvent
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/auto-fix-failures/wave1-agent-D
+        commit: 70e7a6a
+        files_changed:
+            - pkg/api/wave_runner.go
+            - pkg/api/wave_runner_test.go
+        tests_added:
+            - TestMakePublisher_CachesAutoRetryEvents
+            - TestMakePublisher_CachesAutoRetryEvents_AgentFailed
+            - TestMakeEnginePublisher_CachesAutoRetryEvents
+        verification: PASS
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: |-
+            executeRetryLoop causes infinite recursion if retry logic re-enters launchAgent
+            and the retried agent also reports partial/transient.
+          likelihood: medium
+          impact: high
+          mitigation: |-
+            retryCountMap enforces the max retry limit before launchAgent is called.
+            On each re-entry to launchAgent, the E19 block checks retryCountMap first;
+            once count >= maxRetries the loop publishes auto_retry_exhausted and returns
+            an error. Agent C must verify this with a test that asserts no stack overflow.
+        - scenario: |-
+            Agent C imports retryctx from orchestrator.go but retryctx already imports
+            protocol (which orchestrator depends on indirectly). Creates a new import cycle.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            retryctx only imports protocol (for Load). orchestrator already imports
+            protocol directly. Adding retryctx to orchestrator adds a new transitive dep
+            but not a cycle (retryctx does not import orchestrator). Agent C should run
+            `go build ./...` immediately after adding the import to catch any cycle.
+        - scenario: |-
+            Agent B changes buildPromptText signature; existing callers in retryctx.go
+            pass the wrong number of arguments.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            buildPromptText is unexported and has only one call site in BuildRetryContext.
+            Agent B owns retryctx.go and retryctx_test.go. The test must compile and
+            pass before the completion report is written. Low risk.
+        - scenario: |-
+            Auto-retry of a fixable failure makes the agent overwrite files that a parallel
+            agent in the same wave has already committed.
+          likelihood: low
+          impact: high
+          mitigation: |-
+            Disjoint file ownership (I1) prevents two agents in the same wave from owning
+            the same file. A retried agent owns the same files as its original run. The
+            worktree is per-agent, so parallel worktrees are isolated. Only merge conflicts
+            could arise, and these are caught by the existing VerifyCommits+MergeAgents
+            pipeline post-wave. Not a new risk introduced by this feature.
+        - scenario: |-
+            The saw-skill.md change (Agent A) removes --auto gating for E19, but the
+            protocol spec (execution-rules.md) still says E7a applies only in --auto mode.
+            Inconsistency between skill and spec.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            The protocol spec (execution-rules.md line 567-570) already states E19 extends
+            E7a to non-auto mode. The skill's E7a section is the one that needs updating.
+            Agent A should confirm the execution-rules.md already supports the change and
+            only update saw-skill.md. Post-merge, consider opening a follow-up to clarify
+            E7a's own text in execution-rules.md for consistency.
+        - scenario: |-
+            retryCountMap is a package-level sync.Map and is never cleared between
+            separate calls to StartWave/RunWave across different IMPL features.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Keys are "<waveNum>:<agentLetter>" scoped to the wave run. Different IMPL
+            features use the same wave numbers (1, 2, ...) and the same agent letters
+            (A, B, ...). In theory, a key from feature X wave 1 agent A could interfere
+            with feature Y wave 1 agent A if run in the same process without clearing.
+            Mitigation: clear keys at RunWave entry (already described in Agent C's task).
+            If the web server runs multiple IMPL runs concurrently, add the slug to the key:
+            "<slug>:<waveNum>:<agentLetter>". Agent C should consider this and use the slug
+            if available via o.implSlug().
+state: "COMPLETE"

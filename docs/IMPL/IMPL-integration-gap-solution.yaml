@@ -1,0 +1,1345 @@
+title: 'Integration Gap Solution: Wiring Declarations, Scout Rule, and Tooling Enforcement'
+feature_slug: integration-gap-solution
+verdict: SUITABLE
+suitability_assessment: |
+  The integration gap problem spans three naturally disjoint layers across two repositories:
+  (1) the IMPL schema and protocol validation layer in scout-and-wave-go/pkg/protocol/,
+  (2) the sawtools command layer (prepare-wave, finalize-wave, validate-integration, extract-context)
+      in scout-and-wave-go/cmd/saw/, and
+  (3) the web API + UI layer in scout-and-wave-web.
+
+  Additionally, the Scout prompt in scout-and-wave (protocol repo) is a single file
+  change handled by Agent A as a standalone protocol-doc task. This is parallel to
+  the Go SDK work.
+
+  File decomposition: 12+ files across two repos with cleanly disjoint ownership.
+  No two agents touch the same file within a wave.
+
+  Interface discoverability: The WiringDeclaration type and ValidateWiringDeclarations
+  function signatures can be fully defined before implementation starts — they flow
+  one-way from schema (Agent B) to validation (Agent C) to command layer (Agent D)
+  to web (Wave 2 agents). All contracts are stable.
+
+  Parallelization value: Wave 1 has 4 parallel agents. Go build+test cycle is ~30s.
+  Average 3-5 files per agent. Tasks involve non-trivial logic (AST-based grep,
+  schema field addition, pre-flight validation, brief injection, SSE event emission).
+  Clear speedup over sequential.
+
+  Estimated times:
+  - Scout phase: ~20 min (dependency mapping across 3 repos)
+  - Agent execution: ~55 min (4 agents x ~12 min avg, Wave 1 parallel; ~2 agents
+    x 10 min Wave 2; ~10 min Wave 3 integration wiring)
+  - Merge and verification: ~10 min
+  Total SAW time: ~95 min
+
+  Sequential baseline: ~6 agents x 15 min = ~90 min + overhead = ~110 min
+  Time savings: modest speed gain; primary value is coordination artifact and
+  ensuring no layer is dropped.
+
+  Pre-implementation check: No prior implementation of wiring: block exists anywhere
+  in the codebase. ValidateIntegration currently runs heuristic-only export scanning;
+  it does NOT check wiring: declarations (those don't exist yet). prepare-wave has no
+  wiring pre-flight. The IMPL schema has no Wiring field. All work is TODO.
+
+test_command: go test ./...
+lint_command: go vet ./...
+state: SCOUT_PENDING
+
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: go build ./...
+      required: true
+      description: Build all packages in scout-and-wave-go
+    - type: lint
+      command: go vet ./...
+      required: true
+      description: Vet all packages in scout-and-wave-go
+    - type: test
+      command: go test ./...
+      required: true
+      description: Full test suite for scout-and-wave-go
+    - type: build
+      command: go build ./cmd/saw
+      required: true
+      repo: scout-and-wave-web
+      description: Build saw web server binary in scout-and-wave-web
+    - type: test
+      command: go test ./pkg/api/...
+      required: true
+      repo: scout-and-wave-web
+      description: API handler tests in scout-and-wave-web
+    - type: build
+      command: npm run build
+      required: true
+      repo: scout-and-wave-web
+      description: TypeScript/React frontend build
+
+scaffolds:
+  - file_path: pkg/protocol/wiring_types.go
+    contents: |
+      // WiringDeclaration declares that symbol DefinedIn.Symbol must be called
+      // from CallerFile. Written by Scout in the IMPL doc wiring: block.
+      // Enforced by prepare-wave pre-flight (Layer 3A) and validate-integration
+      // post-merge check (Layer 3B). Injected into agent briefs by prepare-wave
+      // (Layer 3C).
+      type WiringDeclaration struct {
+          Symbol              string `yaml:"symbol" json:"symbol"`
+          DefinedIn           string `yaml:"defined_in" json:"defined_in"`
+          MustBeCalledFrom    string `yaml:"must_be_called_from" json:"must_be_called_from"`
+          Agent               string `yaml:"agent" json:"agent"`
+          Wave                int    `yaml:"wave" json:"wave"`
+          IntegrationPattern  string `yaml:"integration_pattern,omitempty" json:"integration_pattern,omitempty"`
+      }
+
+      // WiringValidationResult is returned by ValidateWiringDeclarations.
+      type WiringValidationResult struct {
+          Gaps    []WiringGap `json:"gaps" yaml:"gaps"`
+          Valid   bool        `json:"valid" yaml:"valid"`
+          Summary string      `json:"summary" yaml:"summary"`
+      }
+
+      // WiringGap is a single missing wiring: the symbol is declared but not
+      // found in MustBeCalledFrom.
+      type WiringGap struct {
+          Declaration WiringDeclaration `json:"declaration" yaml:"declaration"`
+          Reason      string            `json:"reason" yaml:"reason"`
+          Severity    string            `json:"severity" yaml:"severity"` // always "error"
+      }
+    import_path: github.com/blackwell-systems/scout-and-wave-go/pkg/protocol
+    status: pending
+
+interface_contracts:
+  - name: WiringDeclaration
+    description: |
+      New top-level struct added to IMPLManifest. Represents a declared wiring
+      obligation: symbol X defined in file A must be called from file B.
+      Written by Scout in IMPL doc wiring: block, enforced by tooling.
+    definition: |
+      type WiringDeclaration struct {
+          Symbol             string `yaml:"symbol" json:"symbol"`
+          DefinedIn          string `yaml:"defined_in" json:"defined_in"`
+          MustBeCalledFrom   string `yaml:"must_be_called_from" json:"must_be_called_from"`
+          Agent              string `yaml:"agent" json:"agent"`
+          Wave               int    `yaml:"wave" json:"wave"`
+          IntegrationPattern string `yaml:"integration_pattern,omitempty" json:"integration_pattern,omitempty"`
+      }
+    location: pkg/protocol/wiring_types.go
+
+  - name: WiringValidationResult
+    description: |
+      Return type of ValidateWiringDeclarations. Contains gaps (missing wiring),
+      a valid boolean, and a summary string. Used by finalize-wave and
+      validate-integration to surface wiring errors.
+    definition: |
+      type WiringValidationResult struct {
+          Gaps    []WiringGap `json:"gaps" yaml:"gaps"`
+          Valid   bool        `json:"valid" yaml:"valid"`
+          Summary string      `json:"summary" yaml:"summary"`
+      }
+
+      type WiringGap struct {
+          Declaration WiringDeclaration `json:"declaration" yaml:"declaration"`
+          Reason      string            `json:"reason" yaml:"reason"`
+          Severity    string            `json:"severity" yaml:"severity"`
+      }
+    location: pkg/protocol/wiring_types.go
+
+  - name: ValidateWiringDeclarations
+    description: |
+      Core enforcement function. For each WiringDeclaration in the manifest's
+      Wiring slice, parses the MustBeCalledFrom file using Go AST (or falls
+      back to bufio grep) and checks whether symbol appears as a call expression.
+      Returns WiringValidationResult with severity: error for each missing call.
+      Called by finalize-wave (post-merge) and validate-integration --wiring.
+    definition: |
+      func ValidateWiringDeclarations(
+          manifest *IMPLManifest,
+          repoPath string,
+      ) (*WiringValidationResult, error)
+    location: pkg/protocol/wiring_validation.go
+
+  - name: CheckWiringOwnership
+    description: |
+      prepare-wave pre-flight check (Layer 3A). For each WiringDeclaration
+      in the current wave, verifies that MustBeCalledFrom is in the owning
+      agent's file_ownership. Returns a slice of violation strings (empty = OK).
+      A non-empty slice causes prepare-wave to fail with exit 1.
+    definition: |
+      func CheckWiringOwnership(
+          manifest *IMPLManifest,
+          waveNum int,
+      ) []string
+    location: pkg/protocol/wiring_validation.go
+
+  - name: FormatWiringBriefSection
+    description: |
+      Formats wiring declarations for a specific agent into a markdown section
+      suitable for injection into the agent brief (.saw-agent-brief.md).
+      Returns empty string if agent has no wiring obligations.
+    definition: |
+      func FormatWiringBriefSection(
+          manifest *IMPLManifest,
+          agentID string,
+      ) string
+    location: pkg/protocol/wiring_validation.go
+
+  - name: IMPLManifest.Wiring field
+    description: |
+      New slice field on IMPLManifest, added alongside PreMortem, Scaffolds, etc.
+      Populated by Scout in the IMPL doc wiring: block. Consumed by prepare-wave,
+      finalize-wave, validate-integration, and extract-context.
+    definition: |
+      // In IMPLManifest:
+      Wiring []WiringDeclaration `yaml:"wiring,omitempty" json:"wiring,omitempty"`
+    location: pkg/protocol/types.go
+
+  - name: WiringEntry (API type)
+    description: |
+      Web API representation of a WiringDeclaration, included in IMPLDocResponse
+      so the ReviewScreen can display the Wiring panel.
+    definition: |
+      type WiringEntry struct {
+          Symbol             string `json:"symbol"`
+          DefinedIn          string `json:"defined_in"`
+          MustBeCalledFrom   string `json:"must_be_called_from"`
+          Agent              string `json:"agent"`
+          Wave               int    `json:"wave"`
+          IntegrationPattern string `json:"integration_pattern,omitempty"`
+          Status             string `json:"status"` // "declared" | "verified" | "gap"
+      }
+    location: pkg/api/types.go (scout-and-wave-web)
+
+file_ownership:
+
+  # Wave 1: Four parallel agents across protocol and prompt layers
+  - file: implementations/claude-code/prompts/saw-skill.md
+    agent: A
+    wave: 1
+    action: modify
+    repo: scout-and-wave
+
+  - file: protocol/execution-rules.md
+    agent: A
+    wave: 1
+    action: modify
+    repo: scout-and-wave
+
+  - file: pkg/protocol/types.go
+    agent: B
+    wave: 1
+    action: modify
+    repo: scout-and-wave-go
+
+  - file: pkg/protocol/wiring_validation.go
+    agent: B
+    wave: 1
+    action: new
+    repo: scout-and-wave-go
+
+  - file: pkg/protocol/wiring_validation_test.go
+    agent: B
+    wave: 1
+    action: new
+    repo: scout-and-wave-go
+
+  - file: pkg/protocol/schema_unknown_keys.go
+    agent: B
+    wave: 1
+    action: modify
+    repo: scout-and-wave-go
+
+  - file: cmd/saw/prepare_wave.go
+    agent: C
+    wave: 1
+    action: modify
+    repo: scout-and-wave-go
+
+  - file: cmd/saw/extract_context_cmd.go
+    agent: C
+    wave: 1
+    action: modify
+    repo: scout-and-wave-go
+
+  - file: cmd/saw/validate_integration.go
+    agent: D
+    wave: 1
+    action: modify
+    repo: scout-and-wave-go
+
+  - file: cmd/saw/finalize_wave.go
+    agent: D
+    wave: 1
+    action: modify
+    repo: scout-and-wave-go
+
+  # Wave 2: Web API and UI layer (depends on Wave 1 schema)
+  - file: pkg/api/types.go
+    agent: E
+    wave: 2
+    action: modify
+    repo: scout-and-wave-web
+
+  - file: pkg/api/impl.go
+    agent: E
+    wave: 2
+    action: modify
+    repo: scout-and-wave-web
+
+  - file: web/src/types.ts
+    agent: F
+    wave: 2
+    action: modify
+    repo: scout-and-wave-web
+
+  - file: web/src/components/review/WiringPanel.tsx
+    agent: F
+    wave: 2
+    action: new
+    repo: scout-and-wave-web
+
+  - file: web/src/components/ReviewScreen.tsx
+    agent: F
+    wave: 2
+    action: modify
+    repo: scout-and-wave-web
+
+  # Wave 3: SSE event wiring in wave_runner (integration wave)
+  - file: pkg/api/wave_runner.go
+    agent: G
+    wave: 3
+    action: modify
+    repo: scout-and-wave-web
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## Agent A — Protocol Docs: Scout Prompt Rule + Execution Rule
+
+          ### Repos and Files
+          - `/Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md`
+          - `/Users/dayna.blackwell/code/scout-and-wave/protocol/execution-rules.md`
+
+          ### What to implement
+
+          **1. saw-skill.md — File Ownership Guidance update**
+
+          Locate the Scout phase section that describes file ownership assignment
+          (currently around "Assign file ownership and agent IDs" — step 7 in the
+          Scout prompt). Add the following rule immediately after the disjoint
+          ownership constraint paragraph:
+
+          > **E35: Own the caller too (wiring obligation rule).** When an agent
+          > implements function or type X that must be called from an existing
+          > aggregation function Y in file Z (e.g., a validator registry, a CLI
+          > command registration, a route table), file Z MUST be in that agent's
+          > `file_ownership`. The agent who defines X owns the responsibility to
+          > wire it in. If no single agent can own both sides (e.g., Z is modified
+          > by a different agent in the same wave), create a `wiring:` entry in the
+          > IMPL doc and assign the caller file to an integration agent in a later
+          > wave.
+          >
+          > **Wiring declarations:** For every such obligation, write a `wiring:`
+          > entry in the IMPL doc:
+          > ```yaml
+          > wiring:
+          >   - symbol: ValidateReactions
+          >     defined_in: pkg/protocol/reactions_validation.go
+          >     must_be_called_from: pkg/protocol/schema_validation.go
+          >     agent: B
+          >     wave: 1
+          >     integration_pattern: append  # "append" | "register" | "inject" | "call"
+          > ```
+          > prepare-wave pre-flight will reject if `must_be_called_from` is not in
+          > the owning agent's `file_ownership`. validate-integration will grep/AST-
+          > parse the caller file post-merge and report severity: error if the call
+          > is absent.
+
+          Also update the Integration completeness audit section (step 9 in the Scout
+          prompt) to add: "New exported validator/handler/command → wiring: entry
+          written and must_be_called_from file in agent ownership?"
+
+          **2. execution-rules.md — E35 rule**
+
+          Add a new rule section after E34:
+
+          ```
+          ## E35: Wiring Obligation Declaration
+
+          **Trigger:** Scout identifies that an agent will implement an exported
+          symbol (function, type, method) that must be called from an existing
+          aggregation point in a file not created by that agent.
+
+          **Rule:** The Scout MUST:
+          1. Assign the aggregation file to the implementing agent's file_ownership
+             (preferred), OR
+          2. Write a wiring: entry in the IMPL doc if assigning to the same agent
+             creates a same-wave conflict, and assign the caller to an integration
+             agent in a later wave.
+
+          **Wiring declaration schema:**
+          ```yaml
+          wiring:
+            - symbol: <exported function or type name>
+              defined_in: <relative path to implementing file>
+              must_be_called_from: <relative path to caller/aggregator file>
+              agent: <agent ID that owns both sides>
+              wave: <wave number>
+              integration_pattern: append | register | inject | call
+          ```
+
+          **Enforcement:**
+          - prepare-wave pre-flight (Layer 3A): fails if must_be_called_from is
+            not in the owning agent's file_ownership.
+          - validate-integration --wiring (Layer 3B): post-merge grep/AST check
+            that symbol actually appears as a call in must_be_called_from. Reports
+            severity: error (not info) for declared but missing wiring.
+          - Agent brief injection (Layer 3C): prepare-wave injects all wiring
+            entries for the agent into .saw-agent-brief.md with explicit instruction.
+
+          **Rationale:** The heuristic export scanner (E25/E26) detects gaps
+          reactively post-merge. E35 makes wiring intent explicit and
+          machine-checkable before and after execution.
+          ```
+
+          ### Tests
+          No code tests required — this is documentation only. Verify:
+          - E35 section number does not conflict with existing rules (E34 is the
+            current last rule; add E35 after it).
+          - Both files are syntactically valid markdown.
+          - The wiring: YAML block example renders correctly.
+
+          ### Verification gate
+          ```
+          # Check markdown is not broken (no duplicate E-numbers):
+          grep -c "^## E35" /Users/dayna.blackwell/code/scout-and-wave/protocol/execution-rules.md
+          # Expected: 1
+          grep -c "E35" /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md
+          # Expected: >= 1
+          ```
+
+          ### Constraints
+          - Do NOT renumber existing E-rules.
+          - Do NOT modify any Go source files — this agent owns only .md files.
+          - The wiring: YAML example must exactly match the schema defined in
+            the interface contracts (WiringDeclaration struct field names).
+
+        files:
+          - implementations/claude-code/prompts/saw-skill.md
+          - protocol/execution-rules.md
+
+      - id: B
+        task: |
+          ## Agent B — Go Schema: WiringDeclaration type + ValidateWiringDeclarations
+
+          ### Repos and Files (all in scout-and-wave-go)
+          - `pkg/protocol/types.go` — add Wiring field to IMPLManifest
+          - `pkg/protocol/wiring_types.go` — scaffold exists; implement full types
+          - `pkg/protocol/wiring_validation.go` — new file: core validation logic
+          - `pkg/protocol/wiring_validation_test.go` — new file: tests
+          - `pkg/protocol/schema_unknown_keys.go` — register "wiring" as known key
+
+          ### What to implement
+
+          **1. pkg/protocol/types.go**
+
+          Add the Wiring field to IMPLManifest (after the existing Scaffolds field):
+          ```go
+          Wiring []WiringDeclaration `yaml:"wiring,omitempty" json:"wiring,omitempty"`
+          ```
+
+          **2. pkg/protocol/wiring_types.go** (scaffold file already committed)
+
+          The scaffold provides the type stubs. Implement the complete types
+          exactly matching the interface contracts:
+          ```go
+          package protocol
+
+          // WiringDeclaration declares that Symbol (defined in DefinedIn) must
+          // be called from MustBeCalledFrom. Written by Scout in IMPL doc wiring:
+          // block. Enforced by prepare-wave (Layer 3A) and validate-integration
+          // (Layer 3B). Injected into agent briefs (Layer 3C).
+          type WiringDeclaration struct {
+              Symbol             string `yaml:"symbol" json:"symbol"`
+              DefinedIn          string `yaml:"defined_in" json:"defined_in"`
+              MustBeCalledFrom   string `yaml:"must_be_called_from" json:"must_be_called_from"`
+              Agent              string `yaml:"agent" json:"agent"`
+              Wave               int    `yaml:"wave" json:"wave"`
+              IntegrationPattern string `yaml:"integration_pattern,omitempty" json:"integration_pattern,omitempty"`
+          }
+
+          type WiringValidationResult struct {
+              Gaps    []WiringGap `json:"gaps" yaml:"gaps"`
+              Valid   bool        `json:"valid" yaml:"valid"`
+              Summary string      `json:"summary" yaml:"summary"`
+          }
+
+          type WiringGap struct {
+              Declaration WiringDeclaration `json:"declaration" yaml:"declaration"`
+              Reason      string            `json:"reason" yaml:"reason"`
+              Severity    string            `json:"severity" yaml:"severity"`
+          }
+          ```
+
+          **3. pkg/protocol/wiring_validation.go** (new file)
+
+          Implement three functions:
+
+          **ValidateWiringDeclarations(manifest *IMPLManifest, repoPath string) (*WiringValidationResult, error)**
+
+          For each entry in manifest.Wiring:
+          - Resolve the absolute path: filepath.Join(repoPath, entry.MustBeCalledFrom)
+          - Attempt Go AST parse (go/parser, go/ast). Walk the AST looking for
+            *ast.CallExpr where the function name (ast.SelectorExpr.Sel or ast.Ident)
+            matches entry.Symbol exactly.
+          - If AST parse fails (non-Go file, parse error), fall back to bufio line
+            scanner: check if any line contains entry.Symbol as a substring.
+          - If symbol not found by either method: append WiringGap{
+              Declaration: entry,
+              Reason: fmt.Sprintf("symbol %q not found as a call in %s", entry.Symbol, entry.MustBeCalledFrom),
+              Severity: "error",
+            }
+          - Set result.Valid = len(result.Gaps) == 0
+          - Set result.Summary = descriptive string
+
+          **CheckWiringOwnership(manifest *IMPLManifest, waveNum int) []string**
+
+          Build a set of files owned by each agent in waveNum (from manifest.FileOwnership
+          where fo.Wave == waveNum). For each WiringDeclaration where entry.Wave == waveNum:
+          - Find the agent's owned files.
+          - If entry.MustBeCalledFrom is NOT in the agent's file set, append:
+            fmt.Sprintf("wiring entry for %q: must_be_called_from %q is not in agent %s file_ownership (wave %d)",
+              entry.Symbol, entry.MustBeCalledFrom, entry.Agent, waveNum)
+          Return the violations slice (empty = OK).
+
+          **FormatWiringBriefSection(manifest *IMPLManifest, agentID string) string**
+
+          Filter manifest.Wiring for entries where entry.Agent == agentID.
+          If none, return "".
+          Otherwise build a markdown section:
+          ```
+          ## Wiring Obligations
+
+          The following symbols MUST be wired into their caller files. This is
+          declared in the IMPL doc wiring: block and will be checked post-merge
+          by validate-integration (severity: error if missing).
+
+          | Symbol | Defined In | Must Be Called From | Pattern |
+          |--------|------------|---------------------|---------|
+          | FuncName | path/to/impl.go | path/to/caller.go | append |
+          ```
+
+          **4. pkg/protocol/schema_unknown_keys.go**
+
+          Find the known-keys set (the map or slice that lists allowed top-level
+          YAML keys). Add "wiring" to it so E16 validation does not flag it as
+          an unknown key.
+
+          ### Tests (wiring_validation_test.go)
+
+          Write table-driven tests for all three functions:
+
+          TestValidateWiringDeclarations:
+          - Case: symbol found as AST call → Valid=true, no gaps
+          - Case: symbol not found → Valid=false, gap with severity="error"
+          - Case: non-Go file (use a temp .yaml file) → falls back to grep, works
+          - Case: empty manifest.Wiring → Valid=true, no gaps
+          - Case: file does not exist → returns error or gap
+
+          TestCheckWiringOwnership:
+          - Case: must_be_called_from in agent's files → no violations
+          - Case: must_be_called_from NOT in agent's files → violation string returned
+          - Case: wave mismatch (entry.Wave != checked wave) → entry skipped
+
+          TestFormatWiringBriefSection:
+          - Case: agent has wiring obligations → section with table returned
+          - Case: agent has no obligations → empty string returned
+
+          ### Verification gate
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-go
+          go build ./pkg/protocol/...
+          go vet ./pkg/protocol/...
+          go test ./pkg/protocol/... -run TestValidateWiring -v
+          go test ./pkg/protocol/... -run TestCheckWiring -v
+          go test ./pkg/protocol/... -run TestFormatWiring -v
+          ```
+
+          ### Constraints
+          - Use only stdlib + existing module imports (go/ast, go/parser, go/token,
+            bufio, os, filepath, fmt, strings already in use in integration.go).
+          - Do NOT modify any cmd/saw files — Agent C and D own those.
+          - Do NOT modify extract.go or prepare_wave.go — Agent C owns those.
+          - The AST-based symbol search must check both plain *ast.Ident calls
+            (e.g. `Symbol(args)`) and selector calls (e.g. `pkg.Symbol(args)`).
+          - Severity for declared wiring gaps is always "error", never "warning" or "info".
+
+        files:
+          - pkg/protocol/types.go
+          - pkg/protocol/wiring_validation.go
+          - pkg/protocol/wiring_validation_test.go
+          - pkg/protocol/schema_unknown_keys.go
+        dependencies: []
+
+      - id: C
+        task: |
+          ## Agent C — sawtools: prepare-wave pre-flight (Layer 3A) + brief injection (Layer 3C)
+
+          ### Repos and Files (all in scout-and-wave-go)
+          - `cmd/saw/prepare_wave.go` — add wiring pre-flight + brief injection
+          - `cmd/saw/extract_context_cmd.go` — include wiring in extracted context
+
+          ### What to implement
+
+          **1. cmd/saw/prepare_wave.go**
+
+          **Layer 3A: Pre-flight wiring ownership check**
+
+          After "Step 0b: Check dependencies" (before Step 1 create worktrees),
+          add "Step 0c: Check wiring ownership":
+
+          ```go
+          // Step 0c: Validate wiring ownership (E35 Layer 3A)
+          // For each wiring declaration in the current wave, the must_be_called_from
+          // file must be in the owning agent's file_ownership. Fail fast before
+          // creating worktrees so the human sees the error immediately.
+          if violations := protocol.CheckWiringOwnership(doc, waveNum); len(violations) > 0 {
+              for _, v := range violations {
+                  fmt.Fprintf(os.Stderr, "prepare-wave: wiring ownership violation: %s\n", v)
+              }
+              return fmt.Errorf("prepare-wave: %d wiring ownership violation(s) — fix IMPL doc file_ownership before creating worktrees", len(violations))
+          }
+          ```
+
+          Note: doc must be loaded before this step. Move the manifest load
+          (currently Step 2) to before Step 0c so it is available for the check.
+          Step 1 (CreateWorktrees) takes manifestPath not doc, so the load order
+          change is safe.
+
+          **Layer 3C: Brief injection**
+
+          In the agent brief construction section (where `brief` is built with
+          fmt.Sprintf), after the `contractsSection` block, add a `wiringSectionStr`:
+
+          ```go
+          // Wiring obligations for this agent (E35 Layer 3C)
+          wiringSection := protocol.FormatWiringBriefSection(doc, agentID)
+          ```
+
+          Then include `wiringSection` in the brief format string, between the
+          contracts section and the gates section:
+
+          ```go
+          brief := fmt.Sprintf(`# Agent %s Brief - Wave %d
+          ...
+          %s%s%s
+          `,
+              agentID, waveNum, manifestPath,
+              formatFileList(agentFiles),
+              agentTask,
+              contractsSection,
+              wiringSection,  // <-- inject here
+              gatesSection,
+          )
+          ```
+
+          **2. cmd/saw/extract_context_cmd.go**
+
+          The extract-context command calls protocol.ExtractAgentContextFromManifest.
+          That function returns AgentContextJSONPayload. To include wiring in the
+          extracted context payload:
+
+          After the existing payload construction in ExtractAgentContextFromManifest
+          (in pkg/protocol/extract.go — but you do NOT own that file), instead add
+          wiring injection at the CLI layer: after `protocol.ExtractAgentContextFromManifest`
+          returns the payload, append a wiring section comment to the JSON output.
+
+          Actually: the cleaner approach is to add a `WiringSection string` field to
+          AgentContextJSONPayload in extract.go — BUT Agent B owns pkg/protocol/ files
+          other than the ones B is explicitly listed on. Since extract.go is not in
+          any agent's ownership, add the wiring context at the CLI output layer in
+          extract_context_cmd.go:
+
+          After marshaling the payload to JSON, check if there are wiring obligations
+          for this agent. If so, print an additional `wiring_obligations` key by
+          re-marshaling a wrapper struct:
+
+          ```go
+          // Augment payload with wiring obligations if any exist
+          wiringSection := protocol.FormatWiringBriefSection(m, agentID)
+          if wiringSection != "" {
+              // Append wiring section to the JSON output as a separate key
+              // by re-encoding with an augmented wrapper
+              type augmented struct {
+                  *protocol.AgentContextJSONPayload
+                  WiringObligations string `json:"wiring_obligations,omitempty"`
+              }
+              aug := augmented{
+                  AgentContextJSONPayload: payload,
+                  WiringObligations:       wiringSection,
+              }
+              out, err = json.MarshalIndent(aug, "", "  ")
+              // ... rest of output logic
+          }
+          ```
+
+          ### Verification gate
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-go
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          # Smoke test: run prepare-wave against a test manifest with a wiring
+          # violation and confirm it exits 1 with a clear message.
+          # (Manual check — no automated integration test required.)
+          ```
+
+          ### Constraints
+          - Do NOT modify pkg/protocol/*.go files — Agent B owns those.
+          - Do NOT modify validate_integration.go or finalize_wave.go — Agent D owns those.
+          - The pre-flight check (Step 0c) must run BEFORE worktrees are created (Step 1).
+          - The violation error message must name the symbol and the missing file.
+          - Brief injection must be a no-op (empty string) when manifest.Wiring is nil
+            or empty, or when the agent has no obligations.
+
+        files:
+          - cmd/saw/prepare_wave.go
+          - cmd/saw/extract_context_cmd.go
+        dependencies: []
+
+      - id: D
+        task: |
+          ## Agent D — sawtools: validate-integration + finalize-wave wiring check (Layer 3B)
+
+          ### Repos and Files (all in scout-and-wave-go)
+          - `cmd/saw/validate_integration.go` — add --wiring flag; call ValidateWiringDeclarations
+          - `cmd/saw/finalize_wave.go` — integrate wiring validation into Step 3.5
+
+          ### What to implement
+
+          **1. cmd/saw/validate_integration.go**
+
+          The current command runs heuristic export scanning only. Add:
+
+          a) A `--wiring` flag (bool, default true) that enables wiring declaration
+             checking. This makes it testable in isolation with `--wiring=false`.
+
+          b) After the existing `protocol.ValidateIntegration` call (heuristic scan),
+             run wiring declaration check:
+
+          ```go
+          // Wiring declaration check (E35 Layer 3B)
+          // For each wiring: entry, verify the symbol is actually called in
+          // must_be_called_from. This is severity: error (not info).
+          var wiringResult *protocol.WiringValidationResult
+          if wiringEnabled {
+              wiringResult, err = protocol.ValidateWiringDeclarations(manifest, repoDir)
+              if err != nil {
+                  return fmt.Errorf("validate-integration: wiring check failed: %w", err)
+              }
+          }
+          ```
+
+          c) Output both reports as a combined JSON structure:
+
+          ```go
+          type combinedReport struct {
+              HeuristicReport *protocol.IntegrationReport      `json:"heuristic_report,omitempty"`
+              WiringReport    *protocol.WiringValidationResult `json:"wiring_report,omitempty"`
+              Valid           bool                             `json:"valid"`
+          }
+          ```
+
+          `combined.Valid` is true only when both heuristic and wiring reports are valid.
+          Exit 1 if `!combined.Valid`.
+
+          d) Persist the wiring report to the manifest alongside the integration report:
+             use `protocol.AppendWiringValidationReport` (a new function you'll define
+             inline — see below) or simply marshal and append to the YAML under
+             `wiring_validation_reports.wave{N}`.
+
+          Actually: for simplicity, add a helper in validate_integration.go (not in
+          pkg/protocol, since Agent B owns that package) that appends wiring results
+          to the manifest YAML using the same raw YAML manipulation pattern as
+          AppendIntegrationReport in pkg/protocol/integration.go:
+
+          ```go
+          // appendWiringReport persists a WiringValidationResult to the manifest
+          // under wiring_validation_reports.{waveKey}. Uses raw YAML manipulation
+          // to avoid re-marshaling the entire manifest.
+          func appendWiringReport(manifestPath, waveKey string, result *protocol.WiringValidationResult) error
+          ```
+
+          Use gopkg.in/yaml.v3 for raw node manipulation (same pattern as AppendIntegrationReport).
+
+          **2. cmd/saw/finalize_wave.go**
+
+          Update Step 3.5 (currently "ValidateIntegration — informational") to also run
+          wiring declaration validation. Change the comment from "informational" to
+          reflect that wiring gaps are blocking errors:
+
+          ```go
+          // Step 3.5a: Heuristic integration scan (E25) — informational
+          // Step 3.5b: Wiring declaration check (E35) — blocking if gaps found
+          ```
+
+          After the existing integration report block, add:
+
+          ```go
+          // Step 3.5b: Wiring declaration check (E35 Layer 3B)
+          if len(manifest.Wiring) > 0 {
+              wiringResult, wiringErr := protocol.ValidateWiringDeclarations(manifest, repoPath)
+              if wiringErr != nil {
+                  fmt.Fprintf(os.Stderr, "finalize-wave: wiring check error: %v\n", wiringErr)
+              } else {
+                  result.WiringReport = wiringResult
+                  if !wiringResult.Valid {
+                      // Wiring gaps are errors — surface them clearly
+                      for _, gap := range wiringResult.Gaps {
+                          fmt.Fprintf(os.Stderr, "finalize-wave: WIRING GAP [error]: %s not called in %s\n",
+                              gap.Declaration.Symbol, gap.Declaration.MustBeCalledFrom)
+                      }
+                      // Do NOT block merge here — the gap is surfaced as a structured
+                      // error in the result and returned to the caller (web runner, CLI).
+                      // Blocking at this stage would prevent cleanup. The human or
+                      // integration agent addresses it via validate-integration.
+                  }
+              }
+          }
+          ```
+
+          Add `WiringReport *protocol.WiringValidationResult` to FinalizeWaveResult:
+          ```go
+          type FinalizeWaveResult struct {
+              // ... existing fields ...
+              WiringReport      *protocol.WiringValidationResult `json:"wiring_report,omitempty"`
+          }
+          ```
+
+          ### Verification gate
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-go
+          go build ./cmd/saw/...
+          go vet ./cmd/saw/...
+          # Verify validate-integration --help shows --wiring flag
+          ./saw validate-integration --help
+          ```
+
+          ### Constraints
+          - Do NOT modify pkg/protocol/*.go files — Agent B owns those.
+          - Do NOT modify prepare_wave.go or extract_context_cmd.go — Agent C owns those.
+          - The wiring check in finalize-wave must NOT block the merge step (step 4).
+            It surfaces gaps as structured errors in the result but allows merge to
+            proceed. The human addresses gaps via validate-integration post-merge.
+          - The combined JSON output from validate-integration must include both
+            heuristic_report and wiring_report so callers can distinguish gap types.
+          - appendWiringReport must handle the case where wiring_validation_reports
+            key does not yet exist in the YAML (create it).
+
+        files:
+          - cmd/saw/validate_integration.go
+          - cmd/saw/finalize_wave.go
+        dependencies: []
+
+  - number: 2
+    agents:
+      - id: E
+        task: |
+          ## Agent E — Web API: WiringEntry type + IMPLDocResponse wiring field
+
+          ### Repos and Files (all in scout-and-wave-web)
+          - `pkg/api/types.go` — add WiringEntry type
+          - `pkg/api/impl.go` — populate wiring in implDocResponseFromManifest
+
+          ### Dependencies
+          Depends on Agent B (Wave 1): WiringDeclaration type in
+          pkg/protocol/types.go and wiring field on IMPLManifest must be
+          merged to main in scout-and-wave-go before this agent runs.
+          Verify: `go get github.com/blackwell-systems/scout-and-wave-go@latest`
+          or check that the local replace directive picks up the changes.
+
+          ### What to implement
+
+          **1. pkg/api/types.go**
+
+          Add WiringEntry type (matching the interface contract exactly):
+
+          ```go
+          // WiringEntry is the API representation of one wiring declaration from
+          // the IMPL manifest wiring: block. Included in IMPLDocResponse so the
+          // ReviewScreen can display the Wiring panel (E35).
+          type WiringEntry struct {
+              Symbol             string `json:"symbol"`
+              DefinedIn          string `json:"defined_in"`
+              MustBeCalledFrom   string `json:"must_be_called_from"`
+              Agent              string `json:"agent"`
+              Wave               int    `json:"wave"`
+              IntegrationPattern string `json:"integration_pattern,omitempty"`
+              // Status is "declared" before finalize-wave runs; "verified" when
+              // wiring report shows Valid=true; "gap" when a WiringGap exists for
+              // this declaration.
+              Status             string `json:"status"`
+          }
+          ```
+
+          Add `Wiring []WiringEntry` to IMPLDocResponse (after PreMortem, following
+          the existing pattern):
+
+          ```go
+          Wiring []WiringEntry `json:"wiring,omitempty"`
+          ```
+
+          **2. pkg/api/impl.go**
+
+          In `implDocResponseFromManifest`, add wiring population after the pre-mortem
+          block:
+
+          ```go
+          // Wiring declarations (E35)
+          var wiringEntries []WiringEntry
+          if len(m.Wiring) > 0 {
+              wiringEntries = make([]WiringEntry, 0, len(m.Wiring))
+              for _, w := range m.Wiring {
+                  status := "declared"
+                  // Check integration_reports for wiring gap status
+                  // If a wiring_validation_report exists and this symbol has a gap, set "gap"
+                  // For now, derive from wiring_report in integration reports if available.
+                  // Simple heuristic: if any integration_report wave has Valid=false and
+                  // the manifest has wiring entries, mark as potentially gap.
+                  // Full status resolution done by Agent G's SSE events.
+                  wiringEntries = append(wiringEntries, WiringEntry{
+                      Symbol:             w.Symbol,
+                      DefinedIn:          w.DefinedIn,
+                      MustBeCalledFrom:   w.MustBeCalledFrom,
+                      Agent:              w.Agent,
+                      Wave:               w.Wave,
+                      IntegrationPattern: w.IntegrationPattern,
+                      Status:             status,
+                  })
+              }
+          }
+          if wiringEntries == nil {
+              wiringEntries = []WiringEntry{}
+          }
+          ```
+
+          Set `resp.Wiring = wiringEntries` at the end of implDocResponseFromManifest.
+
+          ### Tests
+          Add a test case to the existing `impl_handlers_test.go` (or create
+          `impl_wiring_test.go`) that:
+          - Creates a mock IMPLManifest with two WiringDeclaration entries
+          - Calls implDocResponseFromManifest
+          - Asserts resp.Wiring has length 2 with correct Symbol, DefinedIn,
+            MustBeCalledFrom values
+          - Asserts Status is "declared"
+
+          ### Verification gate
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-web
+          go build ./pkg/api/...
+          go vet ./pkg/api/...
+          go test ./pkg/api/... -run TestWiring -v
+          ```
+
+          ### Constraints
+          - The Wiring field on IMPLDocResponse must be an empty slice (not null)
+            when the manifest has no wiring entries — match the pattern for other
+            slices in implDocResponseFromManifest.
+          - Do NOT modify wave_runner.go — Agent G owns that file.
+          - Do NOT modify web/src/ files — Agent F owns those.
+          - Status computation can be simple ("declared") in this wave; Agent G
+            will update it via SSE events when wiring gaps are detected post-merge.
+
+        files:
+          - pkg/api/types.go
+          - pkg/api/impl.go
+        dependencies:
+          - B
+
+      - id: F
+        task: |
+          ## Agent F — Web UI: WiringPanel component + ReviewScreen integration
+
+          ### Repos and Files (all in scout-and-wave-web)
+          - `web/src/types.ts` — add WiringEntry interface and wiring field to IMPLDocResponse
+          - `web/src/components/review/WiringPanel.tsx` — new panel component
+          - `web/src/components/ReviewScreen.tsx` — register Wiring panel in panel list
+
+          ### Dependencies
+          Depends on Agent E (same wave, but E owns different files — no conflict).
+          Wait for Agent E's types.go changes to be visible in the Go API.
+          The TypeScript types here must match the JSON fields Agent E adds.
+
+          ### What to implement
+
+          **1. web/src/types.ts**
+
+          Add WiringEntry interface:
+
+          ```typescript
+          export interface WiringEntry {
+            symbol: string
+            defined_in: string
+            must_be_called_from: string
+            agent: string
+            wave: number
+            integration_pattern?: string
+            status: 'declared' | 'verified' | 'gap'
+          }
+          ```
+
+          Add `wiring?: WiringEntry[]` to the IMPLDocResponse interface (after
+          the existing `pre_mortem?: PreMortem` and `reactions?: ReactionsConfig`
+          fields):
+
+          ```typescript
+          wiring?: WiringEntry[]
+          ```
+
+          **2. web/src/components/review/WiringPanel.tsx** (new file)
+
+          Create a panel component following the exact same structure as
+          PreMortemPanel.tsx (Card + CardHeader + CardTitle + table pattern).
+
+          ```tsx
+          import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
+          import { WiringEntry } from '../../types'
+
+          interface WiringPanelProps {
+            wiring: WiringEntry[] | undefined
+          }
+
+          const STATUS_COLORS: Record<string, string> = {
+            declared: 'bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/20',
+            verified: 'bg-green-500/15 text-green-700 dark:text-green-400 border border-green-500/20',
+            gap: 'bg-red-500/15 text-red-700 dark:text-red-400 border border-red-500/20',
+          }
+
+          function StatusBadge({ status }: { status: string }) {
+            const colors = STATUS_COLORS[status] || 'bg-muted text-muted-foreground border border-border'
+            return (
+              <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${colors}`}>
+                {status}
+              </span>
+            )
+          }
+
+          export default function WiringPanel({ wiring }: WiringPanelProps): JSX.Element {
+            if (!wiring || wiring.length === 0) {
+              return (
+                <Card>
+                  <CardHeader><CardTitle>Wiring Declarations</CardTitle></CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-muted-foreground">No wiring declarations</p>
+                  </CardContent>
+                </Card>
+              )
+            }
+
+            const gapCount = wiring.filter(w => w.status === 'gap').length
+
+            return (
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center gap-3">
+                    <CardTitle>Wiring Declarations</CardTitle>
+                    {gapCount > 0 && (
+                      <StatusBadge status="gap" />
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    {wiring.length} declaration{wiring.length !== 1 ? 's' : ''}
+                    {gapCount > 0 ? ` — ${gapCount} gap${gapCount !== 1 ? 's' : ''} detected` : ''}
+                  </p>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="border-b border-border/60">
+                          <th className="text-left pb-2 pr-4 font-semibold text-foreground/70">Symbol</th>
+                          <th className="text-left pb-2 pr-4 font-semibold text-foreground/70">Defined In</th>
+                          <th className="text-left pb-2 pr-4 font-semibold text-foreground/70">Must Be Called From</th>
+                          <th className="text-left pb-2 pr-4 font-semibold text-foreground/70">Agent</th>
+                          <th className="text-left pb-2 font-semibold text-foreground/70">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {wiring.map((w, idx) => (
+                          <tr key={idx} className="border-b border-border/30 last:border-0">
+                            <td className="py-2 pr-4 font-mono text-foreground">{w.symbol}</td>
+                            <td className="py-2 pr-4 text-muted-foreground font-mono text-[10px]">{w.defined_in}</td>
+                            <td className="py-2 pr-4 text-muted-foreground font-mono text-[10px]">{w.must_be_called_from}</td>
+                            <td className="py-2 pr-4 text-muted-foreground">{w.agent}</td>
+                            <td className="py-2"><StatusBadge status={w.status} /></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            )
+          }
+          ```
+
+          **3. web/src/components/ReviewScreen.tsx**
+
+          a) Add import at top:
+          ```tsx
+          import WiringPanel from './review/WiringPanel'
+          ```
+
+          b) Add 'wiring' to the PanelKey union type:
+          ```tsx
+          type PanelKey = 'pre-mortem' | 'wiring' | 'stub-report' | ... (existing keys)
+          ```
+
+          c) Add panel entry to the panels array (under "Structure & Plan", after
+          pre-mortem):
+          ```tsx
+          { key: 'wiring', label: 'Wiring' },
+          ```
+
+          d) Render the panel in the panel list (after the pre-mortem panel render):
+          ```tsx
+          {activePanels.includes('wiring') && (
+            <div className="panel-animate">
+              <WiringPanel wiring={impl.wiring} />
+            </div>
+          )}
+          ```
+
+          ### Tests
+          No new test files required. Verify the component renders without TypeScript
+          errors:
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web
+          npm run build
+          ```
+
+          ### Verification gate
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web
+          npm run build
+          # Must complete with 0 TypeScript errors
+          ```
+
+          ### Constraints
+          - Do NOT modify pkg/api/*.go files — Agent E owns those.
+          - Follow the exact visual structure of PreMortemPanel.tsx (Card wrapper,
+            same className patterns, same badge component pattern).
+          - The 'wiring' panel key must be added to PanelKey union type, not just
+            the panels array (TypeScript will error otherwise).
+          - Status badge colors: declared=blue, verified=green, gap=red.
+
+        files:
+          - web/src/types.ts
+          - web/src/components/review/WiringPanel.tsx
+          - web/src/components/ReviewScreen.tsx
+        dependencies:
+          - B
+
+  - number: 3
+    type: integration
+    agents:
+      - id: G
+        task: |
+          ## Agent G — SSE Wiring Gap Events in wave_runner.go
+
+          ### Repos and Files (all in scout-and-wave-web)
+          - `pkg/api/wave_runner.go` — emit wiring_gap SSE events after finalize-wave
+
+          ### Dependencies
+          Depends on Wave 1 (Agents B, D): WiringValidationResult type and
+          finalize-wave WiringReport field must be merged and available.
+          Depends on Wave 2 (Agents E, F): WiringEntry type in pkg/api/types.go
+          must be merged.
+
+          ### What to implement
+
+          **pkg/api/wave_runner.go**
+
+          The web's wave runner calls `engine.FinalizeWave` (monolithic path) or
+          `runFinalizeSteps` (pipeline path). In both paths, after the finalize
+          step completes, check if the result contains a wiring report with gaps
+          and publish them as SSE events.
+
+          **Monolithic path** (the `else` branch around line 252 in wave_runner.go):
+
+          After the existing `stub_report` publish block, add:
+          ```go
+          // Wiring gap events (E35)
+          if finalizeResult.WiringReport != nil && !finalizeResult.WiringReport.Valid {
+              for _, gap := range finalizeResult.WiringReport.Gaps {
+                  publish("wiring_gap", map[string]interface{}{
+                      "wave":               waveNum,
+                      "symbol":             gap.Declaration.Symbol,
+                      "defined_in":         gap.Declaration.DefinedIn,
+                      "must_be_called_from": gap.Declaration.MustBeCalledFrom,
+                      "agent":              gap.Declaration.Agent,
+                      "reason":             gap.Reason,
+                      "severity":           gap.Severity,
+                  })
+              }
+              publish("wiring_gaps_summary", map[string]interface{}{
+                  "wave":      waveNum,
+                  "gap_count": len(finalizeResult.WiringReport.Gaps),
+                  "summary":   finalizeResult.WiringReport.Summary,
+              })
+          }
+          ```
+
+          **Pipeline path** (runFinalizeSteps call around line 245):
+
+          The `runFinalizeSteps` function handles the step-by-step pipeline.
+          Find where finalize steps produce their result (or where stub_report
+          and quality_gate_result are published in the pipeline path) and add
+          the same wiring_gap and wiring_gaps_summary publish calls after the
+          wiring validation step completes.
+
+          If runFinalizeSteps does not yet surface a WiringReport in its output,
+          add it: after the integration validation step in the pipeline, emit the
+          wiring events there.
+
+          The SSE event names `wiring_gap` and `wiring_gaps_summary` are new.
+          They follow the same naming convention as `stub_report` and
+          `quality_gate_result`.
+
+          The web UI's ReviewScreen currently does not listen for these events
+          (Agent F added the static WiringPanel). A follow-up can wire up SSE
+          status updates to flip WiringEntry.status from "declared" to "gap" in
+          real time — that is out of scope for this IMPL.
+
+          ### Verification gate
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-web
+          go build ./pkg/api/...
+          go vet ./pkg/api/...
+          go test ./pkg/api/... -v 2>&1 | tail -20
+          ```
+
+          ### Constraints
+          - Do NOT modify pkg/api/types.go or pkg/api/impl.go — Agent E owns those
+            (now merged).
+          - Do NOT modify web/src/ files — already merged from Agent F.
+          - The wiring_gap event payload keys must use snake_case matching the
+            WiringDeclaration field names.
+          - Do not block wave execution on wiring gaps — publish events and continue.
+
+        files:
+          - pkg/api/wave_runner.go
+        dependencies:
+          - B
+          - D
+          - E
+          - F
+
+
+post_merge_checklist:
+  groups:
+    - title: Cross-repo verification
+      items:
+        - description: Rebuild scout-and-wave-go sawtools binary and verify wiring_types.go compiles
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./...
+        - description: Rebuild scout-and-wave-web saw binary after go.mod picks up new types
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./cmd/saw
+        - description: Run full test suites in both repos
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go test ./... && cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./...
+    - title: End-to-end wiring check smoke test
+      items:
+        - description: Run sawtools validate against an IMPL with a wiring block to verify E16 accepts it
+          command: sawtools validate /Users/dayna.blackwell/code/scout-and-wave-web/docs/IMPL/IMPL-integration-gap-solution.yaml
+        - description: Run prepare-wave against a test IMPL with a wiring violation to verify Layer 3A blocks
+        - description: Verify WiringPanel renders in ReviewScreen for an IMPL with wiring entries
+    - title: Frontend rebuild
+      items:
+        - description: Rebuild React frontend after WiringPanel addition
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build
+        - description: Rebuild Go binary to embed updated assets
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go build -o saw ./cmd/saw
+
+pre_mortem:
+  overall_risk: medium
+  rows:
+    - scenario: |
+        Agent B's wiring_validation.go AST walk misses call expressions in
+        certain Go syntax patterns (e.g., method calls, goroutine invocations,
+        indirect calls through function variables). ValidateWiringDeclarations
+        reports false positives (gaps that are not real).
+      likelihood: medium
+      impact: medium
+      mitigation: |
+        The bufio grep fallback catches all substring matches. For the AST walk,
+        check both ast.CallExpr.Fun as *ast.Ident AND *ast.SelectorExpr.Sel. Add
+        a test case specifically for selector-style calls (pkg.Symbol()). Accept
+        that false positives may occur for indirect calls — the gap report is
+        advisory (does not block merge), so a false positive only creates noise.
+
+    - scenario: |
+        prepare-wave CheckWiringOwnership fires on legacy IMPL docs that predate
+        the wiring block. All existing IMPLs have empty Wiring slices, so
+        CheckWiringOwnership should be a no-op. But if an IMPL doc has a stale
+        wiring entry pointing to a file no longer in file_ownership, prepare-wave
+        will block on a stale obligation.
+      likelihood: low
+      impact: high
+      mitigation: |
+        CheckWiringOwnership only fires when manifest.Wiring is non-empty. For
+        legacy IMPLs with empty wiring, it returns no violations. Document clearly
+        in the prepare-wave error message that the obligation came from the wiring
+        block and name the specific entry, so humans can fix the IMPL doc easily.
+
+    - scenario: |
+        Wave 2 Agents E and F depend on Wave 1 Agent B's changes being merged to
+        main in scout-and-wave-go. If the scout-and-wave-go dependency in
+        scout-and-wave-web's go.mod uses a replace directive pointing to a local
+        path, the types are available immediately. If using a published version,
+        Agent E/F would need a go get update before building.
+      likelihood: medium
+      impact: high
+      mitigation: |
+        This IMPL spans two repos. Verify the go.mod replace directive in
+        scout-and-wave-web points to the local scout-and-wave-go path. If not,
+        Agent E must run go get github.com/blackwell-systems/scout-and-wave-go@HEAD
+        after Wave 1 merges. Document this in Agent E's task (done above).
+
+    - scenario: |
+        schema_unknown_keys.go may use a different mechanism to track known keys
+        than a simple map. If it uses a different pattern (e.g., a JSON schema
+        file), adding "wiring" may require a different approach.
+      likelihood: low
+      impact: low
+      mitigation: |
+        Agent B must read schema_unknown_keys.go before implementing. The file is
+        small (~50 lines based on the codebase structure). If the mechanism differs
+        from a simple map, adapt accordingly. The invariant is that "wiring" must
+        not trigger an E16 unknown-key violation after this IMPL merges.
+
+    - scenario: |
+        ReviewScreen.tsx PanelKey union type update is missed. If the wiring key
+        is added to the panels array but not to the PanelKey union type, the
+        TypeScript build fails.
+      likelihood: low
+      impact: medium
+      mitigation: |
+        Agent F's task explicitly calls out both the union type and the panels
+        array. The verification gate (npm run build) catches this immediately.
+
+    - scenario: |
+        finalize_wave.go's WiringReport field addition to FinalizeWaveResult
+        conflicts with the FinalizeWaveResult type used in wave_runner.go which
+        imports scout-and-wave-go as a dependency. The web app references
+        engine.FinalizeWaveResult, not the cmd/saw local struct.
+      likelihood: medium
+      impact: medium
+      mitigation: |
+        cmd/saw/finalize_wave.go defines FinalizeWaveResult locally (it's a cmd
+        package struct, not exported from pkg/). The engine package wraps this
+        separately. Agent D adds WiringReport to the local cmd/saw FinalizeWaveResult.
+        Agent G reads engine.FinalizeWaveResult from pkg/engine — check if engine
+        package has its own result type. If so, Agent G may need to check a
+        different field path. This is called out in Agent G's task as a conditional.

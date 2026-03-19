@@ -1,0 +1,744 @@
+completion_date: "2026-03-19"
+title: Protocol-Engine Drift Fixes
+feature_slug: protocol-engine-drift-fixes
+verdict: SUITABLE
+suitability_assessment: |
+    The audit identified 11 concrete issues across two repos (scout-and-wave protocol docs
+    and scout-and-wave-go engine/SDK). All items are fully specified with known file targets:
+    no root-cause investigation is needed.
+
+    File decomposition: 9+ distinct files change across 2 repos. The Go engine work
+    (main.go registration, new command files, types.go fields, validation wiring) is
+    disjoint from the protocol doc work (saw-skill.md, message-formats.md, scout.md).
+    Within the Go engine, main.go registration conflicts with no other file, and the new
+    command implementations are brand-new files. The only intra-engine conflict is that
+    both Agent C (wiring DetectUnknownKeys into Validate) and Agent F (kebab/impls_total
+    validators) touch validation.go — resolved by putting F in Wave 2 after C.
+
+    All cross-agent interfaces are fully discoverable: the new command function signatures
+    (newUpdateProgramStateCmd, newUpdateProgramImplCmd) follow the identical cobra.Command
+    pattern as every other command in the codebase.
+
+    Estimated times:
+    - Scout phase: ~15 min (codebase reading across 2 repos + 11 issues)
+    - Agent execution: ~50 min (5 Wave 1 agents × ~10 min avg, accounting for parallelism)
+    - Wave 2: ~10 min (1 agent, sequential after Wave 1 merge)
+    - Merge and verification: ~5 min
+    Total SAW time: ~80 min
+
+    Sequential baseline: ~110 min (6 agents × ~18 min avg)
+    Time savings: ~30 min (~27% faster)
+
+    Recommendation: Clear speedup from Wave 1 parallelism. Go and protocol doc work are
+    fully independent; 5 agents run concurrently.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: cmd/saw/main.go
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: cmd/saw/update_program_state_cmd.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: cmd/saw/update_program_impl_cmd.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/types.go
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_unknown_keys.go
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/validation.go
+      agent: C
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: implementations/claude-code/prompts/saw-skill.md
+      agent: D
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: implementations/claude-code/prompts/agents/scout.md
+      agent: D
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: protocol/message-formats.md
+      agent: E
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: pkg/protocol/validation.go
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - C
+      repo: scout-and-wave-go
+interface_contracts:
+    - name: newUpdateProgramStateCmd
+      description: |
+        New cobra.Command constructor for the update-program-state sawtools subcommand.
+        Reads the PROGRAM manifest, updates its state field to the given value, writes
+        the manifest back, and outputs JSON result. Follows the exact pattern of
+        newUpdateStatusCmd in update_status.go.
+      definition: |
+        func newUpdateProgramStateCmd() *cobra.Command
+        // Flags: --state <string> (required)
+        // Args: cobra.ExactArgs(1) — manifest path
+        // Output JSON:
+        // {
+        //   "updated": bool,
+        //   "manifest_path": string,
+        //   "previous_state": string,
+        //   "new_state": string
+        // }
+        // Exit codes: 0 success, 1 update error, 2 parse error
+      location: cmd/saw/update_program_state_cmd.go
+    - name: newUpdateProgramImplCmd
+      description: |
+        New cobra.Command constructor for the update-program-impl sawtools subcommand.
+        Reads the PROGRAM manifest, finds the impl entry by slug, updates its status
+        field, writes the manifest back, and outputs JSON result.
+      definition: |
+        func newUpdateProgramImplCmd() *cobra.Command
+        // Flags: --impl <string> (required), --status <string> (required)
+        // Args: cobra.ExactArgs(1) — manifest path
+        // Output JSON:
+        // {
+        //   "updated": bool,
+        //   "manifest_path": string,
+        //   "impl_slug": string,
+        //   "previous_status": string,
+        //   "new_status": string
+        // }
+        // Exit codes: 0 success, 1 impl not found or update error, 2 parse error
+      location: cmd/saw/update_program_impl_cmd.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+            You are Agent A in Wave 1 of the protocol-engine-drift-fixes IMPL. Your sole task
+            is registering 5 existing CLI command constructors in cmd/saw/main.go. These
+            constructors already exist as Go files but are not called from main().
+
+            ## What to Implement
+            Edit /Users/dayna.blackwell/code/scout-and-wave-go/cmd/saw/main.go.
+
+            The following five command constructor calls are MISSING from the rootCmd.AddCommand(...)
+            block. Add all five to the AddCommand call (order within the block does not matter):
+
+            ```go
+            newTierGateCmd(),
+            newFreezeContractsCmd(),
+            newProgramStatusCmd(),
+            newProgramReplanCmd(),
+            newMarkProgramCompleteCmd(),
+            ```
+
+            The constructors are defined in these existing files (already present, do NOT modify):
+            - cmd/saw/tier_gate_cmd.go        → newTierGateCmd()
+            - cmd/saw/freeze_contracts_cmd.go → newFreezeContractsCmd()
+            - cmd/saw/program_status_cmd.go   → newProgramStatusCmd()
+            - cmd/saw/program_replan_cmd.go   → newProgramReplanCmd()
+            - cmd/saw/mark_program_complete_cmd.go → newMarkProgramCompleteCmd()
+
+            ## Tests
+            No new tests are required for this change. The existing command files have their
+            own test files. After your edit, verify the binary compiles:
+            ```
+            go build ./...
+            ```
+            Also run a quick smoke-test to confirm the new commands appear in help output:
+            ```bash
+            go run . --help | grep -E "tier-gate|freeze-contracts|program-status|program-replan|mark-program-complete"
+            ```
+            All 5 should appear.
+
+            ## Verification Gate
+            1. go build ./cmd/saw/...
+            2. go vet ./cmd/saw/...
+            3. go test ./cmd/saw/... -run TestMain (if test exists) or go test ./cmd/saw/...
+
+            ## Constraints
+            - Only modify cmd/saw/main.go
+            - Do not reorder existing AddCommand entries
+            - Do not change any command constructor files
+          files:
+            - cmd/saw/main.go
+        - id: B
+          task: |
+            ## Context
+            You are Agent B in Wave 1 of the protocol-engine-drift-fixes IMPL. Your task is
+            implementing two missing sawtools commands that are referenced in saw-skill.md but
+            do not yet exist as Go code: `update-program-state` and `update-program-impl`.
+
+            ## What to Implement
+
+            ### File 1: cmd/saw/update_program_state_cmd.go
+
+            Create this file in /Users/dayna.blackwell/code/scout-and-wave-go/cmd/saw/.
+            Pattern: follow the structure of existing program_status_cmd.go or update_status.go.
+
+            Command spec:
+            - Use: "update-program-state <program-manifest>"
+            - Short: "Update the state field of a PROGRAM manifest"
+            - Args: cobra.ExactArgs(1) — absolute path to the PROGRAM manifest YAML
+            - Required flag: --state <string> (the new state value, e.g. "REVIEWED")
+            - Logic:
+              1. Parse the PROGRAM manifest via protocol.ParseProgramManifest(manifestPath)
+              2. Record previousState = manifest.State
+              3. Update manifest.State to the new value
+              4. Write the manifest back to disk (marshal YAML and write file)
+              5. Output JSON:
+                 {"updated":true,"manifest_path":"...","previous_state":"...","new_state":"..."}
+            - Exit codes: 0 success, 1 update/write error, 2 parse error
+
+            ### File 2: cmd/saw/update_program_impl_cmd.go
+
+            Create this file in /Users/dayna.blackwell/code/scout-and-wave-go/cmd/saw/.
+
+            Command spec:
+            - Use: "update-program-impl <program-manifest>"
+            - Short: "Update the status of a specific IMPL entry in a PROGRAM manifest"
+            - Args: cobra.ExactArgs(1) — absolute path to the PROGRAM manifest YAML
+            - Required flags:
+              - --impl <string>  (the IMPL slug to update, e.g. "my-feature")
+              - --status <string> (the new status, e.g. "complete", "in_progress", "blocked")
+            - Logic:
+              1. Parse the PROGRAM manifest via protocol.ParseProgramManifest(manifestPath)
+              2. Find the impl entry in manifest.Impls where impl.Slug == implSlug
+              3. If not found, exit 1 with error "impl <slug> not found in manifest"
+              4. Record previousStatus = impl.Status
+              5. Update impl.Status to the new value
+              6. Write the manifest back to disk
+              7. Output JSON:
+                 {"updated":true,"manifest_path":"...","impl_slug":"...","previous_status":"...","new_status":"..."}
+            - Exit codes: 0 success, 1 impl not found or write error, 2 parse error
+
+            ## Important notes
+            - Look at /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/ to understand
+              PROGRAMManifest struct fields (ProgramSlug, State, Tiers, Impls, etc.)
+            - Look at existing command files for import patterns (cobra, encoding/json, os, fmt)
+            - The manifest write-back should use gopkg.in/yaml.v3 marshaling followed by os.WriteFile
+            - DO NOT add these commands to main.go — Agent A owns main.go
+
+            ## Tests
+            Write basic unit tests in:
+            - cmd/saw/update_program_state_cmd_test.go
+            - cmd/saw/update_program_impl_cmd_test.go
+
+            Each test file needs at minimum:
+            - A test that creates a temp PROGRAM manifest, runs the command, and verifies the
+              JSON output contains "updated":true and the expected new state/status value
+            - A test for the "not found" error case in update-program-impl
+
+            ## Verification Gate
+            1. go build ./cmd/saw/...
+            2. go vet ./cmd/saw/...
+            3. go test ./cmd/saw/... -run TestUpdateProgram
+          files:
+            - cmd/saw/update_program_state_cmd.go
+            - cmd/saw/update_program_impl_cmd.go
+        - id: C
+          task: |
+            ## Context
+            You are Agent C in Wave 1 of the protocol-engine-drift-fixes IMPL. Your task
+            covers three related Go engine fixes in pkg/protocol/:
+            1. Add 4 missing IMPLManifest fields (feature, repository, repositories, plan_reference)
+            2. Fix ScaffoldFile YAML tag mismatch (file_path → file)
+            3. Wire DetectUnknownKeys + DetectDuplicateKeys into the protocol.Validate() API
+
+            ## What to Implement
+
+            ### Fix 1: pkg/protocol/types.go — Add 4 missing fields to IMPLManifest
+
+            These four fields are written by Scouts (per message-formats.md) but are not in
+            the struct, so Go silently drops them on unmarshal:
+
+            Add to the IMPLManifest struct (after the existing Title/FeatureSlug fields is a
+            natural location, but any location before the wave fields is acceptable):
+
+            ```go
+            // Feature is a short one-line description of what this IMPL implements.
+            // Written by Scouts in the manifest header; informational only.
+            Feature          string   `yaml:"feature,omitempty" json:"feature,omitempty"`
+            // Repository is the absolute path to the repository root (single-repo waves).
+            Repository        string   `yaml:"repository,omitempty" json:"repository,omitempty"`
+            // Repositories lists absolute paths for multi-repo waves (omit if single-repo).
+            Repositories      []string `yaml:"repositories,omitempty" json:"repositories,omitempty"`
+            // PlanReference is an optional path to the original plan document.
+            PlanReference     string   `yaml:"plan_reference,omitempty" json:"plan_reference,omitempty"`
+            ```
+
+            ### Fix 2: pkg/protocol/types.go — Fix ScaffoldFile YAML tag
+
+            The current ScaffoldFile struct has:
+            ```go
+            FilePath   string `yaml:"file_path" json:"file_path"`
+            ```
+
+            message-formats.md documents this field as `file:` (not `file_path:`). Scouts
+            writing `file:` get the field silently ignored.
+
+            Change the YAML tag to `file` while keeping the JSON tag as `file_path` for
+            backward compat with web app JSON consumers:
+            ```go
+            FilePath   string `yaml:"file" json:"file_path"`
+            ```
+
+            IMPORTANT: After this change, also update schema_unknown_keys.go (Fix 3 below)
+            to reflect the renamed key in the scaffold context.
+
+            ### Fix 3: pkg/protocol/schema_unknown_keys.go — Two updates
+
+            **3a: Add the 4 new IMPLManifest fields to knownKeys["top"]:**
+            ```go
+            "feature":         true,
+            "repository":      true,
+            "repositories":    true,
+            "plan_reference":  true,
+            ```
+
+            **3b: Add quality_gate fix field to knownKeys["quality_gate"]:**
+            ```go
+            "fix": true,
+            ```
+            (QualityGate.Fix already exists in types.go but is missing from the known keys map,
+            causing false-positive SV01_UNKNOWN_KEY warnings.)
+
+            **3c: Update the scaffold context key for ScaffoldFile:**
+            The "scaffold" context in knownKeys currently has "file_path": true. After Fix 2
+            renames the YAML tag to "file", update knownKeys["scaffold"] accordingly:
+            ```go
+            "file":        true,  // was "file_path"
+            ```
+
+            ### Fix 4: pkg/protocol/validation.go — Wire unknown/duplicate key validators
+
+            The Validate() function currently calls ValidateSchema() but does NOT call
+            DetectUnknownKeys() or DetectDuplicateKeys() (if the latter exists).
+
+            Look at the current Validate() function in validation.go. Add a call to
+            DetectUnknownKeys after ValidateSchema:
+
+            ```go
+            // DetectUnknownKeys uses raw YAML — but Validate() receives a parsed struct.
+            // For wiring, Validate() cannot call DetectUnknownKeys directly (it needs raw bytes).
+            // Instead, add a new exported function:
+            ```
+
+            Actually, look at how DetectUnknownKeys works — it takes []byte. The Validate()
+            function takes *IMPLManifest. To wire them together, add a new function
+            ValidateBytes(yamlData []byte) []ValidationError that:
+            1. Unmarshals into IMPLManifest
+            2. Calls Validate(manifest)
+            3. Also calls DetectUnknownKeys(yamlData)
+            4. Returns combined errors
+
+            Then update the existing Validate() docstring to note that unknown-key detection
+            requires ValidateBytes() (since Validate() receives an already-unmarshaled struct
+            and cannot re-detect dropped keys).
+
+            If ValidateBytes already exists, just ensure it calls both Validate() and
+            DetectUnknownKeys(). If not, create it.
+
+            Check whether a DetectDuplicateKeys function exists in the protocol package; if it
+            does, wire it into ValidateBytes as well.
+
+            ## Tests
+            No new test files are required — the existing schema validation tests in
+            pkg/protocol/ should cover these. If there are tests that specifically check
+            scaffold YAML serialization, update them to use "file:" instead of "file_path:".
+
+            Run: go test ./pkg/protocol/...
+
+            ## Verification Gate
+            1. go build ./pkg/protocol/...
+            2. go vet ./pkg/protocol/...
+            3. go test ./pkg/protocol/...
+
+            ## Constraints
+            - Only modify types.go, schema_unknown_keys.go, and validation.go
+            - Do not modify validation.go's Validate() signature — add ValidateBytes() separately
+            - Do not change any QualityGate.Fix field in types.go (it already exists there)
+          files:
+            - pkg/protocol/types.go
+            - pkg/protocol/schema_unknown_keys.go
+            - pkg/protocol/validation.go
+        - id: D
+          task: |
+            ## Context
+            You are Agent D in Wave 1 of the protocol-engine-drift-fixes IMPL. Your task is
+            fixing three issues in the protocol documentation in scout-and-wave repo:
+
+            Repo location: /Users/dayna.blackwell/code/scout-and-wave/
+
+            ## What to Implement
+
+            ### File 1: implementations/claude-code/prompts/saw-skill.md
+
+            **Fix 1: E-number range is stale.**
+            Find the line that reads:
+            ```
+            *`I{N}` notation refers to invariants (I1–I6) and `E{N}` to execution rules
+            (E1–E26) defined in `protocol/invariants.md` and `protocol/execution-rules.md`.
+            ```
+            Change `E1–E26` to `E1–E34`.
+
+            **Fix 2: integration_connectors false prohibition in "Valid top-level keys" note.**
+            Find the block that contains:
+            ```
+            **CRITICAL: Do NOT invent YAML keys.** Only use the keys listed above. Unknown keys
+            (e.g., `dep_graph`, `cascade_candidates`, `integration_connectors`, ...
+            ```
+            This incorrectly lists `integration_connectors` as an example of an invalid unknown
+            key. But `integration_connectors` IS a valid key in the schema.
+
+            Remove `integration_connectors` from the parenthetical example list. The corrected
+            text should read something like:
+            ```
+            Unknown keys (e.g., `dep_graph`, `cascade_candidates`, `integration_connectors_extra`,
+            `integration_required`, `suggested_callers`)
+            ```
+            Keep `integration_connectors_extra` in the list as it is still invalid.
+
+            **Fix 3: config schema block is missing planner_model and scaffold_model.**
+            Find the JSON config schema block:
+            ```json
+            {
+              "agent": {
+                "scout_model": "claude-sonnet-4-5",
+                "wave_model": "claude-sonnet-4-5",
+                "chat_model": "claude-sonnet-4-5",
+                "integration_model": "claude-sonnet-4-5"
+              }
+            }
+            ```
+            Add `planner_model` and `scaffold_model` fields to the schema block:
+            ```json
+            {
+              "agent": {
+                "scout_model": "claude-sonnet-4-5",
+                "wave_model": "claude-sonnet-4-5",
+                "chat_model": "claude-sonnet-4-5",
+                "integration_model": "claude-sonnet-4-5",
+                "scaffold_model": "claude-sonnet-4-5",
+                "planner_model": "claude-sonnet-4-5"
+              }
+            }
+            ```
+            Also update the prose description after the block to include these two fields.
+            For `/saw program execute`, document that `agent.planner_model` is read for the
+            Planner agent. For scaffold agents, document that `agent.scaffold_model` is read.
+
+            **Fix 4: Add update-program-state and update-program-impl to the sawtools commands list.**
+            Find the section "## sawtools Commands" that lists all sawtools subcommands.
+            Add these two lines to the list (near the other program-level commands):
+            ```
+            - `sawtools update-program-state <manifest> --state <state>` — update PROGRAM manifest state field (E32)
+            - `sawtools update-program-impl <manifest> --impl <slug> --status <status>` — update per-IMPL execution status in PROGRAM manifest (E32)
+            ```
+
+            ### File 2: implementations/claude-code/prompts/agents/scout.md
+
+            **Fix 5: integration_connectors false prohibition.**
+            This file has the exact same erroneous text as saw-skill.md. Find the line that
+            contains:
+            ```
+            **CRITICAL: Do NOT invent YAML keys.** Only use the keys listed above. Unknown keys
+            (e.g., `dep_graph`, `cascade_candidates`, `integration_connectors`, ...
+            ```
+            Apply the same fix as saw-skill.md Fix 2: remove `integration_connectors` from
+            the parenthetical example list of invalid keys.
+
+            ## Verification Gate
+            This is documentation-only work. Verify:
+            1. Both files are valid UTF-8 (no corruption)
+            2. Grep confirms `integration_connectors` no longer appears in the "do not use"
+               example list (it should still appear in the Valid keys list)
+            3. Grep confirms `E1–E34` appears in saw-skill.md
+            4. Grep confirms `scaffold_model` and `planner_model` appear in the config block
+          files:
+            - implementations/claude-code/prompts/saw-skill.md
+            - implementations/claude-code/prompts/agents/scout.md
+        - id: E
+          task: |
+            ## Context
+            You are Agent E in Wave 1 of the protocol-engine-drift-fixes IMPL. Your task is
+            fixing documentation issues in message-formats.md in the scout-and-wave repo.
+
+            Repo location: /Users/dayna.blackwell/code/scout-and-wave/
+            File: protocol/message-formats.md
+
+            ## What to Implement
+
+            ### Fix 1: ScaffoldFile YAML tag documentation
+
+            The YAML format block for scaffolds currently shows:
+            ```yaml
+            scaffolds:
+              - file: "pkg/types/shared.go"
+            ```
+
+            This is CORRECT in message-formats.md (it documents `file:`). However, the Go
+            struct uses `yaml:"file_path"` — Agent C is fixing the Go struct to use `yaml:"file"`
+            to match this documentation. No change needed to message-formats.md for this field
+            name since the doc already shows the correct `file:` form.
+
+            Verify this is indeed the case by reading the file. If you find any place in
+            message-formats.md that documents ScaffoldFile with `file_path:` instead of `file:`,
+            correct it to `file:`.
+
+            ### Fix 2: Document missing IMPLManifest fields
+
+            The fields `feature`, `repository`, `repositories`, and `plan_reference` are
+            shown in the IMPL doc header examples in message-formats.md (lines ~32-70) but
+            are not listed anywhere as valid top-level schema keys.
+
+            Find the section that documents valid top-level IMPL manifest keys (the "Valid
+            top-level keys" list or equivalent schema reference). Add these four fields to
+            the documented schema with brief descriptions:
+
+            - `feature` — One-line description of what the IMPL implements (informational, Scout-written)
+            - `repository` — Absolute path to repository root for single-repo waves
+            - `repositories` — List of absolute repository paths for multi-repo waves
+            - `plan_reference` — Optional path to the original plan or requirements document
+
+            If there is no dedicated "schema reference" section, add a brief note near the
+            IMPL doc header example in the Suitability Verdict section explaining these fields.
+
+            ### Fix 3: Document missing Wave/Agent/QualityGate fields
+
+            These fields exist in the Go types but are undocumented in message-formats.md:
+            - `QualityGate.repo` — if set, gate only runs in the specified repo (for multi-repo waves)
+            - `QualityGate.fix` — fix mode flag for format gates (e.g., gofmt -w)
+            - `Wave.agent_launch_order` — explicit agent launch ordering within a wave
+            - `Wave.base_commit` — recorded when worktrees are created, used for post-merge verification
+            - `Agent.model` — model override for this specific agent
+
+            Find the schema documentation sections for QualityGate, Wave, and Agent in
+            message-formats.md. Add these fields with brief descriptions to their respective
+            sections.
+
+            If these fields are not yet documented in a schema table or YAML block, add them
+            as a brief addendum to each section.
+
+            ## Verification Gate
+            Documentation only:
+            1. Confirm the file is valid markdown (no broken syntax)
+            2. Grep confirms `agent_launch_order`, `base_commit`, `model` appear in the file
+               in their respective schema sections
+          files:
+            - protocol/message-formats.md
+      base_commit: aed866c4e381277d4478e3f274612883e536145b
+    - number: 2
+      agents:
+        - id: F
+          task: |
+            ## Context
+            You are Agent F in Wave 2 of the protocol-engine-drift-fixes IMPL. Wave 1 (Agent C)
+            has already updated pkg/protocol/types.go and validation.go. Your task adds two
+            additional validators to validation.go:
+            1. feature_slug kebab-case format validation for IMPL manifests
+            2. impls_total exact equality validation for PROGRAM manifests
+
+            Repo: /Users/dayna.blackwell/code/scout-and-wave-go/
+
+            ## What to Implement
+
+            ### Fix 1: pkg/protocol/validation.go — feature_slug kebab-case validation
+
+            The feature_slug field is validated for existence (validateI4RequiredFields checks
+            it is non-empty) but its format is not checked. Add a format check in
+            validateI4RequiredFields (or a new helper) that enforces the kebab-case pattern:
+            - Only lowercase letters, digits, and hyphens
+            - Must not start or end with a hyphen
+            - Regex: `^[a-z0-9]+(-[a-z0-9]+)*$`
+
+            If the existing feature_slug check in validateI4RequiredFields is a simple
+            non-empty check, extend it:
+            ```go
+            var featureSlugRegex = regexp.MustCompile(`^[a-z0-9]+(-[a-z0-9]+)*$`)
+
+            // In validateI4RequiredFields, after checking non-empty:
+            if !featureSlugRegex.MatchString(m.FeatureSlug) {
+                errs = append(errs, ValidationError{
+                    Code:    "I4_INVALID_FORMAT",
+                    Message: fmt.Sprintf("feature_slug %q must be kebab-case (lowercase letters, digits, hyphens; no leading/trailing hyphens)", m.FeatureSlug),
+                    Field:   "feature_slug",
+                })
+            }
+            ```
+
+            ### Fix 2: pkg/protocol/validate_program.go or validation.go — impls_total exact equality
+
+            Look for where impls_total is validated in the PROGRAM manifest validation. Check
+            pkg/protocol/validate_program.go if it exists, otherwise look in validation.go or
+            schema_validation.go.
+
+            Current behavior: only checks impls_total <= len(impls). Required behavior: check
+            impls_total == len(impls) exactly.
+
+            Find the relevant check and change it from a `<=` bound to strict `==`:
+            ```go
+            if manifest.ImplsTotal != len(manifest.Impls) {
+                // Return validation error: impls_total must equal len(impls)
+            }
+            ```
+
+            Read the actual validation code before making this change to understand the exact
+            context and function signature.
+
+            ## Tests
+            Add tests to the appropriate _test.go file:
+            - TestFeatureSlugKebabValidation: test valid slugs (pass) and invalid slugs (fail)
+              - Valid: "my-feature", "tool-journaling", "abc123", "a"
+              - Invalid: "MyFeature", "my_feature", "-starts-with-hyphen", "ends-with-hyphen-"
+            - TestImplsTotalExactMatch: test that impls_total must equal len(impls) exactly
+
+            ## Verification Gate
+            1. go build ./pkg/protocol/...
+            2. go vet ./pkg/protocol/...
+            3. go test ./pkg/protocol/... -run TestFeatureSlug
+            4. go test ./pkg/protocol/... -run TestImplsTotal
+
+            ## Constraints
+            - Only modify files in pkg/protocol/
+            - Do not change Validate() signature
+            - The featureSlugRegex variable should be package-level (alongside agentIDRegex)
+          files:
+            - pkg/protocol/validation.go
+          dependencies:
+            - C
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: go vet ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: go test ./...
+          required: true
+          repo: scout-and-wave-go
+completion_reports:
+    A:
+        status: complete
+        branch: saw/protocol-engine-drift-fixes/wave1-agent-A
+        commit: 19923d8
+        files_changed:
+            - cmd/saw/main.go
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/protocol-engine-drift-fixes/wave1-agent-B
+        commit: ea168d6
+        files_changed:
+            - cmd/saw/update_program_state_cmd.go
+            - cmd/saw/update_program_state_cmd_test.go
+            - cmd/saw/update_program_impl_cmd.go
+            - cmd/saw/update_program_impl_cmd_test.go
+        files_created:
+            - cmd/saw/update_program_state_cmd.go
+            - cmd/saw/update_program_state_cmd_test.go
+            - cmd/saw/update_program_impl_cmd.go
+            - cmd/saw/update_program_impl_cmd_test.go
+        tests_added:
+            - TestUpdateProgramState_Success
+            - TestUpdateProgramState_ManifestIsUpdatedOnDisk
+            - TestUpdateProgramImpl_Success
+            - TestUpdateProgramImpl_ManifestIsUpdatedOnDisk
+            - TestUpdateProgramImpl_NotFound_SlugMismatch
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/protocol-engine-drift-fixes/wave1-agent-C
+        commit: 1d654f4
+        files_changed:
+            - pkg/protocol/types.go
+            - pkg/protocol/schema_unknown_keys.go
+            - pkg/protocol/validation.go
+            - pkg/protocol/schema_unknown_keys_test.go
+        tests_added:
+            - ValidateBytes
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/protocol-engine-drift-fixes/wave1-agent-D
+        commit: e0f87d5
+        files_changed:
+            - implementations/claude-code/prompts/saw-skill.md
+            - implementations/claude-code/prompts/agents/scout.md
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/protocol-engine-drift-fixes/wave1-agent-E
+        commit: a8e427d
+        files_changed:
+            - protocol/message-formats.md
+        verification: PASS
+    F:
+        status: complete
+        branch: main
+        commit: fb67a58
+        files_changed:
+            - pkg/protocol/validation.go
+            - pkg/protocol/program_validation.go
+            - pkg/protocol/validation_test.go
+            - pkg/protocol/program_validation_test.go
+        tests_added:
+            - TestFeatureSlugKebabValidation
+            - TestImplsTotalExactMatch
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            ScaffoldFile YAML tag change (file_path -> file) breaks existing IMPL docs that already have scaffolds written using the old file_path: tag.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Existing scaffold files with file_path: will have FilePath silently empty after the tag rename. Agent C should check whether any active IMPL docs in docs/IMPL/ use file_path: in their scaffolds section and note them. The fix only affects new scaffolds written after this change; existing committed scaffolds are already materialized as Go files and their IMPL YAML entries are informational-only. Add a ValidateBytes compatibility shim that accepts both file: and file_path: if backward compat is needed.
+        - scenario: |
+            update-program-state and update-program-impl commands (Agent B) have a write-back pattern that corrupts YAML if the PROGRAM manifest uses complex YAML (anchors, multi-line strings, comments).
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Use gopkg.in/yaml.v3 round-trip (unmarshal to struct, mutate, marshal back). YAML comments and anchors are lost in this round-trip — acceptable for PROGRAM manifests which are machine-generated. Agent B should explicitly use yaml.Marshal not string-replacement approaches.
+        - scenario: |
+            Agent F's impls_total exact-equality check breaks existing PROGRAM manifests where impls_total was intentionally set to a planning value before all impls were added.
+          likelihood: low
+          impact: low
+          mitigation: |
+            This is the correct fix per the audit. Any PROGRAM manifest with mismatched impls_total needs to be corrected. The validator should emit a warning-level error (not fatal) if strict validation is not desired; Agent F should check the existing code's error severity before deciding.
+        - scenario: |
+            Agent A's main.go registration causes a compile error if any of the 5 command constructor functions have a different name than expected.
+          likelihood: low
+          impact: high
+          mitigation: |
+            Agent A must grep for the exact function names in the respective files before editing main.go. The names are: newTierGateCmd, newFreezeContractsCmd, newProgramStatusCmd, newProgramReplanCmd, newMarkProgramCompleteCmd. All confirmed present in the codebase as of scout analysis.
+state: WAVE_PENDING
+integration_reports:
+    wave2:
+        wave: 2
+        gaps: []
+        valid: true
+        summary: 'Wave 2: all exports are integrated (no gaps detected)'

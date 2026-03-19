@@ -1,0 +1,482 @@
+completion_date: "2026-03-19"
+title: 'Gate Timing Fix: Pre-Merge vs Post-Merge Gate Classification'
+feature_slug: gate-timing-fix
+verdict: SUITABLE
+suitability_assessment: |
+    The work decomposes cleanly across three files with disjoint ownership:
+
+    1. `pkg/protocol/types.go` — add `Timing` field to `QualityGate` struct
+    2. `pkg/protocol/gates.go` — classify gates by timing, split RunGates into pre/post variants
+    3. `pkg/protocol/schema_unknown_keys.go` — register `timing` as a known key for `quality_gate`
+    4. `cmd/saw/finalize_wave.go` — call pre-merge gates at step 3, post-merge gates at step 5
+    5. `pkg/protocol/gates_test.go` — tests for new timing-aware behavior
+
+    File decomposition: 5 files, 2 agents with disjoint ownership (Agent A owns types +
+    schema + gates + tests; Agent B owns finalize_wave). Agents have a dependency edge
+    (B depends on A's new function signatures) so a 2-wave structure is correct.
+
+    No investigation-first items — the bug is fully understood: RunGates runs at step 3
+    (pre-merge) in finalize_wave.go, but custom content-check gates only pass after merge.
+
+    Interface discoverability: Agent A's new function signatures (RunPreMergeGates,
+    RunPostMergeGates or equivalent) can be defined before implementation.
+
+    Pre-implementation status check: Bug is confirmed TODO — no timing field exists on
+    QualityGate, and finalize_wave.go calls RunGatesWithCache only at step 3 (line 114).
+
+    Approach decision: The explicit `timing` field approach (not type-based defaulting) is
+    cleaner. Type-based defaulting (custom=post-merge) would be a silent semantic break for
+    existing custom gates that ARE valid pre-merge checks (e.g., `go vet` run as custom).
+    The `timing` field is opt-in, backward compatible (absent = pre-merge), and explicit.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~2 agents x ~15 min avg = ~30 min wall clock (parallel wave 1)
+    - Merge and verification: ~5 min
+    Total SAW time: ~50 min
+
+    Sequential baseline: ~35 min
+    Time savings: marginal on raw speed, but the IMPL doc provides interface contract
+    clarity for the RunGates split — coordination value is the primary benefit here.
+
+    Recommendation: SUITABLE. Two agents, clear interface boundary, Go build cycle is fast.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/protocol/types.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/schema_unknown_keys.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/gates.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/protocol/gates_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/saw/finalize_wave.go
+      agent: B
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+interface_contracts:
+    - name: QualityGate.Timing
+      description: |
+        New field added to QualityGate struct. Controls whether a gate runs before
+        or after agent branches are merged. Empty string means pre-merge (backward compat).
+      definition: |
+        // In pkg/protocol/types.go, QualityGate struct:
+        type QualityGate struct {
+            Type        string `yaml:"type" json:"type"`
+            Command     string `yaml:"command" json:"command"`
+            Required    bool   `yaml:"required" json:"required"`
+            Description string `yaml:"description,omitempty" json:"description,omitempty"`
+            Repo        string `yaml:"repo,omitempty" json:"repo,omitempty"`
+            Fix         bool   `yaml:"fix,omitempty" json:"fix,omitempty"`
+            // Timing controls when the gate executes in finalize-wave.
+            // "pre-merge"  — run at step 3, before MergeAgents (default when omitted)
+            // "post-merge" — run at step 5, after MergeAgents and alongside VerifyBuild
+            // Empty string is equivalent to "pre-merge" for backward compatibility.
+            Timing string `yaml:"timing,omitempty" json:"timing,omitempty"`
+        }
+      location: pkg/protocol/types.go
+    - name: RunPreMergeGates
+      description: |
+        Executes only gates with timing="pre-merge" or timing="" (default).
+        Replaces the direct RunGatesWithCache call at finalize_wave step 3.
+        Signature mirrors RunGatesWithCache exactly; cache param may be nil.
+      definition: |
+        // In pkg/protocol/gates.go:
+        func RunPreMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) ([]GateResult, error)
+      location: pkg/protocol/gates.go
+    - name: RunPostMergeGates
+      description: |
+        Executes only gates with timing="post-merge".
+        Called at finalize_wave step 5, after MergeAgents completes successfully.
+        Returns empty slice (not error) when no post-merge gates are defined.
+        Runs without cache (post-merge state is always fresh).
+      definition: |
+        // In pkg/protocol/gates.go:
+        func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateResult, error)
+      location: pkg/protocol/gates.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Context
+
+            You are implementing the gate timing fix in the scout-and-wave-go repo at
+            `/Users/dayna.blackwell/code/scout-and-wave-go`.
+
+            The bug: `finalize-wave` runs ALL quality gates at step 3 (pre-merge). Gates
+            that check whether content exists in main-branch files always fail pre-merge
+            because agent branches haven't been merged yet. We need a `timing` field on
+            `QualityGate` to route gates to the correct phase.
+
+            ## Files to modify
+
+            - `pkg/protocol/types.go`
+            - `pkg/protocol/schema_unknown_keys.go`
+            - `pkg/protocol/gates.go`
+            - `pkg/protocol/gates_test.go`
+
+            ## Task 1: Add `Timing` field to `QualityGate` (types.go)
+
+            In the `QualityGate` struct, add after the `Fix` field:
+
+            ```go
+            // Timing controls when the gate executes during finalize-wave.
+            // "pre-merge"  — run at step 3, before MergeAgents (default when empty)
+            // "post-merge" — run at step 5, after MergeAgents completes
+            // Empty string is treated as "pre-merge" for backward compatibility.
+            Timing string `yaml:"timing,omitempty" json:"timing,omitempty"`
+            ```
+
+            ## Task 2: Register `timing` as known key (schema_unknown_keys.go)
+
+            In the `knownKeys` map, in the `"quality_gate"` entry, add:
+            ```go
+            "timing": true,
+            ```
+            This prevents E16 validation from flagging IMPL docs that use the new field.
+
+            ## Task 3: Add RunPreMergeGates and RunPostMergeGates (gates.go)
+
+            Add two new exported functions. Each is a filtered wrapper around the existing
+            gate execution logic.
+
+            **RunPreMergeGates** — runs gates where Timing == "" or Timing == "pre-merge":
+
+            ```go
+            func RunPreMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string, cache *gatecache.Cache) ([]GateResult, error) {
+                filtered := filterGatesByTiming(manifest, "pre-merge")
+                if len(filtered) == 0 {
+                    return []GateResult{}, nil
+                }
+                // Build a temporary manifest with only pre-merge gates
+                tmp := *manifest
+                tmp.QualityGates = &QualityGates{
+                    Level: manifest.QualityGates.Level,
+                    Gates: filtered,
+                }
+                return RunGatesWithCache(&tmp, waveNumber, repoDir, cache)
+            }
+            ```
+
+            **RunPostMergeGates** — runs gates where Timing == "post-merge":
+
+            ```go
+            func RunPostMergeGates(manifest *IMPLManifest, waveNumber int, repoDir string) ([]GateResult, error) {
+                filtered := filterGatesByTiming(manifest, "post-merge")
+                if len(filtered) == 0 {
+                    return []GateResult{}, nil
+                }
+                tmp := *manifest
+                tmp.QualityGates = &QualityGates{
+                    Level: manifest.QualityGates.Level,
+                    Gates: filtered,
+                }
+                return RunGates(&tmp, waveNumber, repoDir)
+            }
+            ```
+
+            **filterGatesByTiming** — private helper:
+
+            ```go
+            // filterGatesByTiming returns gates matching the given timing category.
+            // timing="pre-merge" returns gates with Timing=="" or Timing=="pre-merge".
+            // timing="post-merge" returns gates with Timing=="post-merge".
+            func filterGatesByTiming(manifest *IMPLManifest, timing string) []QualityGate {
+                if manifest.QualityGates == nil {
+                    return nil
+                }
+                var out []QualityGate
+                for _, g := range manifest.QualityGates.Gates {
+                    switch timing {
+                    case "pre-merge":
+                        if g.Timing == "" || g.Timing == "pre-merge" {
+                            out = append(out, g)
+                        }
+                    case "post-merge":
+                        if g.Timing == "post-merge" {
+                            out = append(out, g)
+                        }
+                    }
+                }
+                return out
+            }
+            ```
+
+            Note: RunPreMergeGates handles the nil QualityGates case via filterGatesByTiming
+            returning nil and the len==0 early return. No panic risk.
+
+            ## Task 4: Add tests (gates_test.go)
+
+            Add the following test functions at the end of the existing test file:
+
+            **TestFilterGatesByTiming** — verifies gate routing logic:
+            - Mix of gates: one with Timing="", one with Timing="pre-merge", one with Timing="post-merge"
+            - filterGatesByTiming(manifest, "pre-merge") returns the first two only
+            - filterGatesByTiming(manifest, "post-merge") returns the third only
+
+            **TestRunPreMergeGates_OnlyRunsPreMerge** — integration test:
+            - Define a manifest with one pre-merge gate (echo ok) and one post-merge gate (exit 1)
+            - Call RunPreMergeGates — only the echo gate runs, result is Passed=true
+            - The post-merge exit 1 gate must NOT run (result count == 1)
+
+            **TestRunPostMergeGates_OnlyRunsPostMerge** — integration test:
+            - Define a manifest with one pre-merge gate (exit 1) and one post-merge gate (echo ok)
+            - Call RunPostMergeGates — only the echo gate runs, result is Passed=true
+            - The pre-merge exit 1 gate must NOT run (result count == 1)
+
+            **TestRunPreMergeGates_EmptyWhenNoneMatch** — empty case:
+            - Manifest with only a post-merge gate
+            - RunPreMergeGates returns empty slice, no error
+
+            **TestRunPostMergeGates_EmptyWhenNoneMatch** — empty case:
+            - Manifest with only a pre-merge gate
+            - RunPostMergeGates returns empty slice, no error
+
+            **TestRunPreMergeGates_BackwardCompat** — existing gates without Timing field:
+            - Manifest with two gates, both with Timing="" (omitted)
+            - RunPreMergeGates runs both (backward compatible behavior)
+
+            ## Verification gate
+
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/protocol/... -run "TestFilterGatesByTiming|TestRunPreMergeGates|TestRunPostMergeGates"
+            go test ./pkg/protocol/...
+            ```
+
+            ## Constraints
+
+            - Do NOT modify `RunGates` or `RunGatesWithCache` — they remain unchanged as
+              the underlying execution engines. The new functions are pure wrappers.
+            - Do NOT add `timing` as a validated enum in enumvalidation.go — the field is
+              free-form string with defined semantics, not a strict enum requiring error codes.
+            - The `timing` field must be `omitempty` in both yaml and json tags so existing
+              IMPL docs without the field remain valid.
+          files:
+            - pkg/protocol/types.go
+            - pkg/protocol/schema_unknown_keys.go
+            - pkg/protocol/gates.go
+            - pkg/protocol/gates_test.go
+    - number: 2
+      agents:
+        - id: B
+          task: |
+            ## Context
+
+            You are wiring the gate timing fix into `finalize-wave` in the scout-and-wave-go
+            repo at `/Users/dayna.blackwell/code/scout-and-wave-go`.
+
+            Wave 1 (Agent A) has already added two new functions to `pkg/protocol/gates.go`:
+            - `RunPreMergeGates(manifest, waveNumber, repoDir, cache) ([]GateResult, error)`
+            - `RunPostMergeGates(manifest, waveNumber, repoDir) ([]GateResult, error)`
+
+            These replace the single `RunGatesWithCache` call that previously ran all gates
+            at step 3 (pre-merge). You must split the gate execution across two steps.
+
+            ## File to modify
+
+            - `cmd/saw/finalize_wave.go`
+
+            ## Task: Update finalize_wave.go gate execution
+
+            ### Step 3 change (pre-merge gates, line ~110-129)
+
+            Replace the existing Step 3 block:
+            ```go
+            // Step 3: RunGates (E21 quality gates) with caching - run per repo
+            for repoKey, repoPath := range repos {
+                stateDir := filepath.Join(repoPath, ".saw-state")
+                cache := gatecache.New(stateDir, gatecache.DefaultTTL)
+                gateResults, err := protocol.RunGatesWithCache(manifest, waveNum, repoPath, cache)
+                ...
+            }
+            ```
+
+            With:
+            ```go
+            // Step 3: RunPreMergeGates (E21) — structural checks that don't require merged state
+            for repoKey, repoPath := range repos {
+                stateDir := filepath.Join(repoPath, ".saw-state")
+                cache := gatecache.New(stateDir, gatecache.DefaultTTL)
+                gateResults, err := protocol.RunPreMergeGates(manifest, waveNum, repoPath, cache)
+                if err != nil {
+                    return fmt.Errorf("finalize-wave: run-pre-merge-gates failed in %s: %w", repoKey, err)
+                }
+                result.GateResults[repoKey] = gateResults
+
+                for _, gate := range gateResults {
+                    if gate.Required && !gate.Passed {
+                        out, _ := json.MarshalIndent(result, "", "  ")
+                        fmt.Println(string(out))
+                        return fmt.Errorf("finalize-wave: required pre-merge gate '%s' failed in %s", gate.Type, repoKey)
+                    }
+                }
+            }
+            ```
+
+            ### Step 5 change (post-merge gates, after VerifyBuild succeeds)
+
+            Currently Step 5 ends with an early return on failure. After the VerifyBuild
+            success check (after the `if !verifyBuildResult.TestPassed || !verifyBuildResult.LintPassed`
+            block), add a new Step 5.5 block before Step 6 (Cleanup):
+
+            ```go
+            // Step 5.5: RunPostMergeGates (E21) — content/integration checks on merged state
+            for repoKey, repoPath := range repos {
+                postGateResults, err := protocol.RunPostMergeGates(manifest, waveNum, repoPath)
+                if err != nil {
+                    return fmt.Errorf("finalize-wave: run-post-merge-gates failed in %s: %w", repoKey, err)
+                }
+                // Merge post-merge results into GateResults for this repo
+                result.GateResults[repoKey] = append(result.GateResults[repoKey], postGateResults...)
+
+                for _, gate := range postGateResults {
+                    if gate.Required && !gate.Passed {
+                        out, _ := json.MarshalIndent(result, "", "  ")
+                        fmt.Println(string(out))
+                        return fmt.Errorf("finalize-wave: required post-merge gate '%s' failed in %s", gate.Type, repoKey)
+                    }
+                }
+            }
+            ```
+
+            ### Long command string update
+
+            Update the `Long` field of the cobra.Command to reflect the new ordering:
+
+            ```
+            Execution order:
+            1. VerifyCommits - check all agents have commits (I5 trip wire)
+            2. ScanStubs - scan changed files for TODO/FIXME markers (E20)
+            3. RunPreMergeGates - structural gates that don't require merged state (E21)
+            3.5. ValidateIntegration - detect unconnected exports (E25, informational)
+            4. MergeAgents - merge all agent branches to main
+            5. VerifyBuild - run test_command and lint_command
+            5.5. RunPostMergeGates - content/integration gates on merged state (E21)
+            6. Cleanup - remove worktrees and branches
+            ```
+
+            ## Verification gate
+
+            ```
+            go build ./...
+            go vet ./...
+            go test ./cmd/saw/...
+            go test ./...
+            ```
+
+            ## Constraints
+
+            - `result.GateResults` accumulates ALL gate results (pre + post) per repo.
+              Post-merge results are appended, not overwritten, so the full gate picture
+              is always visible in the JSON output.
+            - Do NOT remove the `gatecache` import — it is still used for pre-merge gates.
+            - Post-merge gates do NOT use the cache (RunPostMergeGates takes no cache param)
+              because post-merge state is always new and should never be served from cache.
+            - If `RunPostMergeGates` returns an empty slice (no post-merge gates defined),
+              the append is a no-op and the loop body's failure check never triggers.
+              This is correct and requires no special handling.
+          files:
+            - cmd/saw/finalize_wave.go
+          dependencies:
+            - A
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: test
+          command: go test ./pkg/protocol/... ./cmd/saw/...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: e109b2f
+        files_changed:
+            - pkg/protocol/types.go
+            - pkg/protocol/schema_unknown_keys.go
+            - pkg/protocol/gates.go
+            - pkg/protocol/gates_test.go
+        tests_added:
+            - TestFilterGatesByTiming
+            - TestRunPreMergeGates_OnlyRunsPreMerge
+            - TestRunPostMergeGates_OnlyRunsPostMerge
+            - TestRunPreMergeGates_EmptyWhenNoneMatch
+            - TestRunPostMergeGates_EmptyWhenNoneMatch
+            - TestRunPreMergeGates_BackwardCompat
+        verification: go test ./pkg/protocol/... passed
+    B:
+        status: complete
+        branch: main
+        commit: 8bd7b08
+        files_changed:
+            - cmd/saw/finalize_wave.go
+        verification: 'PASS: go build, go vet, go test ./cmd/saw/... ./pkg/protocol/... all passed'
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
+    wave2:
+        wave: 2
+        gaps: []
+        valid: true
+        summary: 'Wave 2: all exports are integrated (no gaps detected)'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            filterGatesByTiming copies gate structs into a temporary manifest. If QualityGates
+            is nil (no gates defined), RunPreMergeGates/RunPostMergeGates could panic.
+          likelihood: low
+          impact: high
+          mitigation: |
+            filterGatesByTiming returns nil when manifest.QualityGates is nil.
+            Both RunPreMergeGates and RunPostMergeGates check len(filtered)==0 before
+            building the tmp manifest. Agent A's task explicitly calls out this nil guard.
+        - scenario: |
+            result.GateResults map is keyed by repo. If pre-merge and post-merge loops
+            run for the same repo key, the append logic must not overwrite pre-merge results.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent B's task specifies `append(result.GateResults[repoKey], postGateResults...)`
+            not assignment. The interface contract section calls this out explicitly.
+        - scenario: |
+            Existing IMPL docs with custom gates that are legitimately pre-merge (e.g., a
+            custom linter run as type=custom) would silently shift to post-merge if we had
+            chosen type-based defaulting instead of the explicit timing field.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            The explicit `timing` field approach was chosen. Gates without timing run pre-merge
+            (backward compatible). No existing behavior changes unless timing is explicitly set.
+        - scenario: |
+            The `timing` field is a free-form string. A typo ("post_merge" instead of
+            "post-merge") would silently classify the gate as pre-merge.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Acceptable tradeoff for now. A future enum validation rule could be added to
+            enumvalidation.go if this becomes a pain point. Document valid values in the
+            struct comment (Agent A's task includes this).
+state: SCOUT_PENDING

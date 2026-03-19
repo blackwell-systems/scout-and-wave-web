@@ -1,0 +1,384 @@
+completion_date: "2026-03-19"
+title: Multi-Repo Aware prepare-wave
+feature_slug: multi-repo-prepare-wave
+verdict: SUITABLE
+suitability_assessment: |
+    The work decomposes cleanly across 3 independent files with disjoint ownership:
+    1. pkg/deps/checker.go — replace-directive fix (self-contained parser logic)
+    2. pkg/deps/gomod.go (new) — shared go.mod parsing helpers extracted from checker.go
+    3. cmd/saw/prepare_wave.go — multi-repo orchestration (config loading + per-repo
+       worktree/brief/journal dispatch)
+
+    All 5 suitability questions resolve cleanly:
+    1. File decomposition: 3 files, no shared writes in the same wave.
+    2. No investigation-first items: root cause of both bugs is clear from the code.
+       CreateWorktrees already handles cross-repo via sibling-dir resolution; the gap
+       is that prepare_wave.go passes a single projectRoot to CreateWorktrees, then
+       iterates wtInfo.Path (which IS correct per-repo) but initialises journals and
+       writes briefs using projectRoot for every agent regardless of repo.
+    3. Interface contracts are fully discoverable from existing code.
+    4. Pre-implementation status:
+       - Multi-repo worktree creation: PARTIAL (CreateWorktrees already resolves
+         per-repo dirs; the gap is in prepare_wave.go journal/brief paths and the
+         dep-checker projectRoot derivation).
+       - replace-directive false positives: TODO.
+       - Unified JSON with per-agent repo field: TODO.
+    5. Parallelization value: moderate. Two independent tasks (dep-checker fix vs
+       prepare-wave multi-repo orchestration), each touching different packages.
+       go test ./... takes ~5-10s. Clear speedup over sequential.
+
+    Estimated times:
+    - Scout phase: ~15 min
+    - Agent execution: ~2 agents x 15 min avg, running in parallel = ~15 min
+    - Merge and verification: ~5 min
+    Total SAW time: ~35 min
+    Sequential baseline: ~40 min
+    Recommendation: Marginal speed gain but strong coordination value — interface
+    contract between the two packages is non-trivial to get right without upfront spec.
+test_command: go test ./...
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/deps/gomod.go
+      agent: A
+      wave: 1
+      action: new
+    - file: pkg/deps/checker.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/deps/checker_test.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: cmd/saw/prepare_wave.go
+      agent: B
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: ParseGoModReplace
+      description: |
+        Parses the replace directives from a go.mod file and returns a set of
+        module paths that are satisfied by local replacements. Used by CheckDeps
+        to skip false-positive "missing dependency" reports for locally-replaced
+        modules. Lives in the new pkg/deps/gomod.go file.
+      definition: |
+        // ParseGoModReplace reads goModPath and returns the set of module paths
+        // declared in replace directives that point to a local directory
+        // (i.e. the replacement is a relative or absolute filesystem path, not
+        // a versioned module). Returns an empty map (not nil) on any error.
+        //
+        // Example go.mod fragment handled:
+        //   replace github.com/blackwell-systems/scout-and-wave-go => ../scout-and-wave-go
+        //
+        // The returned map key is the original module path (before "=>").
+        func ParseGoModReplace(goModPath string) map[string]struct{}
+      location: pkg/deps/gomod.go
+    - name: PrepareWaveResult (extended)
+      description: |
+        The existing PrepareWaveResult struct in cmd/saw/prepare_wave.go gains a
+        new Repos field listing the distinct repos touched in the wave. AgentBriefInfo
+        gains a Repo field. These changes are backward-compatible (omitempty on new
+        fields).
+      definition: |
+        // PrepareWaveResult is the JSON output of prepare-wave.
+        type PrepareWaveResult struct {
+            Wave        int                    `json:"wave"`
+            Worktrees   []protocol.WorktreeInfo `json:"worktrees"`
+            AgentBriefs []AgentBriefInfo        `json:"agent_briefs"`
+            Repos       []string               `json:"repos,omitempty"` // distinct repo names used this wave
+        }
+
+        // AgentBriefInfo gains a Repo field.
+        type AgentBriefInfo struct {
+            Agent       string `json:"agent"`
+            BriefPath   string `json:"brief_path"`
+            BriefLength int    `json:"brief_length"`
+            JournalDir  string `json:"journal_dir"`
+            FilesOwned  int    `json:"files_owned"`
+            Repo        string `json:"repo,omitempty"` // repo name from file_ownership; empty = primary repo
+        }
+      location: cmd/saw/prepare_wave.go
+    - name: LoadSAWConfigRepos
+      description: |
+        Reads saw.config.json from configPath and returns the repos[] array.
+        Returns an empty slice (not nil) if the file does not exist or has no repos.
+        Used by prepare_wave.go to resolve repo name -> absolute path.
+        Lives in cmd/saw/prepare_wave.go (package main) as a private helper.
+      definition: |
+        // loadSAWConfigRepos reads saw.config.json at configPath and returns
+        // the repos array. Returns nil slice if file absent or parse fails.
+        type sawRepoEntry struct {
+            Name string `json:"name"`
+            Path string `json:"path"`
+        }
+        func loadSAWConfigRepos(configPath string) []sawRepoEntry
+      location: cmd/saw/prepare_wave.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Agent A — deps package: go.mod replace-directive fix
+
+            ### Context
+            `pkg/deps/checker.go` contains `CheckDeps`, which calls
+            `extractExternalImports` and then cross-references imports against
+            go.sum/go.mod lock files. When a Go project uses `replace` directives
+            pointing to a local path (e.g. `replace github.com/foo/bar => ../bar`),
+            the replaced module does NOT appear in go.sum. As a result, `CheckDeps`
+            reports it as a `MissingDep` — a false positive that blocks wave setup.
+
+            ### What to implement
+
+            **1. Create `pkg/deps/gomod.go`** with:
+            ```go
+            package deps
+
+            // ParseGoModReplace reads goModPath and returns the set of module paths
+            // declared in replace directives that point to a local directory
+            // (i.e. the replacement is a relative or absolute filesystem path, not
+            // a versioned module). Returns an empty map (not nil) on any error.
+            func ParseGoModReplace(goModPath string) map[string]struct{}
+            ```
+            Implementation notes:
+            - Read the file line by line (same approach as existing `getModulePath`).
+            - Detect the `replace` block: single-line form
+              `replace A => B` and block form `replace ( ... )`.
+            - For each replace directive: split on `=>`, trim whitespace from both
+              sides. The replacement side is "local" if it does NOT contain `@`
+              (versioned modules always have `@vX.Y.Z`; local dirs do not).
+            - Return the set of original module paths (left side of `=>`).
+            - On any parse error, return the empty map (do not return error; callers
+              are defensive).
+
+            **2. Modify `pkg/deps/checker.go`** — update `CheckDeps` to:
+            - Call `ParseGoModReplace(filepath.Join(repoRoot, "go.mod"))` at the
+              start of the cross-reference phase (step 6).
+            - When classifying an import as `!inLockFile`, also check whether the
+              import path has a prefix matching any key in the replace map. If it
+              does, skip it (not a missing dep — satisfied by local replace).
+            - Use the same prefix-match logic already in `findLockPackage`: longest
+              module prefix wins.
+
+            **3. Update `pkg/deps/checker_test.go`** — add a test:
+            - `TestCheckDeps_ReplaceDirective`: construct a minimal go.mod with a
+              `replace` block pointing to a local dir, a go.sum that does NOT include
+              that module, and a .go file that imports it. Assert that `CheckDeps`
+              returns zero `MissingDeps` (the replace satisfies it).
+
+            ### Interface contracts
+            `ParseGoModReplace` signature is defined above — implement exactly that.
+
+            ### Verification gate
+            ```
+            go build ./pkg/deps/...
+            go vet ./pkg/deps/...
+            go test ./pkg/deps/...
+            ```
+
+            ### Constraints
+            - Do NOT modify any file outside `pkg/deps/`.
+            - Do NOT change the `LockFileParser` interface or `CheckDeps` signature.
+            - Return `map[string]struct{}` (not `map[string]bool`) to match Go idiom
+              for sets.
+          files:
+            - pkg/deps/gomod.go
+            - pkg/deps/checker.go
+            - pkg/deps/checker_test.go
+        - id: B
+          task: |
+            ## Agent B — cmd/saw/prepare_wave.go: multi-repo aware orchestration
+
+            ### Context
+            `prepare_wave.go` currently calls `protocol.CreateWorktrees` (which
+            already handles cross-repo worktree placement via `file_ownership[].repo`)
+            but then iterates `worktreeResult.Worktrees` and initialises journals and
+            writes briefs using a single `projectRoot` for ALL agents — regardless of
+            which repo each agent belongs to.
+
+            Additionally, `checkDependencies` derives `repoDir` from the manifest
+            path using a fixed 3-level parent assumption
+            (`filepath.Dir(filepath.Dir(filepath.Dir(manifestPath)))`), which is
+            wrong for multi-repo IMPLs where agents live in sibling repos.
+
+            `saw.config.json` already has a `repos[]` array with `name` + `path`
+            fields. The fix is to read that config and route each agent's journal
+            and brief to the correct repo root.
+
+            ### What to implement
+
+            **1. Add `loadSAWConfigRepos` helper** (private, package main):
+            ```go
+            type sawRepoEntry struct {
+                Name string `json:"name"`
+                Path string `json:"path"`
+            }
+
+            // loadSAWConfigRepos reads saw.config.json from configPath and returns
+            // the repos array. Returns nil if file absent or parse fails.
+            func loadSAWConfigRepos(configPath string) []sawRepoEntry
+            ```
+            - `configPath` is the full path to saw.config.json (e.g.
+              `filepath.Join(projectRoot, "saw.config.json")`).
+            - Unmarshal only the `repos` top-level key (use a minimal struct with
+              `Repos []sawRepoEntry \`json:"repos"\``).
+            - Return nil on any error; callers fall back to projectRoot.
+
+            **2. Add `resolveAgentRepoRoot` helper**:
+            ```go
+            // resolveAgentRepoRoot returns the absolute repo root for agentID.
+            // It looks up the agent's repo name from fileOwnership, then resolves
+            // the path from the repos registry. Falls back to projectRoot if the
+            // agent has no repo field or the repo is not found in the registry.
+            func resolveAgentRepoRoot(
+                fileOwnership []protocol.FileOwnership,
+                agentID string,
+                projectRoot string,
+                repos []sawRepoEntry,
+            ) string
+            ```
+
+            **3. Update `PrepareWaveResult` and `AgentBriefInfo`** per the interface
+            contract above (add `Repos []string` and `Repo string` fields).
+
+            **4. Update `newPrepareWaveCmd` RunE** to:
+            a. After resolving `projectRoot`, load repos config:
+               ```go
+               repos := loadSAWConfigRepos(filepath.Join(projectRoot, "saw.config.json"))
+               ```
+            b. For each agent in the worktree loop, call `resolveAgentRepoRoot` to
+               get `agentRoot` (the repo root for that specific agent).
+            c. Write the brief to `filepath.Join(wtInfo.Path, ".saw-agent-brief.md")`
+               — this already uses `wtInfo.Path` which CreateWorktrees sets correctly,
+               so brief writing is already correct. No change needed here.
+            d. Pass `agentRoot` (not `projectRoot`) to `journal.NewObserver`:
+               ```go
+               observer, err := journal.NewObserver(agentRoot, fullAgentID)
+               ```
+            e. Populate `AgentBriefInfo.Repo` from `determineAgentRepo` equivalent
+               (look up the agent's repo name from `doc.FileOwnership`).
+            f. Collect distinct repo names touched this wave into `result.Repos`.
+
+            **5. Update `checkDependencies` call** in RunE:
+            - The existing call passes `projectRoot` as the `repoDir` argument, but
+              `checkDependencies` currently ignores `repoDir` entirely (the function
+              signature accepts it but `CheckDeps` re-derives the root from implPath).
+              This is pre-existing behaviour — do NOT change `CheckDeps` signature.
+              Leave the call site unchanged.
+
+            ### Interface contracts
+            See `PrepareWaveResult`, `AgentBriefInfo`, and `loadSAWConfigRepos`
+            definitions in the interface_contracts section above.
+
+            ### Verification gate
+            ```
+            go build ./cmd/saw/...
+            go vet ./cmd/saw/...
+            go test ./cmd/saw/... -run TestPrepareWave
+            ```
+            If no existing TestPrepareWave exists, add a minimal test that calls
+            `loadSAWConfigRepos` with a temp file containing a valid repos JSON.
+
+            ### Constraints
+            - Do NOT modify any file outside `cmd/saw/`.
+            - Do NOT change `protocol.CreateWorktrees` — it already handles cross-repo
+              worktree paths correctly.
+            - `sawRepoEntry` must be a private type (lowercase package prefix).
+              Do NOT reuse `api.RepoEntry` from scout-and-wave-web — that is a
+              different module.
+            - The `resolveAgentRepoRoot` function MUST fall back to `projectRoot`
+              gracefully when saw.config.json is absent or the repo name is not found.
+          files:
+            - cmd/saw/prepare_wave.go
+      base_commit: b6dfa32c223df457198fe4ba14f913b9fbf8d81c
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./...
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/multi-repo-prepare-wave/wave1-agent-A
+        commit: 5fe9261
+        files_changed:
+            - pkg/deps/gomod.go
+            - pkg/deps/checker.go
+            - pkg/deps/checker_test.go
+        files_created:
+            - pkg/deps/gomod.go
+        tests_added:
+            - TestCheckDeps_ReplaceDirective
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/multi-repo-prepare-wave/wave1-agent-B
+        commit: 7cec582
+        files_changed:
+            - cmd/saw/prepare_wave.go
+            - cmd/saw/prepare_wave_test.go
+        files_created:
+            - cmd/saw/prepare_wave_test.go
+        tests_added:
+            - TestLoadSAWConfigRepos_ValidFile
+            - TestLoadSAWConfigRepos_AbsentFile
+            - TestLoadSAWConfigRepos_InvalidJSON
+            - TestLoadSAWConfigRepos_NoReposKey
+            - TestResolveAgentRepoRoot_WithMatchingRepo
+            - TestResolveAgentRepoRoot_FallbackWhenNoRepoField
+            - TestResolveAgentRepoRoot_FallbackWhenRepoNotInRegistry
+            - TestResolveAgentRepoRoot_FallbackWhenNilRepos
+            - TestResolveAgentRepoRoot_FallbackWhenEmptyOwnership
+            - TestPrepareWaveResult_JSONSerialization
+            - TestAgentBriefInfo_OmitEmptyRepo
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent A parses replace blocks incorrectly for the multi-line `replace ( ... )`
+            form and misses some directives.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            The test `TestCheckDeps_ReplaceDirective` must cover both single-line
+            and block-form replace directives. Agent A must test both forms.
+        - scenario: |
+            Agent B's `resolveAgentRepoRoot` falls back to `projectRoot` when
+            saw.config.json exists but uses a different key name, silently giving
+            wrong journal paths for multi-repo waves.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            The fallback behaviour is safe (single-repo waves are unaffected).
+            Document that the `repos[].name` value in saw.config.json must match
+            the `repo:` field in file_ownership exactly. Add a log warning (not
+            error) when a repo name is not found in the registry.
+        - scenario: |
+            prepare_wave.go writes .saw-ownership.json to `filepath.Dir(briefPath)`
+            which for cross-repo agents points into a different repo's worktree.
+            This is correct — it should be in the worktree where the agent runs.
+            No change needed but reviewers may flag it.
+          likelihood: low
+          impact: low
+          mitigation: |
+            No code change required. The ownership file path follows briefPath
+            by design. Document in the PR that this is intentional.
+        - scenario: |
+            The go.mod `getModulePath` function in checker.go and the new
+            `ParseGoModReplace` in gomod.go duplicate file-parsing logic.
+          likelihood: high
+          impact: low
+          mitigation: |
+            Agent A should move `getModulePath` into gomod.go alongside
+            `ParseGoModReplace` to keep go.mod parsing co-located. Checker.go
+            then calls both from gomod.go. This is a refactor within Agent A's
+            owned files — no cross-agent conflict.
+state: "COMPLETE"

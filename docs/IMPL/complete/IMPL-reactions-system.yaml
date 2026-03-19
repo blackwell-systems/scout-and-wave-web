@@ -1,0 +1,1148 @@
+completion_date: "2026-03-19"
+title: Declarative Reactions System
+feature_slug: reactions-system
+verdict: SUITABLE
+suitability_assessment: |
+    SUITABLE. The feature decomposes cleanly into four disjoint ownership zones:
+    (A) protocol spec + Scout prompt guidance in scout-and-wave repo,
+    (B) Go SDK types + schema validation in scout-and-wave-go,
+    (C) orchestrator failure routing override in scout-and-wave-go,
+    (D) web UI read-only reactions panel in scout-and-wave-web.
+
+    Agents B and C both touch scout-and-wave-go but own completely different files:
+    B owns pkg/protocol/types.go + schema_unknown_keys.go + failure.go (protocol layer),
+    C owns pkg/orchestrator/failure.go (orchestrator layer). No file conflicts.
+
+    All cross-agent interfaces are definable before implementation starts:
+    - ReactionsConfig and ReactionEntry Go types (B defines, C consumes)
+    - RouteFailureWithReactions function signature (B defines in protocol, C calls)
+    - TypeScript ReactionsConfig interface (B defines in types.ts, D consumes)
+
+    Backward compatibility is the central design constraint: absent reactions block
+    falls through to existing E19 defaults unchanged. No existing tests break.
+
+    No investigation-first work needed. The failure routing code is well-understood
+    (pkg/orchestrator/failure.go, pkg/protocol/failure.go).
+
+    Three of the four agents can run in Wave 1 in parallel (A, B, D are independent).
+    C depends on B for the ReactionsConfig type. Two-wave structure.
+
+    Estimated times:
+    - Scout phase: ~15 min (multi-repo, interface contracts, 4 agents)
+    - Agent execution: ~35 min (Wave 1: 3 agents x 15 min, Wave 2: 1 agent x 10 min)
+    - Merge and verification: ~5 min
+    Total SAW time: ~55 min
+    Sequential baseline: ~80 min
+    Time savings: ~25 min (31% faster)
+test_command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go test ./pkg/protocol/... ./pkg/orchestrator/... && cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./... && cd web && npx tsc --noEmit
+lint_command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go vet ./pkg/protocol/... ./pkg/orchestrator/... && cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./...
+file_ownership:
+    - file: protocol/execution-rules.md
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: implementations/claude-code/prompts/saw-skill.md
+      agent: A
+      wave: 1
+      action: modify
+      repo: scout-and-wave
+    - file: pkg/protocol/types.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_unknown_keys.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/failure.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/schema_validation.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/failure_test.go
+      agent: B
+      wave: 1
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/protocol/reactions_validation.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: pkg/protocol/reactions_validation_test.go
+      agent: B
+      wave: 1
+      action: new
+      repo: scout-and-wave-go
+    - file: web/src/types.ts
+      agent: D
+      wave: 1
+      action: modify
+      repo: scout-and-wave-web
+    - file: web/src/components/review/ReactionsPanel.tsx
+      agent: D
+      wave: 1
+      action: new
+      repo: scout-and-wave-web
+    - file: web/src/components/ReviewScreen.tsx
+      agent: D
+      wave: 1
+      action: modify
+      repo: scout-and-wave-web
+    - file: pkg/orchestrator/failure.go
+      agent: C
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/orchestrator/failure_test.go
+      agent: C
+      wave: 2
+      action: modify
+      repo: scout-and-wave-go
+    - file: pkg/api/types.go
+      agent: F
+      wave: 2
+      action: modify
+      repo: scout-and-wave-web
+    - file: pkg/api/impl.go
+      agent: F
+      wave: 2
+      action: modify
+      repo: scout-and-wave-web
+interface_contracts:
+    - name: ReactionsConfig
+      description: |
+        Top-level reactions block in an IMPL manifest. Maps each failure type to a
+        ReactionEntry that overrides the E19 global default. All fields optional;
+        absent entries fall back to E19 defaults. Added to IMPLManifest in types.go.
+      definition: |
+        // ReactionsConfig holds per-failure-type routing overrides for an IMPL manifest.
+        // When present, the orchestrator reads this before falling back to E19 defaults.
+        type ReactionsConfig struct {
+            Transient   *ReactionEntry `yaml:"transient,omitempty"   json:"transient,omitempty"`
+            Timeout     *ReactionEntry `yaml:"timeout,omitempty"     json:"timeout,omitempty"`
+            Fixable     *ReactionEntry `yaml:"fixable,omitempty"     json:"fixable,omitempty"`
+            NeedsReplan *ReactionEntry `yaml:"needs_replan,omitempty" json:"needs_replan,omitempty"`
+            Escalate    *ReactionEntry `yaml:"escalate,omitempty"    json:"escalate,omitempty"`
+        }
+
+        // ReactionEntry defines the action and retry cap for one failure type.
+        type ReactionEntry struct {
+            // Action: "retry" | "send-fix-prompt" | "pause" | "auto-scout"
+            Action      string `yaml:"action"                  json:"action"`
+            // MaxAttempts is the maximum number of attempts (including the first).
+            // Only meaningful when Action is "retry" or "send-fix-prompt".
+            MaxAttempts int    `yaml:"max_attempts,omitempty"  json:"max_attempts,omitempty"`
+        }
+      location: pkg/protocol/types.go
+    - name: RouteFailureWithReactions
+      description: |
+        Variant of RouteFailure that consults the manifest's ReactionsConfig before
+        falling back to the E19 hardcoded switch. Lives in pkg/orchestrator/failure.go.
+        Returns the same OrchestratorAction enum as RouteFailure; caller is unchanged
+        except it now passes the (possibly nil) *protocol.ReactionsConfig.
+        MaxAttemptsFor returns the per-IMPL max attempts, falling back to protocol.MaxRetries.
+      definition: |
+        // RouteFailureWithReactions maps a FailureType to an OrchestratorAction,
+        // consulting reactions first, then falling back to E19 defaults.
+        // reactions may be nil (absent block) — in that case behavior is identical to RouteFailure.
+        func RouteFailureWithReactions(failureType types.FailureType, reactions *protocol.ReactionsConfig) OrchestratorAction
+
+        // MaxAttemptsFor returns the max retry attempts for a failure type,
+        // consulting reactions first, then falling back to protocol.MaxRetries(failureType).
+        func MaxAttemptsFor(failureType types.FailureType, reactions *protocol.ReactionsConfig) int
+      location: pkg/orchestrator/failure.go
+    - name: ValidateReactions
+      description: |
+        Validates the reactions block in an IMPL manifest. Checks that each present
+        ReactionEntry has a valid Action value and that MaxAttempts is non-negative.
+        Called by Validate() in validation.go. Returns ValidationErrors with code SV01.
+      definition: |
+        func ValidateReactions(m *IMPLManifest) []ValidationError
+      location: pkg/protocol/reactions_validation.go
+    - name: ReactionsConfig (TypeScript)
+      description: |
+        TypeScript mirror of the Go ReactionsConfig for the web UI. Added to types.ts.
+        Used by the read-only ReactionsPanel component.
+      definition: |
+        export interface ReactionEntry {
+          action: 'retry' | 'send-fix-prompt' | 'pause' | 'auto-scout'
+          max_attempts?: number
+        }
+
+        export interface ReactionsConfig {
+          transient?:    ReactionEntry
+          timeout?:      ReactionEntry
+          fixable?:      ReactionEntry
+          needs_replan?: ReactionEntry
+          escalate?:     ReactionEntry
+        }
+      location: web/src/types.ts
+    - name: ReactionsPanel
+      description: |
+        Read-only React component that renders the reactions block from an IMPL manifest.
+        Shown in ReviewScreen alongside PreMortemPanel. If reactions is undefined the
+        component renders nothing (returns null). No edit controls — users edit YAML directly.
+      definition: |
+        interface ReactionsPanelProps {
+          reactions: ReactionsConfig | undefined
+        }
+        export default function ReactionsPanel(props: ReactionsPanelProps): JSX.Element | null
+      location: web/src/components/review/ReactionsPanel.tsx
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to Implement
+
+            Update two files in the scout-and-wave (protocol spec) repo:
+
+            ### 1. protocol/execution-rules.md — E19 section update
+
+            Find the E19 section and add a subsection explaining per-IMPL reactions overrides.
+            Preserve the existing E19 decision tree; add AFTER the existing routing table:
+
+            ```
+            ### E19.1 — Per-IMPL Reactions Override
+
+            Scout may write a `reactions:` block in the IMPL doc to override E19 defaults
+            for a specific feature. When present, the orchestrator reads this block at wave
+            start and uses it instead of the hardcoded constants.
+
+            **reactions block schema:**
+
+            ```yaml
+            reactions:
+              transient:
+                action: retry
+                max_attempts: 3     # override default (2)
+              timeout:
+                action: retry
+                max_attempts: 1
+              fixable:
+                action: send-fix-prompt
+                max_attempts: 1
+              needs_replan:
+                action: pause       # surface to human; "auto-scout" is a stretch goal
+              escalate:
+                action: pause
+            ```
+
+            **Valid action values:**
+            - `retry` — re-launch agent with retry context (transient, timeout)
+            - `send-fix-prompt` — apply fix from notes and relaunch (fixable)
+            - `pause` — surface to human, do not auto-retry
+            - `auto-scout` — re-engage Scout automatically (stretch goal; treat as pause if not implemented)
+
+            **Backward compatibility:** IMPL docs without a `reactions:` block get E19
+            default behavior unchanged. Individual missing entries also fall back to defaults.
+
+            **When Scout should write reactions:**
+            - High pre-mortem risk (overall_risk: high) → increase max_attempts for transient
+            - Strict/sensitive codebase → reduce max_attempts, prefer pause over auto-retry
+            - Known flaky CI → increase timeout max_attempts
+            - needs_replan or escalate: always use `pause` (auto-scout is optional enhancement)
+            ```
+
+            ### 2. implementations/claude-code/prompts/saw-skill.md — Scout guidance
+
+            Find the pre_mortem section in the IMPL schema reference and add `reactions:` as
+            an optional top-level field. Find the section where Scout writes IMPL doc fields
+            (likely near the quality_gates or pre_mortem guidance) and add:
+
+            ```
+            **reactions block (optional):** Write a `reactions:` block based on the pre-mortem
+            risk assessment and codebase context. Use this to customize failure routing per
+            failure type, overriding the E19 global defaults.
+
+            Write reactions when:
+            - `pre_mortem.overall_risk` is `high` → set transient max_attempts: 3
+            - CI is known to be flaky (detected from .github/workflows or test patterns) → increase timeout retries
+            - Codebase has strict review/merge policies → prefer `pause` over auto-retry
+            - needs_replan and escalate: always set action: pause
+
+            Example for a high-risk IMPL:
+            ```yaml
+            reactions:
+              transient:
+                action: retry
+                max_attempts: 3
+              timeout:
+                action: retry
+                max_attempts: 2
+              fixable:
+                action: send-fix-prompt
+                max_attempts: 1
+              needs_replan:
+                action: pause
+              escalate:
+                action: pause
+            ```
+
+            Example for a low-risk IMPL (omit entirely, or write minimal block):
+            ```yaml
+            reactions:
+              needs_replan:
+                action: pause
+              escalate:
+                action: pause
+            ```
+            ```
+
+            Also update the YAML manifest schema reference block (the one listing all valid
+            top-level keys) to include `reactions:` as an optional field.
+
+            ## Interfaces to Implement
+
+            No Go code. Pure documentation/prompt edits.
+
+            ## Tests to Write
+
+            None. Protocol spec repo has no test suite.
+
+            ## Verification Gate
+
+            ```bash
+            grep -n "reactions\|E19.1" /Users/dayna.blackwell/code/scout-and-wave/protocol/execution-rules.md | head -20
+            grep -n "reactions" /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md | head -10
+            ```
+
+            Both commands must return matches. If either returns nothing, the edit was not applied.
+
+            ## Constraints
+
+            - Do NOT rewrite existing E19 content — add a subsection after the existing table
+            - Do NOT change any invariant numbering or other execution rules
+            - The Scout prompt addition must not break existing YAML examples already in saw-skill.md
+            - reactions is always optional; do not write "required" anywhere
+          files:
+            - protocol/execution-rules.md
+            - implementations/claude-code/prompts/saw-skill.md
+        - id: B
+          task: |
+            ## What to Implement
+
+            Make four changes across five files in scout-and-wave-go:
+
+            ### 1. pkg/protocol/types.go — Add ReactionsConfig and ReactionEntry types
+
+            After the `KnownIssue` struct definition (around line 153), add:
+
+            ```go
+            // ReactionsConfig holds per-failure-type routing overrides for an IMPL manifest.
+            // When present, the orchestrator reads this before falling back to E19 defaults.
+            // All fields are optional; absent entries fall back to E19 hardcoded behavior.
+            type ReactionsConfig struct {
+                Transient   *ReactionEntry `yaml:"transient,omitempty"    json:"transient,omitempty"`
+                Timeout     *ReactionEntry `yaml:"timeout,omitempty"      json:"timeout,omitempty"`
+                Fixable     *ReactionEntry `yaml:"fixable,omitempty"      json:"fixable,omitempty"`
+                NeedsReplan *ReactionEntry `yaml:"needs_replan,omitempty" json:"needs_replan,omitempty"`
+                Escalate    *ReactionEntry `yaml:"escalate,omitempty"     json:"escalate,omitempty"`
+            }
+
+            // ReactionEntry defines the action and retry cap for one failure type.
+            type ReactionEntry struct {
+                // Action must be one of: "retry", "send-fix-prompt", "pause", "auto-scout"
+                Action      string `yaml:"action"                 json:"action"`
+                // MaxAttempts is the maximum number of launch attempts (including the first).
+                // Only meaningful when Action is "retry" or "send-fix-prompt".
+                // Zero means use the E19 default for this failure type.
+                MaxAttempts int    `yaml:"max_attempts,omitempty" json:"max_attempts,omitempty"`
+            }
+            ```
+
+            Then add the `Reactions` field to `IMPLManifest` **between `PreMortem` and `KnownIssues`**
+            (not after KnownIssues). This matches the natural section order in IMPL docs where
+            `reactions:` appears after `pre_mortem:` and before `known_issues:`:
+
+            ```go
+            Reactions  *ReactionsConfig `yaml:"reactions,omitempty"  json:"reactions,omitempty"`
+            ```
+
+            ### 2. pkg/protocol/schema_unknown_keys.go — Allow "reactions" as top-level key
+
+            In the `knownKeys["top"]` map, add:
+
+            ```go
+            "reactions": true,
+            ```
+
+            Also add nested key contexts so typos inside the reactions block are caught:
+
+            ```go
+            "reactions": {
+                "transient": true, "timeout": true, "fixable": true,
+                "needs_replan": true, "escalate": true,
+            },
+            "reaction_entry": {
+                "action": true, "max_attempts": true,
+            },
+            ```
+
+            Also add a case to `checkTopLevelValue` (read this function first — it handles
+            specific known top-level keys and recursively validates their content):
+
+            ```go
+            case "reactions":
+                if valNode.Kind == yaml.MappingNode {
+                    checkMapping(valNode, "reactions", key, errs)
+                    for i := 0; i+1 < len(valNode.Content); i += 2 {
+                        ftKey := valNode.Content[i].Value
+                        ftVal := valNode.Content[i+1]
+                        if ftVal.Kind == yaml.MappingNode {
+                            checkMapping(ftVal, "reaction_entry", key+"."+ftKey, errs)
+                        }
+                    }
+                }
+            ```
+
+            Without this, nested typos like `transitent:` pass silently through
+            `DetectUnknownKeys`.
+
+            This prevents E16 validation from flagging reactions as an unknown key.
+
+            ### 3. pkg/protocol/reactions_validation.go — New file
+
+            Create this file with `ValidateReactions`:
+
+            ```go
+            package protocol
+
+            import "fmt"
+
+            // validReactionActions is the set of allowed action values for a ReactionEntry.
+            var validReactionActions = map[string]bool{
+                "retry":           true,
+                "send-fix-prompt": true,
+                "pause":           true,
+                "auto-scout":      true,
+            }
+
+            // ValidateReactions validates the reactions block in an IMPL manifest.
+            // Called by ValidateSchema. Returns SV01 errors for invalid action values
+            // or negative max_attempts. Returns nil if reactions is absent.
+            func ValidateReactions(m *IMPLManifest) []ValidationError {
+                if m.Reactions == nil {
+                    return nil
+                }
+                var errs []ValidationError
+                entries := map[string]*ReactionEntry{
+                    "transient":   m.Reactions.Transient,
+                    "timeout":     m.Reactions.Timeout,
+                    "fixable":     m.Reactions.Fixable,
+                    "needs_replan": m.Reactions.NeedsReplan,
+                    "escalate":    m.Reactions.Escalate,
+                }
+                for name, entry := range entries {
+                    if entry == nil {
+                        continue
+                    }
+                    if entry.Action == "" {
+                        errs = append(errs, ValidationError{
+                            Code:    SV01RequiredField,
+                            Message: fmt.Sprintf("reactions.%s.action is required", name),
+                            Field:   fmt.Sprintf("reactions.%s.action", name),
+                        })
+                    } else if !validReactionActions[entry.Action] {
+                        errs = append(errs, ValidationError{
+                            Code:    SV01InvalidEnum, // use SV01InvalidEnum for invalid enum values, not SV01RequiredField
+                            Message: fmt.Sprintf("reactions.%s.action %q is not valid; must be one of: retry, send-fix-prompt, pause, auto-scout", name, entry.Action),
+                            Field:   fmt.Sprintf("reactions.%s.action", name),
+                        })
+                    }
+                    if entry.MaxAttempts < 0 {
+                        errs = append(errs, ValidationError{
+                            Code:    SV01RequiredField,
+                            Message: fmt.Sprintf("reactions.%s.max_attempts must be >= 0, got %d", name, entry.MaxAttempts),
+                            Field:   fmt.Sprintf("reactions.%s.max_attempts", name),
+                        })
+                    }
+                }
+                return errs
+            }
+            ```
+
+            Then wire `ValidateReactions` into the existing `ValidateSchema` function in
+            `schema_validation.go` by adding a call at the end of the `errs = append(errs, ...)` chain:
+
+            ```go
+            errs = append(errs, ValidateReactions(m)...)
+            ```
+
+            **Important:** Do NOT modify schema_validation.go (it is not in your file ownership).
+            Instead, look at whether ValidateSchema calls are wired through `ValidateSchema` in
+            schema_validation.go. If ValidateSchema is the aggregation point, you only need to
+            wire it from reactions_validation.go using Go's init() pattern or by having ValidateSchema
+            call a helper. Since you cannot modify schema_validation.go, define ValidateReactions as
+            a standalone exported function — the integration agent (Wave 2 integration) will wire it.
+            Write a clear comment at the top of reactions_validation.go: "// Wire into ValidateSchema
+            in schema_validation.go by adding: errs = append(errs, ValidateReactions(m)...)".
+
+            Actually, re-read schema_validation.go first. If it is in your file ownership list and
+            you can modify it, do so. Otherwise leave the wiring note.
+
+            **File ownership check:** schema_validation.go is NOT in your owned files list. Do not
+            modify it. Write the comment and let the integration step handle wiring.
+
+            ### 4. pkg/protocol/failure.go — Add MaxRetriesWithReactions helper
+
+            Add a new exported function after `MaxRetries`:
+
+            ```go
+            // MaxRetriesWithReactions returns the max retry count for a failure type,
+            // consulting the reactions block first, then falling back to MaxRetries.
+            // reactions may be nil (reactions block absent) — returns MaxRetries in that case.
+            func MaxRetriesWithReactions(failureType FailureTypeEnum, reactions *ReactionsConfig) int {
+                if reactions == nil {
+                    return MaxRetries(failureType)
+                }
+                entry := reactionEntryFor(failureType, reactions)
+                if entry == nil || entry.MaxAttempts == 0 {
+                    return MaxRetries(failureType)
+                }
+                return entry.MaxAttempts
+            }
+
+            // reactionEntryFor returns the ReactionEntry for a given FailureTypeEnum, or nil.
+            func reactionEntryFor(failureType FailureTypeEnum, r *ReactionsConfig) *ReactionEntry {
+                if r == nil {
+                    return nil
+                }
+                switch failureType {
+                case FailureTransient:
+                    return r.Transient
+                case FailureTimeout:
+                    return r.Timeout
+                case FailureFixable:
+                    return r.Fixable
+                case FailureNeedsReplan:
+                    return r.NeedsReplan
+                case FailureEscalate:
+                    return r.Escalate
+                default:
+                    return nil
+                }
+            }
+
+            // ShouldRetryWithReactions returns true if the reactions block (or E19 default)
+            // calls for automatic retry of this failure type.
+            func ShouldRetryWithReactions(failureType FailureTypeEnum, reactions *ReactionsConfig) bool {
+                entry := reactionEntryFor(failureType, reactions)
+                if entry == nil {
+                    return ShouldRetry(failureType)
+                }
+                return entry.Action == "retry" || entry.Action == "send-fix-prompt"
+            }
+            ```
+
+            ### 5. pkg/protocol/reactions_validation_test.go — Tests for ValidateReactions
+
+            Write table-driven tests:
+
+            1. TestValidateReactions_Nil — nil reactions returns no errors
+            2. TestValidateReactions_ValidBlock — fully valid block returns no errors
+            3. TestValidateReactions_InvalidAction — unknown action string returns SV01 error
+            4. TestValidateReactions_NegativeMaxAttempts — max_attempts < 0 returns SV01 error
+            5. TestValidateReactions_PartialBlock — only transient set, rest nil, no errors
+            6. TestMaxRetriesWithReactions_NilReactions — falls back to MaxRetries
+            7. TestMaxRetriesWithReactions_Override — returns entry.MaxAttempts when set
+            8. TestMaxRetriesWithReactions_ZeroMaxAttempts — zero treated as "use default"
+            9. TestShouldRetryWithReactions_NilReactions — falls back to ShouldRetry
+            10. TestShouldRetryWithReactions_PauseAction — returns false for pause
+
+            Also add to pkg/protocol/failure_test.go (existing file):
+            11. TestReactionEntryFor_AllFailureTypes — table test verifying all 5 keys route correctly
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./pkg/protocol/... && go vet ./pkg/protocol/... && go test ./pkg/protocol/... -run "TestValidateReactions|TestMaxRetries|TestShouldRetry|TestReactionEntry"
+            ```
+
+            ## Constraints
+
+            - ReactionsConfig and ReactionEntry must have both `yaml:` and `json:` struct tags
+            - MaxAttempts of 0 means "use E19 default" — do not treat 0 as zero retries
+            - Do NOT modify schema_validation.go (not in file ownership)
+            - Do NOT modify any other existing files beyond types.go, schema_unknown_keys.go, failure.go, failure_test.go
+            - The `reactions` key must be added to knownKeys["top"] exactly as a string key "reactions"
+            - All new exported symbols must have doc comments
+            - Keep the reactions_validation.go comment: "// Wire into ValidateSchema by adding: errs = append(errs, ValidateReactions(m)...)"
+          files:
+            - pkg/protocol/types.go
+            - pkg/protocol/schema_unknown_keys.go
+            - pkg/protocol/failure.go
+            - pkg/protocol/failure_test.go
+            - pkg/protocol/reactions_validation.go
+            - pkg/protocol/reactions_validation_test.go
+        - id: D
+          task: |
+            ## What to Implement
+
+            Add the reactions block display to the scout-and-wave-web UI. Three files.
+
+            ### 1. web/src/types.ts — Add TypeScript types
+
+            Add after the `PreMortem` interface:
+
+            ```typescript
+            export interface ReactionEntry {
+              action: 'retry' | 'send-fix-prompt' | 'pause' | 'auto-scout'
+              max_attempts?: number
+            }
+
+            export interface ReactionsConfig {
+              transient?:    ReactionEntry
+              timeout?:      ReactionEntry
+              fixable?:      ReactionEntry
+              needs_replan?: ReactionEntry
+              escalate?:     ReactionEntry
+            }
+            ```
+
+            Then add to the `IMPLManifest` interface (after `pre_mortem?`):
+
+            ```typescript
+            reactions?: ReactionsConfig
+            ```
+
+            ### 2. web/src/components/review/ReactionsPanel.tsx — New component
+
+            Create a read-only panel that displays the reactions block. Follow the exact
+            same structure and Tailwind classes as `PreMortemPanel.tsx` (dark mode, same
+            header style, same card/table patterns).
+
+            ```typescript
+            import { ReactionsConfig } from '../../types'
+
+            interface ReactionsPanelProps {
+              reactions: ReactionsConfig | undefined
+            }
+
+            // Display order for failure types
+            const FAILURE_TYPE_ORDER = ['transient', 'timeout', 'fixable', 'needs_replan', 'escalate'] as const
+
+            // Human-readable labels
+            const FAILURE_TYPE_LABELS: Record<string, string> = {
+              transient:    'Transient',
+              timeout:      'Timeout',
+              fixable:      'Fixable',
+              needs_replan: 'Needs Replan',
+              escalate:     'Escalate',
+            }
+
+            // Action badge colors (use Tailwind bg- classes consistent with existing badges)
+            const ACTION_COLORS: Record<string, string> = {
+              'retry':           'bg-blue-500/20 text-blue-300',
+              'send-fix-prompt': 'bg-yellow-500/20 text-yellow-300',
+              'pause':           'bg-orange-500/20 text-orange-300',
+              'auto-scout':      'bg-purple-500/20 text-purple-300',
+            }
+
+            export default function ReactionsPanel({ reactions }: ReactionsPanelProps): JSX.Element | null {
+              if (!reactions) return null
+              // Check that at least one entry is present
+              const hasAny = FAILURE_TYPE_ORDER.some(k => reactions[k])
+              if (!hasAny) return null
+              // Render table of failure types with action badge and max_attempts
+              // ...
+            }
+            ```
+
+            The panel renders a table with columns: Failure Type | Action | Max Attempts.
+            For entries where max_attempts is absent or 0, display "default" in the
+            Max Attempts column (styled as muted text). Show a header like other panels:
+            "Reactions Config" with a subtitle "Per-failure-type routing overrides (E19.1)".
+
+            ### 3. web/src/components/ReviewScreen.tsx — Wire in ReactionsPanel
+
+            Three changes:
+
+            a) Add `'reactions'` to the `PanelKey` union type:
+               ```typescript
+               type PanelKey = 'reactions' | 'pre-mortem' | ... (existing keys)
+               ```
+
+            b) Add to the panels array (after the pre-mortem entry):
+               ```typescript
+               { key: 'reactions', label: 'Reactions' },
+               ```
+
+            c) Add the auto-open logic (after the pre-mortem push):
+               ```typescript
+               if (impl.reactions) {
+                 defaults.push('reactions')
+               }
+               ```
+
+            d) Add the panel render (after the pre-mortem render line ~335):
+               ```typescript
+               {activePanels.includes('reactions') && (
+                 <div className="panel-animate">
+                   <ReactionsPanel reactions={impl.reactions} />
+                 </div>
+               )}
+               ```
+
+            e) Import ReactionsPanel at the top alongside other panel imports:
+               ```typescript
+               import ReactionsPanel from './review/ReactionsPanel'
+               ```
+
+            ## Tests to Write
+
+            None required (the component is simple read-only display, TypeScript type
+            safety verified by `npx tsc --noEmit`). If you want to add a smoke test,
+            follow the pattern in `web/src/components/__tests__/`.
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+            ```
+
+            ## Constraints
+
+            - ReactionsPanel must return null (not an empty div) when reactions is undefined or empty.
+              The null-return constraint overrides "match PreMortemPanel structure" — PreMortemPanel
+              always renders a card; ReactionsPanel returns null when absent. Match Tailwind classes
+              only when rendering actual content.
+            - When iterating `FAILURE_TYPE_ORDER` to index into `reactions`, use explicit typing:
+              `const entry = reactions[k as keyof ReactionsConfig]` to avoid TypeScript errors.
+              Type the const array as `ReadonlyArray<keyof ReactionsConfig>` for full safety.
+            - Match existing dark mode Tailwind patterns from PreMortemPanel.tsx exactly
+            - Do NOT add any editing UI — this is read-only (users edit YAML directly)
+            - Export ReactionsPanel as default export
+            - Do NOT modify any file outside your owned list (types.ts, ReactionsPanel.tsx, ReviewScreen.tsx)
+            - The `reactions` PanelKey must be added to the PanelKey union type string literal
+          files:
+            - web/src/types.ts
+            - web/src/components/review/ReactionsPanel.tsx
+            - web/src/components/ReviewScreen.tsx
+      base_commit: e6028ddf775fb7103a6d8cbc3921786b3ec079cd
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## What to Implement
+
+            Update `pkg/orchestrator/failure.go` to add `RouteFailureWithReactions` and
+            `MaxAttemptsFor`, then update the call site in `orchestrator.go` to use them.
+
+            **Note:** orchestrator.go is NOT in your file ownership. Read it to understand
+            the call site pattern, but do not modify it. Your job is to provide the new
+            functions in failure.go that make the override available. The integration step
+            will wire the call site.
+
+            Actually: re-read the task. The orchestrator call site in orchestrator.go
+            (line ~788: `action := RouteFailure(failureType)`) is the wiring point.
+            Since orchestrator.go is not in your file ownership, add a clear comment to
+            failure.go explaining the wiring:
+
+            ```go
+            // Wiring note: in orchestrator.go, the manifest is already loaded at line ~744.
+            // Do NOT call protocol.Load a second time. Instead:
+            //   1. Hoist the manifest variable to be accessible at the failure routing block (~line 788)
+            //   2. Replace:
+            //        action := RouteFailure(failureType)
+            //      With:
+            //        var reactions *protocol.ReactionsConfig
+            //        if manifest != nil { reactions = manifest.Reactions }
+            //        action := RouteFailureWithReactions(failureType, reactions)
+            ```
+
+            ### failure.go additions
+
+            Add these functions after `RouteFailure`:
+
+            ```go
+            // RouteFailureWithReactions maps a FailureType to an OrchestratorAction,
+            // consulting the IMPL manifest's reactions block before falling back to
+            // the E19 hardcoded switch. reactions may be nil — if so, behavior is
+            // identical to RouteFailure.
+            func RouteFailureWithReactions(failureType types.FailureType, reactions *protocol.ReactionsConfig) OrchestratorAction {
+                if reactions != nil {
+                    entry := reactionEntryForOrchestrator(failureType, reactions)
+                    if entry != nil {
+                        return actionFromReactionEntry(entry)
+                    }
+                }
+                return RouteFailure(failureType)
+            }
+
+            // MaxAttemptsFor returns the max launch attempts for a failure type,
+            // consulting reactions first, then falling back to the E19 default.
+            // reactions may be nil.
+            func MaxAttemptsFor(failureType types.FailureType, reactions *protocol.ReactionsConfig) int {
+                if reactions == nil {
+                    return defaultMaxAttempts(failureType)
+                }
+                entry := reactionEntryForOrchestrator(failureType, reactions)
+                if entry == nil || entry.MaxAttempts == 0 {
+                    return defaultMaxAttempts(failureType)
+                }
+                return entry.MaxAttempts
+            }
+
+            // defaultMaxAttempts returns the E19 hardcoded max attempts for a FailureType.
+            // IMPORTANT: these values must match protocol.MaxRetries exactly.
+            // Verify against pkg/protocol/failure.go before committing.
+            func defaultMaxAttempts(failureType types.FailureType) int {
+                switch failureType {
+                case types.FailureTypeTransient:
+                    return 2
+                case types.FailureTypeFixable:
+                    return 2  // matches protocol.MaxRetries(FailureFixable) — was incorrectly 1
+                case types.FailureTypeTimeout:
+                    return 1
+                default:
+                    return 0
+                }
+            }
+
+            // reactionEntryForOrchestrator maps an orchestrator FailureType to the
+            // corresponding protocol.ReactionEntry, or nil if not set.
+            func reactionEntryForOrchestrator(failureType types.FailureType, r *protocol.ReactionsConfig) *protocol.ReactionEntry {
+                if r == nil {
+                    return nil
+                }
+                switch failureType {
+                case types.FailureTypeTransient:
+                    return r.Transient
+                case types.FailureTypeTimeout:
+                    return r.Timeout
+                case types.FailureTypeFixable:
+                    return r.Fixable
+                case types.FailureTypeNeedsReplan:
+                    return r.NeedsReplan
+                case types.FailureTypeEscalate:
+                    return r.Escalate
+                default:
+                    return nil
+                }
+            }
+
+            // actionFromReactionEntry converts a protocol.ReactionEntry.Action string
+            // to an OrchestratorAction constant. Unknown/empty action falls back to ActionEscalate.
+            func actionFromReactionEntry(entry *protocol.ReactionEntry) OrchestratorAction {
+                if entry == nil {
+                    return ActionEscalate
+                }
+                switch entry.Action {
+                case "retry":
+                    // Note: for timeout failures, the E19 default is ActionRetryWithScope
+                    // (retry with scope-reduction note). When a reactions entry sets
+                    // action: retry for timeout, we use plain ActionRetry (no scope note).
+                    // This is a known semantic difference from the E19 default for timeout.
+                    // If scope-reduced retry is desired, the user should omit the timeout
+                    // reaction and let E19 defaults apply.
+                    return ActionRetry
+                case "send-fix-prompt":
+                    return ActionApplyAndRelaunch
+                case "pause":
+                    return ActionEscalate  // pause surfaces to human — same as escalate in current model
+                case "auto-scout":
+                    return ActionReplan    // auto-scout re-engages Scout
+                default:
+                    return ActionEscalate
+                }
+            }
+            ```
+
+            You will need to add an import for `protocol` package. Check the existing imports
+            in failure.go — it currently imports only `types`. Add:
+            ```go
+            "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+            ```
+
+            ### failure_test.go additions
+
+            Add to the existing test file:
+
+            1. TestRouteFailureWithReactions_NilReactions — nil reactions returns same as RouteFailure
+            2. TestRouteFailureWithReactions_RetryOverride — transient with action:retry returns ActionRetry
+            3. TestRouteFailureWithReactions_PauseOverride — escalate with action:pause returns ActionEscalate
+            4. TestRouteFailureWithReactions_AutoScoutOverride — needs_replan with action:auto-scout returns ActionReplan
+            5. TestRouteFailureWithReactions_SendFixPrompt — fixable with action:send-fix-prompt returns ActionApplyAndRelaunch
+            6. TestMaxAttemptsFor_NilReactions — falls back to defaultMaxAttempts
+            7. TestMaxAttemptsFor_Override — returns entry.MaxAttempts when set
+            8. TestMaxAttemptsFor_ZeroMaxAttempts — zero treated as "use default"
+            9. TestMaxAttemptsFor_TransientDefault — returns 2 for transient with nil reactions
+            10. TestActionFromReactionEntry_UnknownAction — unknown action returns ActionEscalate
+
+            ## Interfaces to Implement
+
+            RouteFailureWithReactions, MaxAttemptsFor, defaultMaxAttempts,
+            reactionEntryForOrchestrator, actionFromReactionEntry.
+
+            ## Interfaces to Call
+
+            - types.FailureType (existing)
+            - protocol.ReactionsConfig and protocol.ReactionEntry (from Agent B, Wave 1)
+            - RouteFailure (existing, as fallback)
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./pkg/orchestrator/... && go vet ./pkg/orchestrator/... && go test ./pkg/orchestrator/... -run "TestRouteFailureWithReactions|TestMaxAttemptsFor|TestActionFromReaction"
+            ```
+
+            ## Constraints
+
+            - RouteFailure (existing) must remain unchanged — new function is additive
+            - "pause" action maps to ActionEscalate (surfaces to human) — this is correct behavior
+              since the current orchestrator model does not have a distinct "pause" state
+            - "auto-scout" maps to ActionReplan — Scout re-engagement is the existing mechanism
+            - Do NOT modify orchestrator.go (not in file ownership) — leave the wiring comment
+            - Zero MaxAttempts means "use E19 default" — never return 0 retries for a retryable type
+            - All new functions must have doc comments
+            - Import protocol package from "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+          files:
+            - pkg/orchestrator/failure.go
+            - pkg/orchestrator/failure_test.go
+          dependencies:
+            - B
+        - id: F
+          task: |
+            ## What to Implement
+
+            The Go API layer does not expose `reactions` from the IMPL manifest to the
+            frontend. Without this, Agent D's `ReactionsPanel` will always receive
+            `undefined` and render nothing. Fix this with two changes in scout-and-wave-web.
+
+            ### 1. pkg/api/types.go — Add Reactions to IMPLDocResponse
+
+            Read `pkg/api/types.go`. Find the `IMPLDocResponse` struct. Add a `Reactions`
+            field following the same pattern used for `PreMortem` (which is also a struct
+            pointer copied from the protocol type). The field should be:
+
+            ```go
+            Reactions *protocol.ReactionsConfig `json:"reactions,omitempty"`
+            ```
+
+            Where `protocol` is `github.com/blackwell-systems/scout-and-wave-go/pkg/protocol`.
+            Check the existing imports — `protocol` is likely already imported.
+
+            ### 2. pkg/api/impl.go — Populate Reactions in implDocResponseFromManifest
+
+            Read `pkg/api/impl.go`. Find `implDocResponseFromManifest` (the function that
+            converts a `*protocol.IMPLManifest` to `IMPLDocResponse`). Add the mapping:
+
+            ```go
+            Reactions: m.Reactions,
+            ```
+
+            alongside the other manifest-to-response field copies. Since both source and
+            destination use `*protocol.ReactionsConfig`, no conversion struct is needed —
+            it's a direct pointer copy.
+
+            ## Tests to Write
+
+            None required — `implDocResponseFromManifest` is tested indirectly by the
+            existing API handler tests. If you want to add a focused test, add one case
+            to the existing `TestImplDocResponse*` test (if it exists) that verifies
+            a manifest with a reactions block serializes the field to JSON.
+
+            ## Verification Gate
+
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web
+            go build ./...
+            go vet ./...
+            # Verify the field is present in the JSON response:
+            grep -n "Reactions\|reactions" pkg/api/types.go
+            grep -n "Reactions\|reactions" pkg/api/impl.go
+            ```
+
+            ## Constraints
+
+            - Do NOT create a parallel `api.ReactionsConfig` struct — use the protocol type directly
+            - Do NOT modify any file outside your owned list (types.go, impl.go)
+            - The json tag must be `json:"reactions,omitempty"` (lowercase, omitempty)
+            - Verify `protocol` package is already imported before adding a duplicate import
+          files:
+            - pkg/api/types.go
+            - pkg/api/impl.go
+          dependencies:
+            - B
+      base_commit: 776247f024663c50c293747c988807208f54aa24
+quality_gates:
+    level: standard
+    gates:
+        - type: custom
+          command: grep -qn "reactions\|E19.1" /Users/dayna.blackwell/code/scout-and-wave/protocol/execution-rules.md
+          required: true
+          description: Verify E19.1 reactions section was added to execution-rules.md
+          repo: scout-and-wave
+        - type: custom
+          command: grep -qn "reactions" /Users/dayna.blackwell/code/scout-and-wave/implementations/claude-code/prompts/saw-skill.md
+          required: true
+          description: Verify reactions guidance added to Scout prompt in saw-skill.md
+          repo: scout-and-wave
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go build ./...
+          required: true
+          repo: scout-and-wave-go
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go test ./pkg/protocol/... ./pkg/orchestrator/...
+          required: true
+          repo: scout-and-wave-go
+        - type: lint
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go vet ./pkg/protocol/... ./pkg/orchestrator/...
+          required: true
+          repo: scout-and-wave-go
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./...
+          required: true
+          repo: scout-and-wave-web
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./...
+          required: true
+          repo: scout-and-wave-web
+        - type: typecheck
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+          required: true
+          repo: scout-and-wave-web
+post_merge_checklist:
+    groups:
+        - title: Wiring
+          items:
+            - description: 'Wire ValidateReactions into ValidateSchema in pkg/protocol/schema_validation.go (add: errs = append(errs, ValidateReactions(m)...) at end of ValidateSchema)'
+              command: grep -n "ValidateReactions" /Users/dayna.blackwell/code/scout-and-wave-go/pkg/protocol/schema_validation.go
+            - description: Wire RouteFailureWithReactions into orchestrator.go failure routing (hoist manifest var, replace RouteFailure(failureType) with RouteFailureWithReactions(failureType, manifest.Reactions))
+              command: grep -n "RouteFailure" /Users/dayna.blackwell/code/scout-and-wave-go/pkg/orchestrator/orchestrator.go
+            - description: Verify API reactions field is populated (Agent F work — reactions visible in web UI)
+              command: grep -n "Reactions" /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/types.go
+            - description: Verify reactions field serialized in implDocResponseFromManifest
+              command: grep -n "Reactions" /Users/dayna.blackwell/code/scout-and-wave-web/pkg/api/impl.go
+        - title: Build
+          items:
+            - description: Rebuild scout-and-wave-web binary after frontend changes
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build && cd .. && go build -o saw ./cmd/saw
+            - description: Run full test suite across both repos
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-go && go test ./... && cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./...
+completion_reports:
+    A:
+        status: complete
+        branch: saw/reactions-system/wave1-agent-A
+        commit: 295b7e5
+        files_changed:
+            - protocol/execution-rules.md
+            - implementations/claude-code/prompts/saw-skill.md
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/reactions-system/wave1-agent-B
+        commit: a827967
+        files_changed:
+            - pkg/protocol/types.go
+            - pkg/protocol/schema_unknown_keys.go
+            - pkg/protocol/failure.go
+            - pkg/protocol/failure_test.go
+            - pkg/protocol/reactions_validation.go
+            - pkg/protocol/reactions_validation_test.go
+        files_created:
+            - pkg/protocol/reactions_validation.go
+            - pkg/protocol/reactions_validation_test.go
+        tests_added:
+            - TestValidateReactions_Nil
+            - TestValidateReactions_ValidBlock
+            - TestValidateReactions_InvalidAction
+            - TestValidateReactions_NegativeMaxAttempts
+            - TestValidateReactions_PartialBlock
+            - TestMaxRetriesWithReactions_NilReactions
+            - TestMaxRetriesWithReactions_Override
+            - TestMaxRetriesWithReactions_ZeroMaxAttempts
+            - TestShouldRetryWithReactions_NilReactions
+            - TestShouldRetryWithReactions_PauseAction
+            - TestReactionEntryFor_AllFailureTypes
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/reactions-system/wave2-agent-C
+        commit: 0002a0f
+        files_changed:
+            - pkg/orchestrator/failure.go
+            - pkg/orchestrator/failure_test.go
+        tests_added:
+            - TestRouteFailureWithReactions_NilReactions
+            - TestRouteFailureWithReactions_RetryOverride
+            - TestRouteFailureWithReactions_PauseOverride
+            - TestRouteFailureWithReactions_AutoScoutOverride
+            - TestRouteFailureWithReactions_SendFixPrompt
+            - TestRouteFailureWithReactions_UnsetEntryFallsThrough
+            - TestMaxAttemptsFor_NilReactions
+            - TestMaxAttemptsFor_Override
+            - TestMaxAttemptsFor_ZeroMaxAttempts
+            - TestMaxAttemptsFor_TransientDefault
+            - TestActionFromReactionEntry_UnknownAction
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/reactions-system/wave1-agent-D
+        commit: e4e79d4
+        files_changed:
+            - web/src/types.ts
+            - web/src/components/review/ReactionsPanel.tsx
+            - web/src/components/ReviewScreen.tsx
+        files_created:
+            - web/src/components/review/ReactionsPanel.tsx
+        verification: PASS
+    F:
+        status: complete
+        branch: saw/reactions-system/wave2-agent-F
+        commit: 2c1893f
+        files_changed:
+            - pkg/api/types.go
+            - pkg/api/impl.go
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent C imports protocol package into orchestrator package, creating circular import
+          likelihood: medium
+          impact: high
+          mitigation: |
+            Check the existing import graph before implementing. orchestrator.go already
+            imports protocol (line 27: "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol").
+            The import is safe. Agent C should verify this before adding the import to failure.go.
+        - scenario: MaxAttempts=0 semantics ambiguous — treated as "zero retries" vs "use default"
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Both Agent B and Agent C implement MaxAttempts=0 as "use default". This is
+            explicitly specified in both task descriptions and the interface contract.
+            Tests in both agents cover the zero case.
+        - scenario: schema_validation.go wiring is not done — ValidateReactions never called
+          likelihood: high
+          impact: medium
+          mitigation: |
+            Agent B leaves a clear wiring comment. The integration step after Wave 1 merge
+            adds the call. Post-merge test suite includes TestValidateReactions tests that
+            will catch this if wiring is missing. Impact is medium (not low): without wiring,
+            invalid reaction action strings pass validate silently and cause confusing runtime behavior.
+        - scenario: ReviewScreen.tsx PanelKey union type conflict — 'reactions' key already exists
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent D reads the existing PanelKey union before adding 'reactions'. The
+            TypeScript compiler catches duplicate union members at compile time (tsc --noEmit).
+        - scenario: orchestrator.go call site not updated — RouteFailureWithReactions never called
+          likelihood: high
+          impact: low
+          mitigation: |
+            This is an explicit known gap. The wiring comment in failure.go documents the
+            exact change needed. The auto-fix-failures IMPL (which wires executeRetryLoop)
+            will pick this up, or a manual integration step after Wave 2 merge.
+            The feature degrades gracefully: reactions block is parsed and validated but
+            ignored at runtime until the wiring is done. E19 defaults continue to apply.
+state: "COMPLETE"
