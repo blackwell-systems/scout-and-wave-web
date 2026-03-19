@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import ProgressBar from './ProgressBar'
-import { fetchProgramStatus, executeTier } from '../programApi'
+import { fetchProgramStatus, executeTier, replanProgram } from '../programApi'
 import type { ProgramStatus, TierStatus, ImplTierStatus } from '../types/program'
 
 interface ProgramBoardProps {
@@ -169,6 +169,7 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
   const [error, setError] = useState<string | null>(null)
   const [connected, setConnected] = useState(false)
   const [waveProgress, setWaveProgress] = useState<Record<string, string>>({})
+  const [replanning, setReplanning] = useState(false)
 
   useEffect(() => {
     // Reset wave progress when programSlug changes
@@ -227,6 +228,21 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
       es.addEventListener('program_blocked', handleEvent)
       // Listen for wave progress events (U3)
       es.addEventListener('program_impl_wave_progress', handleWaveProgress)
+      // Listen for replan completion/failure (E34)
+      es.addEventListener('program_replan_complete', (e: MessageEvent) => {
+        const data = JSON.parse(e.data)
+        if (data.program_slug === programSlug) {
+          setReplanning(false)
+          void loadStatus()
+        }
+      })
+      es.addEventListener('program_replan_failed', (e: MessageEvent) => {
+        const data = JSON.parse(e.data)
+        if (data.program_slug === programSlug) {
+          setReplanning(false)
+          void loadStatus()
+        }
+      })
 
       es.onopen = () => {
         setConnected(true)
@@ -249,6 +265,16 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
       if (currentEventSource) currentEventSource.close()
     }
   }, [programSlug])
+
+  const handleReplan = async () => {
+    setReplanning(true)
+    try {
+      await replanProgram(programSlug)
+    } catch (err) {
+      console.error('Failed to trigger replan:', err)
+      setReplanning(false)
+    }
+  }
 
   const handleExecuteTier = async (tierNumber: number) => {
     try {
@@ -296,6 +322,15 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {(status.state === 'BLOCKED' || status.state === 'blocked') && (
+              <button
+                onClick={() => void handleReplan()}
+                disabled={replanning}
+                className="text-sm font-medium px-4 py-2 rounded-md bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50 transition-colors"
+              >
+                {replanning ? 'Replanning...' : 'Replan'}
+              </button>
+            )}
             {!connected && (
               <span className="text-xs text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full animate-pulse">
                 Reconnecting...
