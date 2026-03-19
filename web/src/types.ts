@@ -77,6 +77,16 @@ export interface AgentPromptEntry {
   prompt: string
 }
 
+export interface WiringEntry {
+  symbol: string
+  defined_in: string
+  must_be_called_from: string
+  agent: string
+  wave: number
+  integration_pattern?: string
+  status: 'declared' | 'verified' | 'gap'
+}
+
 export interface IMPLDocResponse {
   slug: string
   repo: string // repo name this IMPL belongs to
@@ -97,6 +107,7 @@ export interface IMPLDocResponse {
   agent_prompts: AgentPromptEntry[]
   pre_mortem?: PreMortem
   reactions?: ReactionsConfig
+  wiring?: WiringEntry[]
 }
 
 export interface IMPLListEntry {
