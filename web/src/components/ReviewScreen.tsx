@@ -14,6 +14,7 @@ import DependencyGraphPanel from './review/DependencyGraphPanel'
 import KnownIssuesPanel from './review/KnownIssuesPanel'
 import PostMergeChecklistPanel from './review/PostMergeChecklistPanel'
 import PreMortemPanel from './review/PreMortemPanel'
+import ReactionsPanel from './review/ReactionsPanel'
 import StubReportPanel from './review/StubReportPanel'
 import QualityGatesPanel from './review/QualityGatesPanel'
 import NotSuitableResearchPanel from './review/NotSuitableResearchPanel'
@@ -35,7 +36,7 @@ interface ReviewScreenProps {
   refreshTick?: number
 }
 
-type PanelKey = 'pre-mortem' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'worktrees' | 'context-viewer' | 'validation'
+type PanelKey = 'reactions' | 'pre-mortem' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'worktrees' | 'context-viewer' | 'validation'
 
 const panels: Array<{ key: PanelKey; label: string }> = [
   // Structure & Plan
@@ -43,6 +44,7 @@ const panels: Array<{ key: PanelKey; label: string }> = [
   { key: 'dependency-graph', label: 'Dependency Graph' },
   { key: 'file-ownership', label: 'File Ownership' },
   { key: 'pre-mortem', label: 'Pre-Mortem' },
+  { key: 'reactions', label: 'Reactions' },
   // Implementation Details
   { key: 'interface-contracts', label: 'Interface Contracts' },
   { key: 'scaffolds', label: 'Scaffolds' },
@@ -106,6 +108,9 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
     }
     if (impl.pre_mortem) {
       defaults.push('pre-mortem')
+    }
+    if (impl.reactions) {
+      defaults.push('reactions')
     }
     return defaults
   })
@@ -333,6 +338,13 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
 
                 {/* Pre-Mortem — full width */}
                 {activePanels.includes('pre-mortem') && <div className="panel-animate"><PreMortemPanel preMortem={impl.pre_mortem} /></div>}
+
+                {/* Reactions Config — full width */}
+                {activePanels.includes('reactions') && (
+                  <div className="panel-animate">
+                    <ReactionsPanel reactions={impl.reactions} />
+                  </div>
+                )}
 
                 {/* Known Issues — full width */}
                 {activePanels.includes('known-issues') && <div className="panel-animate"><KnownIssuesPanel knownIssues={(impl as any).known_issues} /></div>}
