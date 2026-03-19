@@ -91,12 +91,14 @@ type QualityGates struct {
 	Gates []QualityGate `json:"gates"`
 }
 
-// QualityGate represents a single quality check (build, lint, test, etc.).
+// QualityGate represents a single quality check.
+// Type is one of: "build", "lint", "test", "typecheck", "format", "custom"
 type QualityGate struct {
 	Type        string `json:"type"`
 	Command     string `json:"command"`
 	Required    bool   `json:"required"`
 	Description string `json:"description,omitempty"`
+	Fix         bool   `json:"fix,omitempty"` // fix mode: auto-apply formatting (format gates only)
 }
 
 // PostMergeChecklist represents the structured post-merge verification checklist.
