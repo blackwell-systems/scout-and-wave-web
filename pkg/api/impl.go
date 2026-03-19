@@ -429,6 +429,7 @@ func implDocResponseFromManifest(slug string, m *protocol.IMPLManifest) IMPLDocR
 			Contracts: []ContractEntry{},
 		},
 		PreMortem:              preMortem,
+		Reactions:              m.Reactions,
 		KnownIssues:            knownIssues,
 		ScaffoldsDetail:        scaffoldDetail,
 		InterfaceContractsText: contractsBuf.String(),

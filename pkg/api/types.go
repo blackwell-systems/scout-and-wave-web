@@ -1,5 +1,7 @@
 package api
 
+import "github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+
 // PreMortemRowEntry is one row of the pre-mortem risk table.
 type PreMortemRowEntry struct {
 	Scenario   string `json:"scenario"`
@@ -26,7 +28,8 @@ type IMPLDocResponse struct {
 	FileOwnershipCol4Name  string               `json:"file_ownership_col4_name"` // detected 4th column header (e.g. "Action", "Depends On")
 	Waves                  []WaveInfo           `json:"waves"`
 	Scaffold               ScaffoldInfo         `json:"scaffold"`
-	PreMortem              *PreMortemEntry      `json:"pre_mortem,omitempty"`
+	PreMortem              *PreMortemEntry               `json:"pre_mortem,omitempty"`
+	Reactions              *protocol.ReactionsConfig     `json:"reactions,omitempty"`
 	KnownIssues            []KnownIssueEntry    `json:"known_issues"`
 	ScaffoldsDetail        []ScaffoldFileEntry  `json:"scaffolds_detail"`
 	InterfaceContractsText string               `json:"interface_contracts_text"`
