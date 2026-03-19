@@ -130,14 +130,16 @@ waves: []
 	// 2. program_impl_started
 	// 3. run_started (from mock runWaveLoopFunc)
 	// 4. run_complete (from mock runWaveLoopFunc)
-	// 5. program_impl_complete
-	// 6. program_tier_complete
+	// 5. program_impl_wave_progress (U3: emitted after runWaveLoopFunc returns)
+	// 6. program_impl_complete
+	// 7. program_tier_complete
 
 	expectedSequence := []string{
 		"program_tier_started",
 		"program_impl_started",
 		"run_started",
 		"run_complete",
+		"program_impl_wave_progress",
 		"program_impl_complete",
 		"program_tier_complete",
 	}
@@ -444,5 +446,74 @@ waves: []
 	}
 	if implCompleteCount != 2 {
 		t.Errorf("expected 2 program_impl_complete events, got %d", implCompleteCount)
+	}
+}
+
+// TestResolveIMPLPathForProgram_SearchOrder verifies that the complete copy of an
+// IMPL is preferred over an active (in-progress) copy when both exist (B2).
+func TestResolveIMPLPathForProgram_SearchOrder(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create both active and complete directories
+	activeDir := filepath.Join(tmpDir, "docs", "IMPL")
+	completeDir := filepath.Join(tmpDir, "docs", "IMPL", "complete")
+	if err := os.MkdirAll(activeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(completeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write an active (stale) copy and a complete (canonical) copy of the same slug
+	activePath := filepath.Join(activeDir, "IMPL-my-feature.yaml")
+	completePath := filepath.Join(completeDir, "IMPL-my-feature.yaml")
+	if err := os.WriteFile(activePath, []byte("# active copy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(completePath, []byte("# complete copy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := resolveIMPLPathForProgram("my-feature", tmpDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	// The complete copy should be preferred
+	if got != completePath {
+		t.Errorf("expected complete path %q, got %q", completePath, got)
+	}
+}
+
+// TestResolveIMPLPathForProgram_ActiveOnly verifies fallback to active when no complete copy exists.
+func TestResolveIMPLPathForProgram_ActiveOnly(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	activeDir := filepath.Join(tmpDir, "docs", "IMPL")
+	if err := os.MkdirAll(activeDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	activePath := filepath.Join(activeDir, "IMPL-my-feature.yaml")
+	if err := os.WriteFile(activePath, []byte("# active copy\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := resolveIMPLPathForProgram("my-feature", tmpDir)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != activePath {
+		t.Errorf("expected active path %q, got %q", activePath, got)
+	}
+}
+
+// TestResolveIMPLPathForProgram_NotFound verifies error when IMPL doc is absent in both dirs.
+func TestResolveIMPLPathForProgram_NotFound(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	_, err := resolveIMPLPathForProgram("nonexistent-feature", tmpDir)
+	if err == nil {
+		t.Fatal("expected error for missing IMPL doc")
 	}
 }

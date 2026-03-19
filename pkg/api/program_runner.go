@@ -74,13 +74,9 @@ func runProgramTier(
 			publish(event, data)
 		}
 
-		// Create a no-op stage callback (program runner does not track per-IMPL stage state)
-		onStage := func(ExecutionStage, StageStatus, int, string) {
-			// No-op: program runner doesn't track individual IMPL stages in this initial version
-		}
-
-		// Execute the IMPL via runWaveLoopFunc (test seam)
-		runWaveLoopFunc(implPath, implSlug, repoPath, implPublish, onStage)
+		// Execute the IMPL via runWaveLoopFunc (test seam).
+		// onStage is intentionally a no-op: program runner does not track per-IMPL stage state.
+		runWaveLoopFunc(implPath, implSlug, repoPath, implPublish, func(ExecutionStage, StageStatus, int, string) {})
 
 		// Check if the IMPL completed successfully by examining the manifest
 		implManifest, err := protocol.Load(implPath)
@@ -92,6 +88,29 @@ func runProgramTier(
 			})
 			return fmt.Errorf("failed to reload IMPL %s manifest: %w", implSlug, err)
 		}
+
+		// Emit wave progress event (U3): count completed waves vs total.
+		// A wave is complete when all its agents have entries in CompletionReports.
+		totalWaves := len(implManifest.Waves)
+		completedWaves := 0
+		for _, w := range implManifest.Waves {
+			allComplete := len(w.Agents) > 0
+			for _, ag := range w.Agents {
+				if _, hasReport := implManifest.CompletionReports[ag.ID]; !hasReport {
+					allComplete = false
+					break
+				}
+			}
+			if allComplete {
+				completedWaves++
+			}
+		}
+		publish("program_impl_wave_progress", map[string]interface{}{
+			"program_slug": programSlug,
+			"impl_slug":    implSlug,
+			"current_wave": completedWaves,
+			"total_waves":  totalWaves,
+		})
 
 		// Verify all waves completed
 		if currentWave := protocol.CurrentWave(implManifest); currentWave != nil {
@@ -177,11 +196,12 @@ func runProgramTier(
 }
 
 // resolveIMPLPathForProgram searches for an IMPL doc by slug in the repository.
-// It searches both active (docs/IMPL/) and complete (docs/IMPL/complete/) directories.
+// It searches complete (docs/IMPL/complete/) before active (docs/IMPL/) so that
+// a completed IMPL is always preferred over any stale in-progress copy.
 func resolveIMPLPathForProgram(implSlug, repoPath string) (string, error) {
 	implDirs := []string{
-		filepath.Join(repoPath, "docs", "IMPL"),
 		filepath.Join(repoPath, "docs", "IMPL", "complete"),
+		filepath.Join(repoPath, "docs", "IMPL"),
 	}
 
 	for _, implDir := range implDirs {
