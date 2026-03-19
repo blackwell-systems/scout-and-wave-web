@@ -604,6 +604,18 @@ func runFinalizeSteps(slug string, waveNum int, implPath, repoPath, integrationM
 		publishPipelineStep(publish, slug, waveNum, StepVerifyBuild, StepComplete, "")
 	}
 
+	// --- Step 7.5: CodeReview (non-fatal unless blocking) ---
+	if shouldSkip(StepCodeReview) {
+		publishPipelineStep(publish, slug, waveNum, StepCodeReview, StepSkipped, "")
+	} else {
+		_ = tracker.Start(slug, waveNum, StepCodeReview)
+		publishPipelineStep(publish, slug, waveNum, StepCodeReview, StepRunning, "")
+
+		if err := runCodeReviewStep(context.Background(), slug, waveNum, repoPath, tracker, publish); err != nil {
+			return err
+		}
+	}
+
 	// --- Step 8: IntegrationAgent (non-fatal, E26) ---
 	// If ValidateIntegration found gaps, launch the integration agent to wire them.
 	if shouldSkip(StepIntegrationAgent) {
