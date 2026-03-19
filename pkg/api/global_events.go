@@ -18,6 +18,7 @@ package api
 // event, keeping the sidebar in sync with whatever writes IMPL docs.
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -39,7 +40,7 @@ func newGlobalBroker() *globalBroker {
 }
 
 func (b *globalBroker) subscribe() chan string {
-	ch := make(chan string, 4)
+	ch := make(chan string, 16) // Increased buffer to handle concurrent broadcasts
 	b.mu.Lock()
 	b.clients[ch] = struct{}{}
 	b.mu.Unlock()
@@ -58,6 +59,25 @@ func (b *globalBroker) broadcast(event string) {
 	for ch := range b.clients {
 		select {
 		case ch <- event:
+		default:
+		}
+	}
+}
+
+// broadcastJSON marshals data to JSON and broadcasts it as an SSE event.
+// The format sent is: event: <eventType>\ndata: <json>\n\n
+func (b *globalBroker) broadcastJSON(eventType string, data interface{}) {
+	jsonData, err := json.Marshal(data)
+	if err != nil {
+		return
+	}
+	// Encode as "eventType:json_payload" so handleGlobalEvents can parse it
+	payload := fmt.Sprintf("%s:%s", eventType, string(jsonData))
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for ch := range b.clients {
+		select {
+		case ch <- payload:
 		default:
 		}
 	}
@@ -88,7 +108,15 @@ func (s *Server) handleGlobalEvents(w http.ResponseWriter, r *http.Request) {
 		case <-r.Context().Done():
 			return
 		case event := <-ch:
-			fmt.Fprintf(w, "event: %s\ndata: {}\n\n", event)
+			// Parse event format: either simple "event_name" or "event_type:json_payload"
+			if idx := findColon(event); idx != -1 {
+				eventType := event[:idx]
+				jsonData := event[idx+1:]
+				fmt.Fprintf(w, "event: %s\ndata: %s\n\n", eventType, jsonData)
+			} else {
+				// Simple event with empty data
+				fmt.Fprintf(w, "event: %s\ndata: {}\n\n", event)
+			}
 			if f, ok := w.(http.Flusher); ok {
 				f.Flush()
 			}
@@ -177,4 +205,14 @@ func (s *Server) implWatchDirs(fallbackDir string) []string {
 		}
 	}
 	return dirs
+}
+
+// findColon returns the index of the first ':' in s, or -1 if not found.
+func findColon(s string) int {
+	for i := 0; i < len(s); i++ {
+		if s[i] == ':' {
+			return i
+		}
+	}
+	return -1
 }
