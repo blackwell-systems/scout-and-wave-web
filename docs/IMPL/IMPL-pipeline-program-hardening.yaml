@@ -2,1085 +2,1059 @@ title: Pipeline and Program System Hardening
 feature_slug: pipeline-program-hardening
 verdict: SUITABLE
 suitability_assessment: |
-  The work spans 8 distinct files across Go backend and TypeScript frontend with
-  natural decomposition boundaries. 16 items (B1-B6, U1-U4, Q1-Q5) distribute
-  cleanly across 7 agents in 2 waves.
+    The work spans 8 distinct files across Go backend and TypeScript frontend with
+    natural decomposition boundaries. 16 items (B1-B6, U1-U4, Q1-Q5) distribute
+    cleanly across 7 agents in 2 waves.
 
-  File decomposition: 8 files, no two agents in the same wave own the same file.
-  The one structural tension — B5 touches both server.go and program_handler.go —
-  is resolved by assigning both files to Agent A, which also handles B3, B4, Q4,
-  and U4 since all are in program_handler.go.
+    File decomposition: 8 files, no two agents in the same wave own the same file.
+    The one structural tension — B5 touches both server.go and program_handler.go —
+    is resolved by assigning both files to Agent A, which also handles B3, B4, Q4,
+    and U4 since all are in program_handler.go.
 
-  Interface discoverability: The U1 ImplReference base type is defined in Wave 1
-  (Agent D, types files) and consumed by Wave 2 (Agent E, PipelineRow.tsx). The
-  contract is fully specifiable before implementation starts.
+    Interface discoverability: The U1 ImplReference base type is defined in Wave 1
+    (Agent D, types files) and consumed by Wave 2 (Agent E, PipelineRow.tsx). The
+    contract is fully specifiable before implementation starts.
 
-  U2 backend (new PipelineEntry fields + buildImplProgramMap tier lookup) lands in
-  Wave 1 with Agent B (owns pipeline_handler.go). Wave 2 Agent E reads the new
-  fields from the already-updated type definitions (Agent D, Wave 1).
+    U2 backend (new PipelineEntry fields + buildImplProgramMap tier lookup) lands in
+    Wave 1 with Agent B (owns pipeline_handler.go). Wave 2 Agent E reads the new
+    fields from the already-updated type definitions (Agent D, Wave 1).
 
-  Pre-implementation check: All 16 items confirmed as TODO against current codebase.
-  Known issue: program_handler_test.go TestHandleReplanProgram_NotImplemented expects
-  HTTP 501 but current code returns 202. This is a pre-existing stale test; it does
-  not block the current work (no agent touches handleReplanProgram).
+    Pre-implementation check: All 16 items confirmed as TODO against current codebase.
+    Known issue: program_handler_test.go TestHandleReplanProgram_NotImplemented expects
+    HTTP 501 but current code returns 202. This is a pre-existing stale test; it does
+    not block the current work (no agent touches handleReplanProgram).
 
-  Parallelization value: HIGH. Go build+test cycle is ~30s. Agents A-D run fully
-  in parallel in Wave 1 (4x speedup on foundation). Wave 2 agents E-G also run
-  in parallel. Estimated 2-wave sequential time ~60-80 min; parallel ~25-35 min.
+    Parallelization value: HIGH. Go build+test cycle is ~30s. Agents A-D run fully
+    in parallel in Wave 1 (4x speedup on foundation). Wave 2 agents E-G also run
+    in parallel. Estimated 2-wave sequential time ~60-80 min; parallel ~25-35 min.
 
-  Estimated times:
-  - Scout phase: ~15 min
-  - Agent execution: ~30 min (Wave 1: 4 agents parallel; Wave 2: 3 agents parallel)
-  - Merge and verification: ~5 min
-  Total SAW time: ~50 min
-  Sequential baseline: ~90 min
-  Time savings: ~40 min (~45% faster)
+    Estimated times:
+    - Scout phase: ~15 min
+    - Agent execution: ~30 min (Wave 1: 4 agents parallel; Wave 2: 3 agents parallel)
+    - Merge and verification: ~5 min
+    Total SAW time: ~50 min
+    Sequential baseline: ~90 min
+    Time savings: ~40 min (~45% faster)
 test_command: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
 lint_command: go vet ./...
-state: SCOUT_PENDING
-
-quality_gates:
-  level: standard
-  gates:
-    - type: build
-      command: go build ./...
-      required: true
-    - type: lint
-      command: go vet ./...
-      required: true
-    - type: test
-      command: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
-      required: true
-
-# U1: ImplReference base type must be defined before Wave 2 agents reference it.
-# Agent D (Wave 1) creates it in web/src/types/autonomy.ts and web/src/types/program.ts.
-# Agents E and F (Wave 2) extend/consume it. No Go-side scaffold needed.
-scaffolds:
-  - file_path: web/src/types/autonomy.ts
-    contents: |
-      Add export interface ImplReference { slug: string; title: string; status: string }
-      at top of file. PipelineEntry extends ImplReference, adding repo, wave_progress,
-      active_agent, blocked_reason, queue_position, depends_on, completed_at,
-      elapsed_seconds, program_slug, program_title, program_tier, program_tiers_total.
-    import_path: ../types/autonomy
-    status: pending
-  - file_path: web/src/types/program.ts
-    contents: |
-      Import ImplReference from autonomy. ImplTierStatus extends ImplReference
-      (slug, status already match; title needs addition for display).
-    import_path: ../types/program
-    status: pending
-
 file_ownership:
-  # Wave 1 — Backend Go fixes and TypeScript type foundation
-  - file: pkg/api/program_handler.go
-    agent: A
-    wave: 1
-    action: modify
-    depends_on: []
-  - file: pkg/api/server.go
-    agent: A
-    wave: 1
-    action: modify
-    depends_on: []
-  - file: pkg/api/pipeline_handler.go
-    agent: B
-    wave: 1
-    action: modify
-    depends_on: []
-  - file: pkg/api/program_runner.go
-    agent: C
-    wave: 1
-    action: modify
-    depends_on: []
-  - file: web/src/types/autonomy.ts
-    agent: D
-    wave: 1
-    action: modify
-    depends_on: []
-  - file: web/src/types/program.ts
-    agent: D
-    wave: 1
-    action: modify
-    depends_on: []
-  # Wave 2 — Frontend consumers and test coverage
-  - file: web/src/components/PipelineRow.tsx
-    agent: E
-    wave: 2
-    action: modify
-    depends_on: [B, D]
-  - file: web/src/components/ProgramBoard.tsx
-    agent: F
-    wave: 2
-    action: modify
-    depends_on: [C, D]
-  - file: pkg/api/pipeline_handler_test.go
-    agent: G
-    wave: 2
-    action: modify
-    depends_on: [B]
-
+    - file: pkg/api/program_handler.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/api/server.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/api/pipeline_handler.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/api/program_runner.go
+      agent: C
+      wave: 1
+      action: modify
+    - file: web/src/types/autonomy.ts
+      agent: D
+      wave: 1
+      action: modify
+    - file: web/src/types/program.ts
+      agent: D
+      wave: 1
+      action: modify
+    - file: web/src/components/PipelineRow.tsx
+      agent: E
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+        - D
+    - file: web/src/components/ProgramBoard.tsx
+      agent: F
+      wave: 2
+      action: modify
+      depends_on:
+        - C
+        - D
+    - file: pkg/api/pipeline_handler_test.go
+      agent: G
+      wave: 2
+      action: modify
+      depends_on:
+        - B
 interface_contracts:
-  - name: ImplReference
-    description: |
-      Shared base TypeScript interface extracted from PipelineEntry and ImplTierStatus.
-      Defines the minimal identity fields common to any IMPL reference in the UI.
-    definition: |
-      export interface ImplReference {
-        slug: string
-        title: string
-        status: string
-      }
-    location: web/src/types/autonomy.ts
+    - name: ImplReference
+      description: |
+        Shared base TypeScript interface extracted from PipelineEntry and ImplTierStatus.
+        Defines the minimal identity fields common to any IMPL reference in the UI.
+      definition: |
+        export interface ImplReference {
+          slug: string
+          title: string
+          status: string
+        }
+      location: web/src/types/autonomy.ts
+    - name: PipelineEntry (updated)
+      description: |
+        Extends ImplReference. Adds program_tier and program_tiers_total for U2 tier
+        context rendering. Agent B populates these from the PROGRAM manifest in
+        buildImplProgramMap; Agent E renders them in PipelineRow.
+      definition: |
+        export interface PipelineEntry extends ImplReference {
+          repo?: string
+          wave_progress?: string
+          active_agent?: string
+          blocked_reason?: string
+          queue_position?: number
+          depends_on?: string[]
+          completed_at?: string
+          elapsed_seconds?: number
+          program_slug?: string
+          program_title?: string
+          program_tier?: number        // tier number within parent program (U2)
+          program_tiers_total?: number // total tiers in parent program (U2)
+        }
+      location: web/src/types/autonomy.ts
+    - name: ImplTierStatus (updated)
+      description: |
+        Extends ImplReference. Adds title field and optional wave_progress for U3
+        wave depth rendering in ProgramBoard ImplCard.
+      definition: |
+        export interface ImplTierStatus extends ImplReference {
+          wave_progress?: string  // e.g. "Wave 2/3" emitted via program_impl_wave_progress SSE (U3)
+        }
+      location: web/src/types/program.ts
+    - name: implProgramInfo (updated)
+      description: |
+        Extended to hold tier number and total tiers for U2. Agent B updates both
+        the struct definition and buildImplProgramMap to populate these fields.
+        PipelineEntry Go struct also gains ProgramTier and ProgramTiersTotal JSON fields.
+      definition: |
+        type implProgramInfo struct {
+          programSlug       string
+          programTitle      string
+          programTier       int  // tier number the IMPL belongs to (from ProgramIMPL.Tier)
+          programTiersTotal int  // total number of tiers in the PROGRAM manifest
+        }
 
-  - name: PipelineEntry (updated)
-    description: |
-      Extends ImplReference. Adds program_tier and program_tiers_total for U2 tier
-      context rendering. Agent B populates these from the PROGRAM manifest in
-      buildImplProgramMap; Agent E renders them in PipelineRow.
-    definition: |
-      export interface PipelineEntry extends ImplReference {
-        repo?: string
-        wave_progress?: string
-        active_agent?: string
-        blocked_reason?: string
-        queue_position?: number
-        depends_on?: string[]
-        completed_at?: string
-        elapsed_seconds?: number
-        program_slug?: string
-        program_title?: string
-        program_tier?: number        // tier number within parent program (U2)
-        program_tiers_total?: number // total tiers in parent program (U2)
-      }
-    location: web/src/types/autonomy.ts
+        // PipelineEntry additions (Go struct):
+        ProgramTier       int `json:"program_tier,omitempty"`
+        ProgramTiersTotal int `json:"program_tiers_total,omitempty"`
+      location: pkg/api/pipeline_handler.go
+    - name: program_impl_wave_progress (SSE event)
+      description: |
+        New SSE event emitted by runProgramTier during IMPL execution (U3).
+        Carries current_wave and total_waves so ProgramBoard can render "Wave N/M"
+        instead of a static 50% progress bar.
+      definition: |
+        event: program_impl_wave_progress
+        data: {
+          "program_slug": string,
+          "impl_slug": string,
+          "current_wave": int,
+          "total_waves": int
+        }
+      location: pkg/api/program_runner.go
+    - name: activeProgramRuns (consolidated)
+      description: |
+        B5: activeProgramRuns moves from a package-level var in program_handler.go to
+        a field on Server. This eliminates the unsynchronized split with s.activeRuns.
+        Agent A updates Server struct and all references in program_handler.go.
+      definition: |
+        // In Server struct (server.go):
+        activeProgramRuns sync.Map  // slug -> struct{}; program tier executions
 
-  - name: ImplTierStatus (updated)
-    description: |
-      Extends ImplReference. Adds title field and optional wave_progress for U3
-      wave depth rendering in ProgramBoard ImplCard.
-    definition: |
-      export interface ImplTierStatus extends ImplReference {
-        wave_progress?: string  // e.g. "Wave 2/3" emitted via program_impl_wave_progress SSE (U3)
-      }
-    location: web/src/types/program.ts
-
-  - name: implProgramInfo (updated)
-    description: |
-      Extended to hold tier number and total tiers for U2. Agent B updates both
-      the struct definition and buildImplProgramMap to populate these fields.
-      PipelineEntry Go struct also gains ProgramTier and ProgramTiersTotal JSON fields.
-    definition: |
-      type implProgramInfo struct {
-        programSlug       string
-        programTitle      string
-        programTier       int  // tier number the IMPL belongs to (from ProgramIMPL.Tier)
-        programTiersTotal int  // total number of tiers in the PROGRAM manifest
-      }
-
-      // PipelineEntry additions (Go struct):
-      ProgramTier       int `json:"program_tier,omitempty"`
-      ProgramTiersTotal int `json:"program_tiers_total,omitempty"`
-    location: pkg/api/pipeline_handler.go
-
-  - name: program_impl_wave_progress (SSE event)
-    description: |
-      New SSE event emitted by runProgramTier during IMPL execution (U3).
-      Carries current_wave and total_waves so ProgramBoard can render "Wave N/M"
-      instead of a static 50% progress bar.
-    definition: |
-      event: program_impl_wave_progress
-      data: {
-        "program_slug": string,
-        "impl_slug": string,
-        "current_wave": int,
-        "total_waves": int
-      }
-    location: pkg/api/program_runner.go
-
-  - name: activeProgramRuns (consolidated)
-    description: |
-      B5: activeProgramRuns moves from a package-level var in program_handler.go to
-      a field on Server. This eliminates the unsynchronized split with s.activeRuns.
-      Agent A updates Server struct and all references in program_handler.go.
-    definition: |
-      // In Server struct (server.go):
-      activeProgramRuns sync.Map  // slug -> struct{}; program tier executions
-
-      // All program_handler.go references change from:
-      //   activeProgramRuns.Store/Load/Delete
-      // to:
-      //   s.activeProgramRuns.Store/Load/Delete
-    location: pkg/api/server.go
-
+        // All program_handler.go references change from:
+        //   activeProgramRuns.Store/Load/Delete
+        // to:
+        //   s.activeProgramRuns.Store/Load/Delete
+      location: pkg/api/server.go
 waves:
-  - number: 1
-    agents:
-      - id: A
-        task: |
-          ## Agent A — program_handler.go + server.go (B3, B4, B5, Q4, U4)
-
-          ### Files owned
-          - `pkg/api/program_handler.go`
-          - `pkg/api/server.go`
-
-          ### What to implement
-
-          **B5 — Consolidate activeProgramRuns into Server struct**
-
-          In `server.go`, add `activeProgramRuns sync.Map` as a field on the `Server`
-          struct (between `mergingRuns` and `testingRuns`, maintaining alphabetical
-          grouping). Remove the package-level `var activeProgramRuns sync.Map` from
-          `program_handler.go`. Update every reference in `program_handler.go` from
-          `activeProgramRuns.XYZ` to `s.activeProgramRuns.XYZ` (Load, Store, Delete,
-          LoadOrStore). This is the foundational fix; B3 and B4 build on it.
-
-          **B3 — Fix handleExecuteTier cleanup gap**
-
-          The current code calls `activeProgramRuns.Delete(slug)` at line 179 for the
-          path-resolution error case, but if any panic occurs between `LoadOrStore`
-          succeeding and the goroutine's `defer activeProgramRuns.Delete(slug)` running,
-          the slug stays locked. Fix: add a handler-level defer immediately after
-          `LoadOrStore` succeeds that deletes on any return before the goroutine launch.
-          Use a `launched` boolean flag to suppress the handler-level cleanup once the
-          goroutine is running.
-
-          Pattern:
-          ```go
-          if _, loaded := s.activeProgramRuns.LoadOrStore(slug, struct{}{}); loaded {
-              http.Error(w, "program tier already executing", http.StatusConflict)
-              return
-          }
-          launched := false
-          defer func() {
-              if !launched {
-                  s.activeProgramRuns.Delete(slug)
-              }
-          }()
-
-          // ... path resolution, body decode ...
-
-          go func() {
-              defer s.activeProgramRuns.Delete(slug)
-              // ... runProgramTier ...
-          }()
-          launched = true
-          w.WriteHeader(http.StatusAccepted)
-          ```
-
-          **B4 — Clean up activeProgramRuns on server shutdown**
-
-          The server's shutdown context (the `ctx` passed to `Start`/`StartTLS`) is
-          cancelled on SIGTERM, but goroutines running `runProgramTier` do not observe
-          it. After the goroutine launch, pass the server's shutdown context into the
-          goroutine so it can select on `ctx.Done()` and emit `program_blocked` + clean up.
-
-          The cleanest approach: store `context.Context` alongside the slug in
-          `activeProgramRuns` (value becomes `context.CancelFunc` or a small struct),
-          OR pass a context cancel through the run. For minimum invasiveness, add a
-          `serverCtx context.Context` field to `Server` that is set in `New()` via a
-          package-level cancelable context, cancelled in `Start`/`StartTLS` on shutdown.
-
-          If adding `serverCtx` to Server is too broad in scope for this wave, an
-          acceptable fallback is: make `runProgramTier` accept a `ctx context.Context`
-          argument and check `ctx.Done()` in the per-IMPL loop. Pass `r.Context()`
-          extended with a server-lifetime context.
-
-          Either approach must ensure: when the server shuts down mid-execution, the
-          goroutine emits `program_blocked` with reason "server shutdown" and calls
-          `s.activeProgramRuns.Delete(slug)`.
-
-          **Q4 — Return 400 on bad JSON in handleReplanProgram**
-
-          Replace:
-          ```go
-          _ = json.NewDecoder(r.Body).Decode(&body)
-          ```
-          with:
-          ```go
-          if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
-              http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
-              return
-          }
-          ```
-          Import `"io"` if not already present. Note: empty body (io.EOF) is acceptable
-          since all fields have defaults, so only non-EOF decode errors return 400.
-
-          **U4 — Pre-flight IMPL validation in handleGetProgramStatus**
-
-          In `handleGetProgramStatus`, after loading the manifest and before calling
-          `GetProgramStatus`, iterate each tier's IMPL slugs and verify the IMPL doc
-          exists on disk (search both `docs/IMPL/` and `docs/IMPL/complete/`). Collect
-          missing slugs into a slice. If any are missing, return a 200 response with a
-          `validation_errors` field listing them rather than surfacing the error mid-execution.
-
-          Add a `ValidationErrors []string` field to `ProgramStatusResponse`:
-          ```go
-          type ProgramStatusResponse struct {
-              // ... existing fields ...
-              ValidationErrors []string `json:"validation_errors,omitempty"`
-          }
-          ```
-
-          The validation loop:
-          ```go
-          var validationErrors []string
-          for _, tier := range manifest.Tiers {
-              for _, implSlug := range tier.Impls {
-                  if _, err := resolveIMPLPathForProgram(implSlug, repoPath); err != nil {
-                      validationErrors = append(validationErrors, fmt.Sprintf("tier %d: IMPL %q not found", tier.Number, implSlug))
-                  }
-              }
-          }
-          ```
-
-          ### Tests to write / update
-          - Add `TestHandleGetProgramStatus_ValidationErrors` in `program_handler_test.go`
-            that creates a PROGRAM manifest referencing a non-existent IMPL slug and
-            asserts the response contains `validation_errors` with the missing slug.
-          - Add `TestHandleReplanProgram_BadJSON` that sends `{invalid}` and asserts 400.
-          - Add `TestHandleExecuteTier_CleanupOnPathError` that (using a minimal server
-            without a valid program path) verifies `activeProgramRuns` does not retain
-            the slug after handleExecuteTier returns an error.
-
-          ### Verification gate
-          ```
-          go build ./...
-          go vet ./...
-          go test ./pkg/api/... -run TestHandleGetProgramStatus -v
-          go test ./pkg/api/... -run TestHandleExecuteTier -v
-          go test ./pkg/api/... -run TestHandleReplanProgram -v
-          ```
-
-          ### Constraints
-          - Do NOT modify program_runner.go (owned by Agent C)
-          - Do NOT modify pipeline_handler.go (owned by Agent B)
-          - The package-level `var activeProgramRuns sync.Map` must be removed; all
-            existing tests that reference it directly (e.g. `activeProgramRuns.Store`)
-            must be updated to use `server.activeProgramRuns` or test helpers
-          - Check program_handler_test.go for tests that use `activeProgramRuns` directly
-            and update them to use a server field approach
-        files:
-          - pkg/api/program_handler.go
-          - pkg/api/server.go
-        dependencies: []
-
-      - id: B
-        task: |
-          ## Agent B — pipeline_handler.go (B1, B6, U2 backend)
-
-          ### Files owned
-          - `pkg/api/pipeline_handler.go`
-
-          ### What to implement
-
-          **B1 — Fix slug collision in buildImplProgramMap**
-
-          Currently, when the same IMPL slug appears in two PROGRAM manifests, the last
-          write silently wins:
-          ```go
-          result[impl.Slug] = implProgramInfo{...}  // silently overwrites
-          ```
-
-          Fix: before writing, check if the slug already exists. If it does, log a
-          warning and skip the duplicate (first-write-wins is more predictable than
-          last-write-wins). Alternatively, collect all parents and return a multi-value
-          map — but for V1, first-write-wins with a log warning is sufficient and avoids
-          changing the `implProgramInfo` struct shape.
-
-          ```go
-          if existing, exists := result[impl.Slug]; exists {
-              log.Printf("buildImplProgramMap: slug %q claimed by both %q and %q; keeping first",
-                  impl.Slug, existing.programSlug, manifest.ProgramSlug)
-              continue
-          }
-          result[impl.Slug] = implProgramInfo{...}
-          ```
-
-          **B6 — Add TTL cache to buildImplProgramMap**
-
-          `buildImplProgramMap` is called on every `GET /api/pipeline` with no caching.
-          Add a package-level cache with a 15-second TTL.
-
-          ```go
-          type implProgramCache struct {
-              mu      sync.Mutex
-              data    map[string]implProgramInfo
-              builtAt time.Time
-              ttl     time.Duration
-          }
-
-          var implProgramCacheInstance = &implProgramCache{ttl: 15 * time.Second}
-
-          func (c *implProgramCache) get(repos []RepoEntry) map[string]implProgramInfo {
-              c.mu.Lock()
-              defer c.mu.Unlock()
-              if c.data != nil && time.Since(c.builtAt) < c.ttl {
-                  return c.data
-              }
-              c.data = buildImplProgramMapFresh(repos)
-              c.builtAt = time.Now()
-              return c.data
-          }
-          ```
-
-          Rename the existing `buildImplProgramMap` to `buildImplProgramMapFresh`
-          (unexported helper). The exported-facing call site in `handleGetPipeline`
-          changes from `buildImplProgramMap(repos)` to `implProgramCacheInstance.get(repos)`.
-
-          Import `"sync"` and `"time"` if not already present (they likely are from
-          existing usage).
-
-          **U2 — Backend: add tier context fields to PipelineEntry and buildImplProgramMap**
-
-          Extend `implProgramInfo` with tier data:
-          ```go
-          type implProgramInfo struct {
-              programSlug       string
-              programTitle      string
-              programTier       int  // which tier this IMPL belongs to
-              programTiersTotal int  // total tiers in the program
-          }
-          ```
-
-          In `buildImplProgramMapFresh`, when iterating `manifest.Impls`, find the
-          tier number for each IMPL by looking it up in `manifest.Tiers`:
-          ```go
-          // Each ProgramIMPL has a Tier field (int) from the protocol package.
-          // manifest.Tiers is []ProgramTier; len(manifest.Tiers) gives total tiers.
-          result[impl.Slug] = implProgramInfo{
-              programSlug:       manifest.ProgramSlug,
-              programTitle:      manifest.Title,
-              programTier:       impl.Tier,          // from ProgramIMPL.Tier
-              programTiersTotal: len(manifest.Tiers),
-          }
-          ```
-
-          Extend the `PipelineEntry` Go struct:
-          ```go
-          ProgramTier       int `json:"program_tier,omitempty"`
-          ProgramTiersTotal int `json:"program_tiers_total,omitempty"`
-          ```
-
-          Update all three places in `handleGetPipeline` where `implProgramMap` is
-          consulted (completed, active, queued sections) to also set these new fields:
-          ```go
-          if pi, ok := implProgramMap[slug]; ok {
-              e.ProgramSlug       = pi.programSlug
-              e.ProgramTitle      = pi.programTitle
-              e.ProgramTier       = pi.programTier
-              e.ProgramTiersTotal = pi.programTiersTotal
-          }
-          ```
-
-          Check `protocol.ProgramIMPL` struct in the scout-and-wave-go SDK to confirm
-          the `Tier int` field name (it is used in program_handler_test.go as `Tier: 1`).
-
-          ### Tests to write
-          Add tests for `buildImplProgramMapFresh` (not the cache wrapper) in a new
-          file `pkg/api/pipeline_impl_program_map_test.go`:
-          - `TestBuildImplProgramMap_Empty` — no docs dir, returns empty map
-          - `TestBuildImplProgramMap_DuplicateSlug` — same slug in two PROGRAM manifests,
-            first-write-wins, log warning emitted (use `log.SetOutput` to capture)
-          - `TestBuildImplProgramMap_ParseError` — one PROGRAM manifest is malformed YAML,
-            the function continues and processes remaining manifests
-          - `TestBuildImplProgramMap_MissingDocsDir` — repo path has no docs/ directory,
-            returns empty map without error
-          - `TestBuildImplProgramMap_TierContext` — IMPL slug in manifest has Tier=2,
-            verifies returned implProgramInfo has programTier=2 and programTiersTotal>=2
-
-          ### Verification gate
-          ```
-          go build ./...
-          go vet ./...
-          go test ./pkg/api/... -run TestBuildImplProgramMap -v
-          go test ./pkg/api/... -run TestHandleGetPipeline -v
-          ```
-
-          ### Constraints
-          - Do NOT modify program_handler.go (owned by Agent A)
-          - Do NOT modify program_runner.go (owned by Agent C)
-          - The cache TTL must be configurable via a package-level variable so tests
-            can set it to 0 to bypass caching
-          - Confirm field names against protocol.ProgramIMPL before using them
-        files:
-          - pkg/api/pipeline_handler.go
-        dependencies: []
-
-      - id: C
-        task: |
-          ## Agent C — program_runner.go (B2, U3, Q5)
-
-          ### Files owned
-          - `pkg/api/program_runner.go`
-
-          ### What to implement
-
-          **B2 — Fix resolveIMPLPathForProgram search order**
-
-          The current search order is:
-          1. `docs/IMPL/` (active, may contain stale in-progress copy)
-          2. `docs/IMPL/complete/` (complete, canonical)
-
-          Complete docs are canonical. Reverse the order:
-          ```go
-          implDirs := []string{
-              filepath.Join(repoPath, "docs", "IMPL", "complete"),
-              filepath.Join(repoPath, "docs", "IMPL"),
-          }
-          ```
-
-          This is a 2-line change but has correctness impact: a completed IMPL that
-          still has a stale active copy will now correctly use the complete version.
-
-          **U3 — Emit program_impl_wave_progress SSE event**
-
-          In `runProgramTier`, after calling `runWaveLoopFunc` and before checking
-          completion, load the IMPL manifest and emit a wave progress event:
-
-          ```go
-          // After runWaveLoopFunc returns, reload the manifest to get current wave state
-          implManifest, err := protocol.Load(implPath)
-          if err != nil {
-              // ... existing error handling ...
-          }
-
-          // Emit wave progress: count completed waves vs total
-          completedWaves := 0
-          totalWaves := len(implManifest.Waves)
-          for _, w := range implManifest.Waves {
-              if isWaveComplete(w) {
-                  completedWaves++
-              }
-          }
-          publish("program_impl_wave_progress", map[string]interface{}{
-              "program_slug": programSlug,
-              "impl_slug":    implSlug,
-              "current_wave": completedWaves,
-              "total_waves":  totalWaves,
-          })
-          ```
-
-          For `isWaveComplete`, a wave is complete when all agents in the wave have
-          completion reports. Use `protocol.CurrentWave(implManifest) == nil` to check
-          full completion, but for mid-execution progress use the wave state from the
-          manifest's completion reports. A simpler heuristic: count waves where
-          `len(wave.Agents) > 0 && all agents have CompletionReports`.
-
-          If counting is complex, emit a simplified version: `current_wave` = 0 when
-          execution is running, `total_waves` = len(implManifest.Waves). The key
-          contract is the event name and fields — ProgramBoard (Agent F) will handle
-          the rendering.
-
-          **Q5 — Remove or implement onStage callback**
-
-          The `onStage` parameter is defined as:
-          ```go
-          onStage func(ExecutionStage, StageStatus, int, string)
-          ```
-          and is set to a no-op in the call from `handleExecuteTier`.
-
-          Decision: remove `onStage` from `runProgramTier`'s signature. It was
-          described as dead code. If future stage-level tracking is needed, it can be
-          added back with a real implementation. Steps:
-          1. Remove the `onStage` parameter from `runProgramTier` function signature
-          2. Remove the no-op `onStage` lambda from `handleExecuteTier`'s goroutine
-          3. Update the call to `runWaveLoopFunc` — check if `onStage` was passed
-             through to `runWaveLoopFunc`. If so, pass `nil` or a no-op directly at
-             the call site rather than routing through the outer parameter
-          4. Update `runWaveLoopFunc` variable type if `onStage` was part of it
-
-          Check `program_runner_test.go` — the test mock `runWaveLoopFunc` includes
-          `onStage` in its signature. Update test mocks accordingly.
-
-          ### Tests to write / update
-          - `TestResolveIMPLPathForProgram_SearchOrder` — create both an active and
-            a complete copy of the same IMPL; verify the complete copy is returned
-          - Update existing `program_runner_test.go` mocks to remove `onStage` from
-            the `runWaveLoopFunc` mock signature (Q5)
-
-          ### Verification gate
-          ```
-          go build ./...
-          go vet ./...
-          go test ./pkg/api/... -run TestRunProgramTier -v
-          go test ./pkg/api/... -run TestResolveIMPLPath -v
-          ```
-
-          ### Constraints
-          - Do NOT modify program_handler.go (owned by Agent A)
-          - Do NOT modify pipeline_handler.go (owned by Agent B)
-          - Q5 removal of onStage must update both the function signature AND all
-            callers in program_handler.go. Since program_handler.go is Agent A's file,
-            coordinate: Agent C removes onStage from runProgramTier; Agent A removes
-            the onStage no-op lambda from handleExecuteTier's goroutine. Include a note
-            in the completion report if this cross-agent edit is needed.
-          - Actually: review handleExecuteTier carefully. The no-op lambda is defined
-            inside the goroutine in program_handler.go and passed to runProgramTier.
-            If Agent C removes the parameter, Agent A must also remove the lambda
-            definition. Since both agents are in Wave 1 and files are disjoint, each
-            agent must make their corresponding half of the change. Agent C: remove
-            param from runProgramTier signature. In the completion report, note that
-            program_handler.go caller site also needs the no-op lambda removed — this
-            is handled by Agent A (same wave, disjoint file ownership).
-        files:
-          - pkg/api/program_runner.go
-        dependencies: []
-
-      - id: D
-        task: |
-          ## Agent D — TypeScript type definitions (U1)
-
-          ### Files owned
-          - `web/src/types/autonomy.ts`
-          - `web/src/types/program.ts`
-
-          ### What to implement
-
-          **U1 — Extract ImplReference base interface**
-
-          `PipelineEntry` (autonomy.ts) and `ImplTierStatus` (program.ts) both have
-          `slug: string` and `status: string` in common. Extract a shared base:
-
-          In `web/src/types/autonomy.ts`, add before `PipelineEntry`:
-          ```typescript
-          // Shared base for any IMPL reference in the UI.
-          // Extended by PipelineEntry (pipeline view) and ImplTierStatus (program board).
-          export interface ImplReference {
-            slug: string
-            title: string
-            status: string
-          }
-          ```
-
-          Update `PipelineEntry` to extend `ImplReference`:
-          ```typescript
-          export interface PipelineEntry extends ImplReference {
-            // slug, title, status inherited from ImplReference
-            repo?: string
-            wave_progress?: string
-            active_agent?: string
-            blocked_reason?: string
-            queue_position?: number
-            depends_on?: string[]
-            completed_at?: string
-            elapsed_seconds?: number
-            program_slug?: string
-            program_title?: string
-            program_tier?: number        // tier number within parent program (U2)
-            program_tiers_total?: number // total tiers in parent program (U2)
-          }
-          ```
-
-          Note: `PipelineEntry` did not previously have `title` in the TS definition.
-          Add it as inherited from `ImplReference` — the backend has always returned it.
-
-          In `web/src/types/program.ts`, import `ImplReference` and extend:
-          ```typescript
-          import type { ImplReference } from './autonomy'
-
-          export interface ImplTierStatus extends ImplReference {
-            // slug and status inherited from ImplReference
-            // title is now part of ImplReference (was missing from ImplTierStatus)
-            wave_progress?: string  // "Wave N/M" from program_impl_wave_progress SSE (U3)
-          }
-          ```
-
-          Note: `ImplTierStatus` previously had only `slug` and `status`. Adding `title`
-          via the base type is safe — the backend `TierStatusDetail` includes title.
-          Verify in `pkg/api/program_handler.go` that `TierStatuses` carries title;
-          if not, `title` on ImplTierStatus can be optional (`title?: string`).
-
-          Also add the two new pipeline entry fields to the Go struct comment block at
-          the top of autonomy.ts if one exists, for documentation consistency.
-
-          ### Tests to write
-          TypeScript type definitions do not have runtime tests, but verify:
-          1. The file compiles without errors: `npx tsc --noEmit` from `web/` directory
-          2. No existing component imports break — search for `ImplTierStatus` usage:
-             ```bash
-             grep -r "ImplTierStatus" web/src/
-             ```
-             Primary consumer is `ProgramBoard.tsx` (Agent F's file in Wave 2).
-             Since D runs in Wave 1 and F runs in Wave 2, D's changes must be
-             backward-compatible: `wave_progress` is optional, `title` is inherited.
-
-          ### Verification gate
-          ```
-          cd web && npx tsc --noEmit
-          ```
-
-          ### Constraints
-          - Do NOT modify any .tsx component files (owned by Wave 2 agents E and F)
-          - The `wave_progress` field on `ImplTierStatus` is optional (`?`) since it
-            is only populated when the program_impl_wave_progress SSE event fires
-          - Export `ImplReference` so downstream components can use it as a type bound
-        files:
-          - web/src/types/autonomy.ts
-          - web/src/types/program.ts
-        dependencies: []
-
-  - number: 2
-    agents:
-      - id: E
-        task: |
-          ## Agent E — PipelineRow.tsx (U2 frontend, Q3)
-
-          ### Files owned
-          - `web/src/components/PipelineRow.tsx`
-
-          ### What to implement
-
-          **Q3 — Remove unnecessary non-null assertion**
-
-          On line 134 of `PipelineRow.tsx`:
-          ```tsx
-          onSelectProgram?.(entry.program_slug!)
-          ```
-          The `entry.program_slug` is already guarded by `entry.program_slug &&` on
-          line 130. The `!` assertion is redundant and misleading. Remove it:
-          ```tsx
-          onSelectProgram?.(entry.program_slug)
-          ```
-
-          **U2 — Render tier context in PipelineRow**
-
-          When a `PipelineEntry` has `program_slug` and `program_tier` populated,
-          show "Tier N/M" context next to the program badge. The new fields
-          `program_tier` and `program_tiers_total` are available on `PipelineEntry`
-          from Agent D (Wave 1).
-
-          In the program badge button (inside the `entry.program_slug &&` block),
-          add tier context after the program title:
-          ```tsx
-          {entry.program_slug && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                onSelectProgram?.(entry.program_slug)
-              }}
-              title={`Part of program: ${entry.program_title || entry.program_slug}`}
-              className="text-xs font-medium text-violet-700 dark:text-violet-400 bg-violet-100 dark:bg-violet-900/40 px-1.5 py-0.5 rounded hover:bg-violet-200 dark:hover:bg-violet-800/60 transition-colors"
-            >
-              ◈ {entry.program_title || entry.program_slug}
-              {entry.program_tier !== undefined && entry.program_tiers_total !== undefined && (
-                <span className="ml-1 opacity-70">
-                  · Tier {entry.program_tier}/{entry.program_tiers_total}
-                </span>
-              )}
-            </button>
-          )}
-          ```
-
-          The `ImplReference` base type is now available in `autonomy.ts` (from Agent D).
-          No import change is needed — `PipelineRow` already imports `PipelineEntry`
-          from `../types/autonomy` and the new fields are on that interface.
-
-          ### Verification gate
-          ```
-          cd web && npx tsc --noEmit
-          ```
-
-          ### Constraints
-          - Do NOT modify any .ts type files (owned by Agent D, Wave 1)
-          - Do NOT modify ProgramBoard.tsx (owned by Agent F)
-          - Keep the button's existing className unchanged; only add the Tier span inside
-        files:
-          - web/src/components/PipelineRow.tsx
-        dependencies: [B, D]
-
-      - id: F
-        task: |
-          ## Agent F — ProgramBoard.tsx (U3 frontend, Q2)
-
-          ### Files owned
-          - `web/src/components/ProgramBoard.tsx`
-
-          ### What to implement
-
-          **Q2 — Add exponential backoff SSE reconnection**
-
-          The current `onerror` handler sets `connected: false` but never retries:
-          ```tsx
-          eventSource.onerror = () => setConnected(false)
-          ```
-
-          Implement exponential backoff reconnection:
-          ```tsx
-          let retryDelay = 1000  // ms, start at 1s
-          const maxRetryDelay = 30000  // cap at 30s
-          let retryTimeout: ReturnType<typeof setTimeout> | null = null
-          let currentEventSource: EventSource | null = null
-
-          const connect = () => {
-            if (currentEventSource) {
-              currentEventSource.close()
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Agent A — program_handler.go + server.go (B3, B4, B5, Q4, U4)
+
+            ### Files owned
+            - `pkg/api/program_handler.go`
+            - `pkg/api/server.go`
+
+            ### What to implement
+
+            **B5 — Consolidate activeProgramRuns into Server struct**
+
+            In `server.go`, add `activeProgramRuns sync.Map` as a field on the `Server`
+            struct (between `mergingRuns` and `testingRuns`, maintaining alphabetical
+            grouping). Remove the package-level `var activeProgramRuns sync.Map` from
+            `program_handler.go`. Update every reference in `program_handler.go` from
+            `activeProgramRuns.XYZ` to `s.activeProgramRuns.XYZ` (Load, Store, Delete,
+            LoadOrStore). This is the foundational fix; B3 and B4 build on it.
+
+            **B3 — Fix handleExecuteTier cleanup gap**
+
+            The current code calls `activeProgramRuns.Delete(slug)` at line 179 for the
+            path-resolution error case, but if any panic occurs between `LoadOrStore`
+            succeeding and the goroutine's `defer activeProgramRuns.Delete(slug)` running,
+            the slug stays locked. Fix: add a handler-level defer immediately after
+            `LoadOrStore` succeeds that deletes on any return before the goroutine launch.
+            Use a `launched` boolean flag to suppress the handler-level cleanup once the
+            goroutine is running.
+
+            Pattern:
+            ```go
+            if _, loaded := s.activeProgramRuns.LoadOrStore(slug, struct{}{}); loaded {
+                http.Error(w, "program tier already executing", http.StatusConflict)
+                return
             }
-            const es = new EventSource('/api/program/events')
-            currentEventSource = es
+            launched := false
+            defer func() {
+                if !launched {
+                    s.activeProgramRuns.Delete(slug)
+                }
+            }()
 
-            es.addEventListener('program_tier_started', handleEvent)
-            es.addEventListener('program_tier_complete', handleEvent)
-            es.addEventListener('program_impl_started', handleEvent)
-            es.addEventListener('program_impl_complete', handleEvent)
-            es.addEventListener('program_complete', handleEvent)
-            es.addEventListener('program_blocked', handleEvent)
-            // NEW: listen for wave progress events (U3)
-            es.addEventListener('program_impl_wave_progress', handleWaveProgress)
+            // ... path resolution, body decode ...
 
-            es.onopen = () => {
-              setConnected(true)
-              retryDelay = 1000  // reset on successful connection
+            go func() {
+                defer s.activeProgramRuns.Delete(slug)
+                // ... runProgramTier ...
+            }()
+            launched = true
+            w.WriteHeader(http.StatusAccepted)
+            ```
+
+            **B4 — Clean up activeProgramRuns on server shutdown**
+
+            The server's shutdown context (the `ctx` passed to `Start`/`StartTLS`) is
+            cancelled on SIGTERM, but goroutines running `runProgramTier` do not observe
+            it. After the goroutine launch, pass the server's shutdown context into the
+            goroutine so it can select on `ctx.Done()` and emit `program_blocked` + clean up.
+
+            The cleanest approach: store `context.Context` alongside the slug in
+            `activeProgramRuns` (value becomes `context.CancelFunc` or a small struct),
+            OR pass a context cancel through the run. For minimum invasiveness, add a
+            `serverCtx context.Context` field to `Server` that is set in `New()` via a
+            package-level cancelable context, cancelled in `Start`/`StartTLS` on shutdown.
+
+            If adding `serverCtx` to Server is too broad in scope for this wave, an
+            acceptable fallback is: make `runProgramTier` accept a `ctx context.Context`
+            argument and check `ctx.Done()` in the per-IMPL loop. Pass `r.Context()`
+            extended with a server-lifetime context.
+
+            Either approach must ensure: when the server shuts down mid-execution, the
+            goroutine emits `program_blocked` with reason "server shutdown" and calls
+            `s.activeProgramRuns.Delete(slug)`.
+
+            **Q4 — Return 400 on bad JSON in handleReplanProgram**
+
+            Replace:
+            ```go
+            _ = json.NewDecoder(r.Body).Decode(&body)
+            ```
+            with:
+            ```go
+            if err := json.NewDecoder(r.Body).Decode(&body); err != nil && err != io.EOF {
+                http.Error(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+                return
             }
-            es.onerror = () => {
-              setConnected(false)
-              es.close()
-              retryTimeout = setTimeout(() => {
-                retryDelay = Math.min(retryDelay * 2, maxRetryDelay)
-                connect()
-              }, retryDelay)
+            ```
+            Import `"io"` if not already present. Note: empty body (io.EOF) is acceptable
+            since all fields have defaults, so only non-EOF decode errors return 400.
+
+            **U4 — Pre-flight IMPL validation in handleGetProgramStatus**
+
+            In `handleGetProgramStatus`, after loading the manifest and before calling
+            `GetProgramStatus`, iterate each tier's IMPL slugs and verify the IMPL doc
+            exists on disk (search both `docs/IMPL/` and `docs/IMPL/complete/`). Collect
+            missing slugs into a slice. If any are missing, return a 200 response with a
+            `validation_errors` field listing them rather than surfacing the error mid-execution.
+
+            Add a `ValidationErrors []string` field to `ProgramStatusResponse`:
+            ```go
+            type ProgramStatusResponse struct {
+                // ... existing fields ...
+                ValidationErrors []string `json:"validation_errors,omitempty"`
             }
-          }
+            ```
 
-          connect()
-
-          return () => {
-            if (retryTimeout) clearTimeout(retryTimeout)
-            if (currentEventSource) currentEventSource.close()
-          }
-          ```
-
-          Move `handleEvent` declaration before `connect` so it is in scope.
-
-          **U3 — Render wave progress in ImplCard**
-
-          Add a `handleWaveProgress` event listener that updates IMPL wave progress state:
-          ```tsx
-          const [waveProgress, setWaveProgress] = useState<Record<string, string>>({})
-
-          const handleWaveProgress = (e: MessageEvent) => {
-            const data = JSON.parse(e.data)
-            if (data.program_slug === programSlug && data.impl_slug && data.total_waves > 0) {
-              setWaveProgress(prev => ({
-                ...prev,
-                [data.impl_slug]: `Wave ${data.current_wave}/${data.total_waves}`
-              }))
+            The validation loop:
+            ```go
+            var validationErrors []string
+            for _, tier := range manifest.Tiers {
+                for _, implSlug := range tier.Impls {
+                    if _, err := resolveIMPLPathForProgram(implSlug, repoPath); err != nil {
+                        validationErrors = append(validationErrors, fmt.Sprintf("tier %d: IMPL %q not found", tier.Number, implSlug))
+                    }
+                }
             }
-          }
-          ```
+            ```
 
-          Pass `waveProgress` to `ImplCard` via `TierSection`. Update the `ImplCard`
-          component to accept an optional `waveProgress` prop and render it instead of
-          the static 50% progress bar:
-          ```tsx
-          function ImplCard({
-            impl,
-            onClick,
-            waveProgress,
-          }: {
-            impl: ImplTierStatus
-            onClick?: () => void
-            waveProgress?: string
-          }): JSX.Element {
-          ```
+            ### Tests to write / update
+            - Add `TestHandleGetProgramStatus_ValidationErrors` in `program_handler_test.go`
+              that creates a PROGRAM manifest referencing a non-existent IMPL slug and
+              asserts the response contains `validation_errors` with the missing slug.
+            - Add `TestHandleReplanProgram_BadJSON` that sends `{invalid}` and asserts 400.
+            - Add `TestHandleExecuteTier_CleanupOnPathError` that (using a minimal server
+              without a valid program path) verifies `activeProgramRuns` does not retain
+              the slug after handleExecuteTier returns an error.
 
-          In the `ImplCard` body, replace the static `width: '50%'` bar with:
-          ```tsx
-          {(impl.status === 'executing' || impl.status === 'in-progress' || impl.status === 'scouting') && (
-            <div className="flex items-center gap-2">
-              <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                <div className="bg-blue-500 h-1.5 rounded-full animate-pulse" style={{ width: '50%' }} />
+            ### Verification gate
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/api/... -run TestHandleGetProgramStatus -v
+            go test ./pkg/api/... -run TestHandleExecuteTier -v
+            go test ./pkg/api/... -run TestHandleReplanProgram -v
+            ```
+
+            ### Constraints
+            - Do NOT modify program_runner.go (owned by Agent C)
+            - Do NOT modify pipeline_handler.go (owned by Agent B)
+            - The package-level `var activeProgramRuns sync.Map` must be removed; all
+              existing tests that reference it directly (e.g. `activeProgramRuns.Store`)
+              must be updated to use `server.activeProgramRuns` or test helpers
+            - Check program_handler_test.go for tests that use `activeProgramRuns` directly
+              and update them to use a server field approach
+          files:
+            - pkg/api/program_handler.go
+            - pkg/api/server.go
+        - id: B
+          task: |
+            ## Agent B — pipeline_handler.go (B1, B6, U2 backend)
+
+            ### Files owned
+            - `pkg/api/pipeline_handler.go`
+
+            ### What to implement
+
+            **B1 — Fix slug collision in buildImplProgramMap**
+
+            Currently, when the same IMPL slug appears in two PROGRAM manifests, the last
+            write silently wins:
+            ```go
+            result[impl.Slug] = implProgramInfo{...}  // silently overwrites
+            ```
+
+            Fix: before writing, check if the slug already exists. If it does, log a
+            warning and skip the duplicate (first-write-wins is more predictable than
+            last-write-wins). Alternatively, collect all parents and return a multi-value
+            map — but for V1, first-write-wins with a log warning is sufficient and avoids
+            changing the `implProgramInfo` struct shape.
+
+            ```go
+            if existing, exists := result[impl.Slug]; exists {
+                log.Printf("buildImplProgramMap: slug %q claimed by both %q and %q; keeping first",
+                    impl.Slug, existing.programSlug, manifest.ProgramSlug)
+                continue
+            }
+            result[impl.Slug] = implProgramInfo{...}
+            ```
+
+            **B6 — Add TTL cache to buildImplProgramMap**
+
+            `buildImplProgramMap` is called on every `GET /api/pipeline` with no caching.
+            Add a package-level cache with a 15-second TTL.
+
+            ```go
+            type implProgramCache struct {
+                mu      sync.Mutex
+                data    map[string]implProgramInfo
+                builtAt time.Time
+                ttl     time.Duration
+            }
+
+            var implProgramCacheInstance = &implProgramCache{ttl: 15 * time.Second}
+
+            func (c *implProgramCache) get(repos []RepoEntry) map[string]implProgramInfo {
+                c.mu.Lock()
+                defer c.mu.Unlock()
+                if c.data != nil && time.Since(c.builtAt) < c.ttl {
+                    return c.data
+                }
+                c.data = buildImplProgramMapFresh(repos)
+                c.builtAt = time.Now()
+                return c.data
+            }
+            ```
+
+            Rename the existing `buildImplProgramMap` to `buildImplProgramMapFresh`
+            (unexported helper). The exported-facing call site in `handleGetPipeline`
+            changes from `buildImplProgramMap(repos)` to `implProgramCacheInstance.get(repos)`.
+
+            Import `"sync"` and `"time"` if not already present (they likely are from
+            existing usage).
+
+            **U2 — Backend: add tier context fields to PipelineEntry and buildImplProgramMap**
+
+            Extend `implProgramInfo` with tier data:
+            ```go
+            type implProgramInfo struct {
+                programSlug       string
+                programTitle      string
+                programTier       int  // which tier this IMPL belongs to
+                programTiersTotal int  // total tiers in the program
+            }
+            ```
+
+            In `buildImplProgramMapFresh`, when iterating `manifest.Impls`, find the
+            tier number for each IMPL by looking it up in `manifest.Tiers`:
+            ```go
+            // Each ProgramIMPL has a Tier field (int) from the protocol package.
+            // manifest.Tiers is []ProgramTier; len(manifest.Tiers) gives total tiers.
+            result[impl.Slug] = implProgramInfo{
+                programSlug:       manifest.ProgramSlug,
+                programTitle:      manifest.Title,
+                programTier:       impl.Tier,          // from ProgramIMPL.Tier
+                programTiersTotal: len(manifest.Tiers),
+            }
+            ```
+
+            Extend the `PipelineEntry` Go struct:
+            ```go
+            ProgramTier       int `json:"program_tier,omitempty"`
+            ProgramTiersTotal int `json:"program_tiers_total,omitempty"`
+            ```
+
+            Update all three places in `handleGetPipeline` where `implProgramMap` is
+            consulted (completed, active, queued sections) to also set these new fields:
+            ```go
+            if pi, ok := implProgramMap[slug]; ok {
+                e.ProgramSlug       = pi.programSlug
+                e.ProgramTitle      = pi.programTitle
+                e.ProgramTier       = pi.programTier
+                e.ProgramTiersTotal = pi.programTiersTotal
+            }
+            ```
+
+            Check `protocol.ProgramIMPL` struct in the scout-and-wave-go SDK to confirm
+            the `Tier int` field name (it is used in program_handler_test.go as `Tier: 1`).
+
+            ### Tests to write
+            Add tests for `buildImplProgramMapFresh` (not the cache wrapper) in a new
+            file `pkg/api/pipeline_impl_program_map_test.go`:
+            - `TestBuildImplProgramMap_Empty` — no docs dir, returns empty map
+            - `TestBuildImplProgramMap_DuplicateSlug` — same slug in two PROGRAM manifests,
+              first-write-wins, log warning emitted (use `log.SetOutput` to capture)
+            - `TestBuildImplProgramMap_ParseError` — one PROGRAM manifest is malformed YAML,
+              the function continues and processes remaining manifests
+            - `TestBuildImplProgramMap_MissingDocsDir` — repo path has no docs/ directory,
+              returns empty map without error
+            - `TestBuildImplProgramMap_TierContext` — IMPL slug in manifest has Tier=2,
+              verifies returned implProgramInfo has programTier=2 and programTiersTotal>=2
+
+            ### Verification gate
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/api/... -run TestBuildImplProgramMap -v
+            go test ./pkg/api/... -run TestHandleGetPipeline -v
+            ```
+
+            ### Constraints
+            - Do NOT modify program_handler.go (owned by Agent A)
+            - Do NOT modify program_runner.go (owned by Agent C)
+            - The cache TTL must be configurable via a package-level variable so tests
+              can set it to 0 to bypass caching
+            - Confirm field names against protocol.ProgramIMPL before using them
+          files:
+            - pkg/api/pipeline_handler.go
+        - id: C
+          task: |
+            ## Agent C — program_runner.go (B2, U3, Q5)
+
+            ### Files owned
+            - `pkg/api/program_runner.go`
+
+            ### What to implement
+
+            **B2 — Fix resolveIMPLPathForProgram search order**
+
+            The current search order is:
+            1. `docs/IMPL/` (active, may contain stale in-progress copy)
+            2. `docs/IMPL/complete/` (complete, canonical)
+
+            Complete docs are canonical. Reverse the order:
+            ```go
+            implDirs := []string{
+                filepath.Join(repoPath, "docs", "IMPL", "complete"),
+                filepath.Join(repoPath, "docs", "IMPL"),
+            }
+            ```
+
+            This is a 2-line change but has correctness impact: a completed IMPL that
+            still has a stale active copy will now correctly use the complete version.
+
+            **U3 — Emit program_impl_wave_progress SSE event**
+
+            In `runProgramTier`, after calling `runWaveLoopFunc` and before checking
+            completion, load the IMPL manifest and emit a wave progress event:
+
+            ```go
+            // After runWaveLoopFunc returns, reload the manifest to get current wave state
+            implManifest, err := protocol.Load(implPath)
+            if err != nil {
+                // ... existing error handling ...
+            }
+
+            // Emit wave progress: count completed waves vs total
+            completedWaves := 0
+            totalWaves := len(implManifest.Waves)
+            for _, w := range implManifest.Waves {
+                if isWaveComplete(w) {
+                    completedWaves++
+                }
+            }
+            publish("program_impl_wave_progress", map[string]interface{}{
+                "program_slug": programSlug,
+                "impl_slug":    implSlug,
+                "current_wave": completedWaves,
+                "total_waves":  totalWaves,
+            })
+            ```
+
+            For `isWaveComplete`, a wave is complete when all agents in the wave have
+            completion reports. Use `protocol.CurrentWave(implManifest) == nil` to check
+            full completion, but for mid-execution progress use the wave state from the
+            manifest's completion reports. A simpler heuristic: count waves where
+            `len(wave.Agents) > 0 && all agents have CompletionReports`.
+
+            If counting is complex, emit a simplified version: `current_wave` = 0 when
+            execution is running, `total_waves` = len(implManifest.Waves). The key
+            contract is the event name and fields — ProgramBoard (Agent F) will handle
+            the rendering.
+
+            **Q5 — Remove or implement onStage callback**
+
+            The `onStage` parameter is defined as:
+            ```go
+            onStage func(ExecutionStage, StageStatus, int, string)
+            ```
+            and is set to a no-op in the call from `handleExecuteTier`.
+
+            Decision: remove `onStage` from `runProgramTier`'s signature. It was
+            described as dead code. If future stage-level tracking is needed, it can be
+            added back with a real implementation. Steps:
+            1. Remove the `onStage` parameter from `runProgramTier` function signature
+            2. Remove the no-op `onStage` lambda from `handleExecuteTier`'s goroutine
+            3. Update the call to `runWaveLoopFunc` — check if `onStage` was passed
+               through to `runWaveLoopFunc`. If so, pass `nil` or a no-op directly at
+               the call site rather than routing through the outer parameter
+            4. Update `runWaveLoopFunc` variable type if `onStage` was part of it
+
+            Check `program_runner_test.go` — the test mock `runWaveLoopFunc` includes
+            `onStage` in its signature. Update test mocks accordingly.
+
+            ### Tests to write / update
+            - `TestResolveIMPLPathForProgram_SearchOrder` — create both an active and
+              a complete copy of the same IMPL; verify the complete copy is returned
+            - Update existing `program_runner_test.go` mocks to remove `onStage` from
+              the `runWaveLoopFunc` mock signature (Q5)
+
+            ### Verification gate
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/api/... -run TestRunProgramTier -v
+            go test ./pkg/api/... -run TestResolveIMPLPath -v
+            ```
+
+            ### Constraints
+            - Do NOT modify program_handler.go (owned by Agent A)
+            - Do NOT modify pipeline_handler.go (owned by Agent B)
+            - Q5 removal of onStage must update both the function signature AND all
+              callers in program_handler.go. Since program_handler.go is Agent A's file,
+              coordinate: Agent C removes onStage from runProgramTier; Agent A removes
+              the onStage no-op lambda from handleExecuteTier's goroutine. Include a note
+              in the completion report if this cross-agent edit is needed.
+            - Actually: review handleExecuteTier carefully. The no-op lambda is defined
+              inside the goroutine in program_handler.go and passed to runProgramTier.
+              If Agent C removes the parameter, Agent A must also remove the lambda
+              definition. Since both agents are in Wave 1 and files are disjoint, each
+              agent must make their corresponding half of the change. Agent C: remove
+              param from runProgramTier signature. In the completion report, note that
+              program_handler.go caller site also needs the no-op lambda removed — this
+              is handled by Agent A (same wave, disjoint file ownership).
+          files:
+            - pkg/api/program_runner.go
+        - id: D
+          task: |
+            ## Agent D — TypeScript type definitions (U1)
+
+            ### Files owned
+            - `web/src/types/autonomy.ts`
+            - `web/src/types/program.ts`
+
+            ### What to implement
+
+            **U1 — Extract ImplReference base interface**
+
+            `PipelineEntry` (autonomy.ts) and `ImplTierStatus` (program.ts) both have
+            `slug: string` and `status: string` in common. Extract a shared base:
+
+            In `web/src/types/autonomy.ts`, add before `PipelineEntry`:
+            ```typescript
+            // Shared base for any IMPL reference in the UI.
+            // Extended by PipelineEntry (pipeline view) and ImplTierStatus (program board).
+            export interface ImplReference {
+              slug: string
+              title: string
+              status: string
+            }
+            ```
+
+            Update `PipelineEntry` to extend `ImplReference`:
+            ```typescript
+            export interface PipelineEntry extends ImplReference {
+              // slug, title, status inherited from ImplReference
+              repo?: string
+              wave_progress?: string
+              active_agent?: string
+              blocked_reason?: string
+              queue_position?: number
+              depends_on?: string[]
+              completed_at?: string
+              elapsed_seconds?: number
+              program_slug?: string
+              program_title?: string
+              program_tier?: number        // tier number within parent program (U2)
+              program_tiers_total?: number // total tiers in parent program (U2)
+            }
+            ```
+
+            Note: `PipelineEntry` did not previously have `title` in the TS definition.
+            Add it as inherited from `ImplReference` — the backend has always returned it.
+
+            In `web/src/types/program.ts`, import `ImplReference` and extend:
+            ```typescript
+            import type { ImplReference } from './autonomy'
+
+            export interface ImplTierStatus extends ImplReference {
+              // slug and status inherited from ImplReference
+              // title is now part of ImplReference (was missing from ImplTierStatus)
+              wave_progress?: string  // "Wave N/M" from program_impl_wave_progress SSE (U3)
+            }
+            ```
+
+            Note: `ImplTierStatus` previously had only `slug` and `status`. Adding `title`
+            via the base type is safe — the backend `TierStatusDetail` includes title.
+            Verify in `pkg/api/program_handler.go` that `TierStatuses` carries title;
+            if not, `title` on ImplTierStatus can be optional (`title?: string`).
+
+            Also add the two new pipeline entry fields to the Go struct comment block at
+            the top of autonomy.ts if one exists, for documentation consistency.
+
+            ### Tests to write
+            TypeScript type definitions do not have runtime tests, but verify:
+            1. The file compiles without errors: `npx tsc --noEmit` from `web/` directory
+            2. No existing component imports break — search for `ImplTierStatus` usage:
+               ```bash
+               grep -r "ImplTierStatus" web/src/
+               ```
+               Primary consumer is `ProgramBoard.tsx` (Agent F's file in Wave 2).
+               Since D runs in Wave 1 and F runs in Wave 2, D's changes must be
+               backward-compatible: `wave_progress` is optional, `title` is inherited.
+
+            ### Verification gate
+            ```
+            cd web && npx tsc --noEmit
+            ```
+
+            ### Constraints
+            - Do NOT modify any .tsx component files (owned by Wave 2 agents E and F)
+            - The `wave_progress` field on `ImplTierStatus` is optional (`?`) since it
+              is only populated when the program_impl_wave_progress SSE event fires
+            - Export `ImplReference` so downstream components can use it as a type bound
+          files:
+            - web/src/types/autonomy.ts
+            - web/src/types/program.ts
+      base_commit: 570497aa118f6f0d20cc08764fcb8cff1f5837e3
+    - number: 2
+      agents:
+        - id: E
+          task: |
+            ## Agent E — PipelineRow.tsx (U2 frontend, Q3)
+
+            ### Files owned
+            - `web/src/components/PipelineRow.tsx`
+
+            ### What to implement
+
+            **Q3 — Remove unnecessary non-null assertion**
+
+            On line 134 of `PipelineRow.tsx`:
+            ```tsx
+            onSelectProgram?.(entry.program_slug!)
+            ```
+            The `entry.program_slug` is already guarded by `entry.program_slug &&` on
+            line 130. The `!` assertion is redundant and misleading. Remove it:
+            ```tsx
+            onSelectProgram?.(entry.program_slug)
+            ```
+
+            **U2 — Render tier context in PipelineRow**
+
+            When a `PipelineEntry` has `program_slug` and `program_tier` populated,
+            show "Tier N/M" context next to the program badge. The new fields
+            `program_tier` and `program_tiers_total` are available on `PipelineEntry`
+            from Agent D (Wave 1).
+
+            In the program badge button (inside the `entry.program_slug &&` block),
+            add tier context after the program title:
+            ```tsx
+            {entry.program_slug && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onSelectProgram?.(entry.program_slug)
+                }}
+                title={`Part of program: ${entry.program_title || entry.program_slug}`}
+                className="text-xs font-medium text-violet-700 dark:text-violet-400 bg-violet-100 dark:bg-violet-900/40 px-1.5 py-0.5 rounded hover:bg-violet-200 dark:hover:bg-violet-800/60 transition-colors"
+              >
+                ◈ {entry.program_title || entry.program_slug}
+                {entry.program_tier !== undefined && entry.program_tiers_total !== undefined && (
+                  <span className="ml-1 opacity-70">
+                    · Tier {entry.program_tier}/{entry.program_tiers_total}
+                  </span>
+                )}
+              </button>
+            )}
+            ```
+
+            The `ImplReference` base type is now available in `autonomy.ts` (from Agent D).
+            No import change is needed — `PipelineRow` already imports `PipelineEntry`
+            from `../types/autonomy` and the new fields are on that interface.
+
+            ### Verification gate
+            ```
+            cd web && npx tsc --noEmit
+            ```
+
+            ### Constraints
+            - Do NOT modify any .ts type files (owned by Agent D, Wave 1)
+            - Do NOT modify ProgramBoard.tsx (owned by Agent F)
+            - Keep the button's existing className unchanged; only add the Tier span inside
+          files:
+            - web/src/components/PipelineRow.tsx
+          dependencies:
+            - B
+            - D
+        - id: F
+          task: |
+            ## Agent F — ProgramBoard.tsx (U3 frontend, Q2)
+
+            ### Files owned
+            - `web/src/components/ProgramBoard.tsx`
+
+            ### What to implement
+
+            **Q2 — Add exponential backoff SSE reconnection**
+
+            The current `onerror` handler sets `connected: false` but never retries:
+            ```tsx
+            eventSource.onerror = () => setConnected(false)
+            ```
+
+            Implement exponential backoff reconnection:
+            ```tsx
+            let retryDelay = 1000  // ms, start at 1s
+            const maxRetryDelay = 30000  // cap at 30s
+            let retryTimeout: ReturnType<typeof setTimeout> | null = null
+            let currentEventSource: EventSource | null = null
+
+            const connect = () => {
+              if (currentEventSource) {
+                currentEventSource.close()
+              }
+              const es = new EventSource('/api/program/events')
+              currentEventSource = es
+
+              es.addEventListener('program_tier_started', handleEvent)
+              es.addEventListener('program_tier_complete', handleEvent)
+              es.addEventListener('program_impl_started', handleEvent)
+              es.addEventListener('program_impl_complete', handleEvent)
+              es.addEventListener('program_complete', handleEvent)
+              es.addEventListener('program_blocked', handleEvent)
+              // NEW: listen for wave progress events (U3)
+              es.addEventListener('program_impl_wave_progress', handleWaveProgress)
+
+              es.onopen = () => {
+                setConnected(true)
+                retryDelay = 1000  // reset on successful connection
+              }
+              es.onerror = () => {
+                setConnected(false)
+                es.close()
+                retryTimeout = setTimeout(() => {
+                  retryDelay = Math.min(retryDelay * 2, maxRetryDelay)
+                  connect()
+                }, retryDelay)
+              }
+            }
+
+            connect()
+
+            return () => {
+              if (retryTimeout) clearTimeout(retryTimeout)
+              if (currentEventSource) currentEventSource.close()
+            }
+            ```
+
+            Move `handleEvent` declaration before `connect` so it is in scope.
+
+            **U3 — Render wave progress in ImplCard**
+
+            Add a `handleWaveProgress` event listener that updates IMPL wave progress state:
+            ```tsx
+            const [waveProgress, setWaveProgress] = useState<Record<string, string>>({})
+
+            const handleWaveProgress = (e: MessageEvent) => {
+              const data = JSON.parse(e.data)
+              if (data.program_slug === programSlug && data.impl_slug && data.total_waves > 0) {
+                setWaveProgress(prev => ({
+                  ...prev,
+                  [data.impl_slug]: `Wave ${data.current_wave}/${data.total_waves}`
+                }))
+              }
+            }
+            ```
+
+            Pass `waveProgress` to `ImplCard` via `TierSection`. Update the `ImplCard`
+            component to accept an optional `waveProgress` prop and render it instead of
+            the static 50% progress bar:
+            ```tsx
+            function ImplCard({
+              impl,
+              onClick,
+              waveProgress,
+            }: {
+              impl: ImplTierStatus
+              onClick?: () => void
+              waveProgress?: string
+            }): JSX.Element {
+            ```
+
+            In the `ImplCard` body, replace the static `width: '50%'` bar with:
+            ```tsx
+            {(impl.status === 'executing' || impl.status === 'in-progress' || impl.status === 'scouting') && (
+              <div className="flex items-center gap-2">
+                <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                  <div className="bg-blue-500 h-1.5 rounded-full animate-pulse" style={{ width: '50%' }} />
+                </div>
+                {waveProgress && (
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">{waveProgress}</span>
+                )}
               </div>
-              {waveProgress && (
-                <span className="text-xs text-muted-foreground whitespace-nowrap">{waveProgress}</span>
-              )}
-            </div>
-          )}
-          ```
+            )}
+            ```
 
-          The `ImplTierStatus` type now has `wave_progress?: string` from Agent D.
-          Prefer the SSE-updated `waveProgress` state over `impl.wave_progress` if both
-          are present (SSE updates are more current).
+            The `ImplTierStatus` type now has `wave_progress?: string` from Agent D.
+            Prefer the SSE-updated `waveProgress` state over `impl.wave_progress` if both
+            are present (SSE updates are more current).
 
-          Note: `TierSection` receives `impl_statuses` from `TierStatus.impl_statuses`.
-          Pass `waveProgress` record down from `ProgramBoard` to `TierSection` to `ImplCard`.
-          Update `TierSection` props to accept `waveProgress?: Record<string, string>`.
+            Note: `TierSection` receives `impl_statuses` from `TierStatus.impl_statuses`.
+            Pass `waveProgress` record down from `ProgramBoard` to `TierSection` to `ImplCard`.
+            Update `TierSection` props to accept `waveProgress?: Record<string, string>`.
 
-          ### Verification gate
-          ```
-          cd web && npx tsc --noEmit
-          ```
+            ### Verification gate
+            ```
+            cd web && npx tsc --noEmit
+            ```
 
-          ### Constraints
-          - Do NOT modify any .ts type files (owned by Agent D, Wave 1)
-          - Do NOT modify PipelineRow.tsx (owned by Agent E)
-          - The reconnection must not create multiple concurrent EventSource connections;
-            always close the previous one before creating a new one
-          - waveProgress state should be reset when programSlug changes (add to useEffect
-            dependency array or clear in the connect function)
-        files:
-          - web/src/components/ProgramBoard.tsx
-        dependencies: [C, D]
+            ### Constraints
+            - Do NOT modify any .ts type files (owned by Agent D, Wave 1)
+            - Do NOT modify PipelineRow.tsx (owned by Agent E)
+            - The reconnection must not create multiple concurrent EventSource connections;
+              always close the previous one before creating a new one
+            - waveProgress state should be reset when programSlug changes (add to useEffect
+              dependency array or clear in the connect function)
+          files:
+            - web/src/components/ProgramBoard.tsx
+          dependencies:
+            - C
+            - D
+        - id: G
+          task: |
+            ## Agent G — pipeline_handler_test.go (Q1)
 
-      - id: G
-        task: |
-          ## Agent G — pipeline_handler_test.go (Q1)
+            ### Files owned
+            - `pkg/api/pipeline_handler_test.go`
 
-          ### Files owned
-          - `pkg/api/pipeline_handler_test.go`
+            ### What to implement
 
-          ### What to implement
+            **Q1 — Add edge-case tests for buildImplProgramMap**
 
-          **Q1 — Add edge-case tests for buildImplProgramMap**
+            Agent B (Wave 1) renamed `buildImplProgramMap` to `buildImplProgramMapFresh`
+            and added a cache wrapper. Write tests for `buildImplProgramMapFresh` directly.
+            Add these tests in a new file `pkg/api/pipeline_impl_program_map_test.go`
+            (keeping `pipeline_handler_test.go` focused on handler-level tests).
 
-          Agent B (Wave 1) renamed `buildImplProgramMap` to `buildImplProgramMapFresh`
-          and added a cache wrapper. Write tests for `buildImplProgramMapFresh` directly.
-          Add these tests in a new file `pkg/api/pipeline_impl_program_map_test.go`
-          (keeping `pipeline_handler_test.go` focused on handler-level tests).
+            However, since Agent B was already directed to write these in a new file, check
+            whether `pipeline_impl_program_map_test.go` was created by Agent B. If so, read
+            it and add any missing cases from the list below. If not, create it.
 
-          However, since Agent B was already directed to write these in a new file, check
-          whether `pipeline_impl_program_map_test.go` was created by Agent B. If so, read
-          it and add any missing cases from the list below. If not, create it.
+            Required test cases (in package `api`, file `pipeline_impl_program_map_test.go`):
 
-          Required test cases (in package `api`, file `pipeline_impl_program_map_test.go`):
+            **TestBuildImplProgramMap_Empty**
+            Create a temp dir with no `docs/` directory. Call `buildImplProgramMapFresh`
+            with a `[]RepoEntry` pointing to it. Assert the returned map is non-nil and
+            has length 0.
 
-          **TestBuildImplProgramMap_Empty**
-          Create a temp dir with no `docs/` directory. Call `buildImplProgramMapFresh`
-          with a `[]RepoEntry` pointing to it. Assert the returned map is non-nil and
-          has length 0.
+            **TestBuildImplProgramMap_DuplicateSlug**
+            Create two PROGRAM manifests in the same repo's `docs/` dir that both list the
+            same IMPL slug. Call `buildImplProgramMapFresh`. Assert:
+            - The slug appears exactly once in the result map
+            - The value is from the first manifest (first-write-wins)
+            Use `log.SetOutput(buf)` to capture the warning log and assert it contains
+            the duplicate slug name.
 
-          **TestBuildImplProgramMap_DuplicateSlug**
-          Create two PROGRAM manifests in the same repo's `docs/` dir that both list the
-          same IMPL slug. Call `buildImplProgramMapFresh`. Assert:
-          - The slug appears exactly once in the result map
-          - The value is from the first manifest (first-write-wins)
-          Use `log.SetOutput(buf)` to capture the warning log and assert it contains
-          the duplicate slug name.
+            **TestBuildImplProgramMap_ParseError**
+            Create two PROGRAM manifests: one valid, one with invalid YAML. Call
+            `buildImplProgramMapFresh`. Assert:
+            - The function does not panic or return an error
+            - The result contains entries from the valid manifest only
 
-          **TestBuildImplProgramMap_ParseError**
-          Create two PROGRAM manifests: one valid, one with invalid YAML. Call
-          `buildImplProgramMapFresh`. Assert:
-          - The function does not panic or return an error
-          - The result contains entries from the valid manifest only
+            **TestBuildImplProgramMap_MissingDocsDir**
+            Create a `RepoEntry` with a path pointing to a non-existent directory.
+            Assert `buildImplProgramMapFresh` returns an empty map (no panic, no error).
 
-          **TestBuildImplProgramMap_MissingDocsDir**
-          Create a `RepoEntry` with a path pointing to a non-existent directory.
-          Assert `buildImplProgramMapFresh` returns an empty map (no panic, no error).
+            **TestBuildImplProgramMap_TierContext**
+            Create a PROGRAM manifest with 3 tiers, with an IMPL in tier 2. Call
+            `buildImplProgramMapFresh`. Assert the returned `implProgramInfo` for that
+            IMPL has `programTier == 2` and `programTiersTotal == 3`.
 
-          **TestBuildImplProgramMap_TierContext**
-          Create a PROGRAM manifest with 3 tiers, with an IMPL in tier 2. Call
-          `buildImplProgramMapFresh`. Assert the returned `implProgramInfo` for that
-          IMPL has `programTier == 2` and `programTiersTotal == 3`.
+            **TestBuildImplProgramMap_MultiRepo**
+            Create two repos each with their own PROGRAM manifest (different slugs).
+            Call `buildImplProgramMapFresh` with both repos. Assert entries from both
+            repos appear in the result.
 
-          **TestBuildImplProgramMap_MultiRepo**
-          Create two repos each with their own PROGRAM manifest (different slugs).
-          Call `buildImplProgramMapFresh` with both repos. Assert entries from both
-          repos appear in the result.
+            For PROGRAM manifest YAML content in tests, use the same format as in
+            `program_handler_test.go` (title, program_slug, state, impls, tiers, completion).
 
-          For PROGRAM manifest YAML content in tests, use the same format as in
-          `program_handler_test.go` (title, program_slug, state, impls, tiers, completion).
+            Helper pattern (reuse from existing tests):
+            ```go
+            func writeProgramManifest(t *testing.T, docsDir, slug string, content string) {
+                t.Helper()
+                path := filepath.Join(docsDir, "PROGRAM-"+slug+".yaml")
+                if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+                    t.Fatal(err)
+                }
+            }
+            ```
 
-          Helper pattern (reuse from existing tests):
-          ```go
-          func writeProgramManifest(t *testing.T, docsDir, slug string, content string) {
-              t.Helper()
-              path := filepath.Join(docsDir, "PROGRAM-"+slug+".yaml")
-              if err := os.WriteFile(path, []byte(content), 0644); err != nil {
-                  t.Fatal(err)
-              }
-          }
-          ```
+            ### Verification gate
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/api/... -run TestBuildImplProgramMap -v
+            ```
 
-          ### Verification gate
-          ```
-          go build ./...
-          go vet ./...
-          go test ./pkg/api/... -run TestBuildImplProgramMap -v
-          ```
-
-          ### Constraints
-          - Use package `api` (not `api_test`) to access unexported `buildImplProgramMapFresh`
-          - Do NOT modify pipeline_handler.go (owned by Agent B, Wave 1, already merged)
-          - If Agent B already wrote some of these tests, add only the missing ones
-          - PROGRAM manifest YAML in tests must include required fields: title,
-            program_slug, state, impls (list), tiers (list), completion struct
-        files:
-          - pkg/api/pipeline_handler_test.go
-        dependencies: [B]
-
+            ### Constraints
+            - Use package `api` (not `api_test`) to access unexported `buildImplProgramMapFresh`
+            - Do NOT modify pipeline_handler.go (owned by Agent B, Wave 1, already merged)
+            - If Agent B already wrote some of these tests, add only the missing ones
+            - PROGRAM manifest YAML in tests must include required fields: title,
+              program_slug, state, impls (list), tiers (list), completion struct
+          files:
+            - pkg/api/pipeline_handler_test.go
+          dependencies:
+            - B
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test -race -count=1 -coverprofile=coverage.out -covermode=atomic ./...
+          required: true
+scaffolds:
+    - file_path: web/src/types/autonomy.ts
+      contents: |
+        Add export interface ImplReference { slug: string; title: string; status: string }
+        at top of file. PipelineEntry extends ImplReference, adding repo, wave_progress,
+        active_agent, blocked_reason, queue_position, depends_on, completed_at,
+        elapsed_seconds, program_slug, program_title, program_tier, program_tiers_total.
+      import_path: ../types/autonomy
+      status: committed (bf94d71)
+    - file_path: web/src/types/program.ts
+      contents: |
+        Import ImplReference from autonomy. ImplTierStatus extends ImplReference
+        (slug, status already match; title needs addition for display).
+      import_path: ../types/program
+      status: committed (bf94d71)
 pre_mortem:
-  overall_risk: medium
-  rows:
-    - scenario: |
-        Q5 onStage removal creates a cross-agent coordination gap. Agent C removes
-        the parameter from runProgramTier signature; Agent A must remove the no-op
-        lambda from handleExecuteTier. If Agent A misses this, the build fails with
-        "too many arguments" error on the runProgramTier call.
-      likelihood: medium
-      impact: high
-      mitigation: |
-        Both agents are in Wave 1 with disjoint file ownership. The compilation error
-        will be caught by each agent's `go build ./...` gate. Agent A's task description
-        explicitly notes the dependency. The finalize-wave build check will also catch it.
-        If Agent A misses it, the merge fails cleanly — no silent data corruption.
-
-    - scenario: |
-        B5 consolidation (activeProgramRuns → Server field) breaks existing tests
-        in program_handler_test.go that reference the package-level var directly
-        (e.g., `activeProgramRuns.Store("test-program", struct{}{})`).
-      likelihood: high
-      impact: medium
-      mitigation: |
-        Agent A's task explicitly calls this out and instructs updating the tests.
-        The test file `program_handler_test.go` is in Agent A's implicit scope
-        since it tests code A owns. The compilation failure from a missing var will
-        be caught immediately by `go build ./... ` in the verification gate.
-
-    - scenario: |
-        Agent D adds `title` to ImplTierStatus via ImplReference. If the backend's
-        TierStatusDetail does not include title in JSON output, the frontend field
-        is always undefined and displays incorrectly in ProgramBoard.
-      likelihood: low
-      impact: low
-      mitigation: |
-        Agent D's task instructs checking TierStatusDetail in the SDK. If title is
-        absent, making it optional (`title?: string`) is safe and backward-compatible.
-        ProgramBoard currently uses `impl.slug` for display anyway; title is additive.
-
-    - scenario: |
-        B6 cache TTL causes stale pipeline data during high-frequency pipeline updates.
-        A 15-second TTL means a newly-started program execution may not appear in the
-        pipeline for up to 15 seconds.
-      likelihood: medium
-      impact: low
-      mitigation: |
-        The pipeline also shows execution state from s.activeRuns (uncached). The
-        implProgramMap cache only affects the program_slug/program_title/tier context
-        fields. A stale cache means the tier badge disappears temporarily, not that
-        the entry disappears. Users can force-refresh. TTL can be tuned down if UX
-        feedback indicates it's too long.
-
-    - scenario: |
-        Q2 reconnection logic in ProgramBoard creates a closure-captured variable
-        issue where `retryTimeout` and `currentEventSource` are re-initialized on
-        each useEffect run, causing memory leaks if programSlug changes rapidly.
-      likelihood: low
-      impact: low
-      mitigation: |
-        Agent F's task uses local variables inside the useEffect closure, which is
-        standard React pattern. The cleanup function properly clears the timeout and
-        closes the EventSource. TypeScript strict mode will catch type errors.
-        Agent F's verification gate includes `tsc --noEmit`.
-
+    overall_risk: medium
+    rows:
+        - scenario: |
+            Q5 onStage removal creates a cross-agent coordination gap. Agent C removes
+            the parameter from runProgramTier signature; Agent A must remove the no-op
+            lambda from handleExecuteTier. If Agent A misses this, the build fails with
+            "too many arguments" error on the runProgramTier call.
+          likelihood: medium
+          impact: high
+          mitigation: |
+            Both agents are in Wave 1 with disjoint file ownership. The compilation error
+            will be caught by each agent's `go build ./...` gate. Agent A's task description
+            explicitly notes the dependency. The finalize-wave build check will also catch it.
+            If Agent A misses it, the merge fails cleanly — no silent data corruption.
+        - scenario: |
+            B5 consolidation (activeProgramRuns → Server field) breaks existing tests
+            in program_handler_test.go that reference the package-level var directly
+            (e.g., `activeProgramRuns.Store("test-program", struct{}{})`).
+          likelihood: high
+          impact: medium
+          mitigation: |
+            Agent A's task explicitly calls this out and instructs updating the tests.
+            The test file `program_handler_test.go` is in Agent A's implicit scope
+            since it tests code A owns. The compilation failure from a missing var will
+            be caught immediately by `go build ./... ` in the verification gate.
+        - scenario: |
+            Agent D adds `title` to ImplTierStatus via ImplReference. If the backend's
+            TierStatusDetail does not include title in JSON output, the frontend field
+            is always undefined and displays incorrectly in ProgramBoard.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent D's task instructs checking TierStatusDetail in the SDK. If title is
+            absent, making it optional (`title?: string`) is safe and backward-compatible.
+            ProgramBoard currently uses `impl.slug` for display anyway; title is additive.
+        - scenario: |
+            B6 cache TTL causes stale pipeline data during high-frequency pipeline updates.
+            A 15-second TTL means a newly-started program execution may not appear in the
+            pipeline for up to 15 seconds.
+          likelihood: medium
+          impact: low
+          mitigation: |
+            The pipeline also shows execution state from s.activeRuns (uncached). The
+            implProgramMap cache only affects the program_slug/program_title/tier context
+            fields. A stale cache means the tier badge disappears temporarily, not that
+            the entry disappears. Users can force-refresh. TTL can be tuned down if UX
+            feedback indicates it's too long.
+        - scenario: |
+            Q2 reconnection logic in ProgramBoard creates a closure-captured variable
+            issue where `retryTimeout` and `currentEventSource` are re-initialized on
+            each useEffect run, causing memory leaks if programSlug changes rapidly.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent F's task uses local variables inside the useEffect closure, which is
+            standard React pattern. The cleanup function properly clears the timeout and
+            closes the EventSource. TypeScript strict mode will catch type errors.
+            Agent F's verification gate includes `tsc --noEmit`.
 known_issues:
-  - title: Stale test expects HTTP 501 for handleReplanProgram
-    description: |
-      TestHandleReplanProgram_NotImplemented in program_handler_test.go asserts HTTP 501,
-      but the current handleReplanProgram implementation returns 202 Accepted (it launches
-      a goroutine). This test was written before the Phase 4 implementation landed and
-      will fail if run against the current codebase.
-    status: open
-    workaround: |
-      No agent in this IMPL modifies handleReplanProgram. The test should be updated
-      separately to assert 202 or to test the actual goroutine behavior. Out of scope
-      for this IMPL.
+    - title: Stale test expects HTTP 501 for handleReplanProgram
+      description: |
+        TestHandleReplanProgram_NotImplemented in program_handler_test.go asserts HTTP 501,
+        but the current handleReplanProgram implementation returns 202 Accepted (it launches
+        a goroutine). This test was written before the Phase 4 implementation landed and
+        will fail if run against the current codebase.
+      status: open
+      workaround: |
+        No agent in this IMPL modifies handleReplanProgram. The test should be updated
+        separately to assert 202 or to test the actual goroutine behavior. Out of scope
+        for this IMPL.
+state: SCOUT_PENDING
