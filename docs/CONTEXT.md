@@ -19,3 +19,5 @@
   - IMPL doc: docs/IMPL/IMPL-notification-system.yaml
 - **program-layer-web-integration**: completed 2026-03-18, 2 waves, 6 agents
   - IMPL doc: docs/IMPL/IMPL-program-layer-web-integration.yaml
+- **pipeline-program-hardening**: completed 2026-03-19, 2 waves, 7 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-pipeline-program-hardening.yaml
