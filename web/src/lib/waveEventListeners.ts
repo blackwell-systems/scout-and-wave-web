@@ -1,3 +1,245 @@
-// Stub scaffold — Agent B will implement this file in full.
-// It must export attachWaveEventListeners(es, dispatch) that registers
-// all 30+ wave SSE event listeners. Agent B owns this file.
+import { AgentOutputData, AgentToolCallData } from '../types'
+import { WaveAction } from '../hooks/waveEventsReducer'
+
+/**
+ * Registers all wave SSE event listeners on the given EventSource.
+ * Extracted from the duplicated blocks in useWaveEvents.ts and waveEventStore.ts.
+ * Each handler parses event data and calls dispatch with the appropriate WaveAction.
+ *
+ * Callers provide their own dispatch function so state updates go to the correct
+ * store/reducer. waveEventStore uses a slug-scoped adapter:
+ *   attachWaveEventListeners(es, (action) => dispatch(slug, action))
+ */
+export function attachWaveEventListeners(
+  es: EventSource,
+  dispatch: (action: WaveAction) => void
+): void {
+  es.addEventListener('scaffold_started', () => {
+    dispatch({ type: 'SCAFFOLD_STARTED' })
+  })
+
+  es.addEventListener('scaffold_output', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { chunk: string }
+    dispatch({ type: 'SCAFFOLD_OUTPUT', chunk: data.chunk })
+  })
+
+  es.addEventListener('scaffold_complete', () => {
+    dispatch({ type: 'SCAFFOLD_COMPLETE' })
+  })
+
+  es.addEventListener('scaffold_failed', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { error: string }
+    dispatch({ type: 'SCAFFOLD_FAILED', error: data.error })
+  })
+
+  es.addEventListener('agent_started', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { agent: string; wave: number; files: string[] }
+    dispatch({ type: 'AGENT_STARTED', agent: data.agent, wave: data.wave, files: data.files })
+  })
+
+  es.addEventListener('agent_complete', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as {
+      agent: string
+      wave: number
+      status: string
+      branch: string
+    }
+    dispatch({ type: 'AGENT_COMPLETE', agent: data.agent, wave: data.wave, branch: data.branch })
+  })
+
+  es.addEventListener('agent_failed', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as {
+      agent: string
+      wave: number
+      status: string
+      failure_type: string
+      notes?: string
+      message: string
+    }
+    dispatch({
+      type: 'AGENT_FAILED',
+      agent: data.agent,
+      wave: data.wave,
+      failure_type: data.failure_type,
+      notes: data.notes,
+      message: data.message,
+    })
+  })
+
+  es.addEventListener('agent_output', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as AgentOutputData
+    dispatch({ type: 'AGENT_OUTPUT', agent: data.agent, wave: data.wave, chunk: data.chunk })
+  })
+
+  es.addEventListener('agent_tool_call', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as AgentToolCallData
+    dispatch({
+      type: 'AGENT_TOOL_CALL',
+      agent: data.agent,
+      wave: data.wave,
+      tool_id: data.tool_id,
+      tool_name: data.tool_name,
+      input: data.input,
+      is_result: data.is_result,
+      is_error: data.is_error,
+      duration_ms: data.duration_ms,
+    })
+  })
+
+  es.addEventListener('wave_complete', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { wave: number; merge_status: string }
+    dispatch({ type: 'WAVE_COMPLETE', wave: data.wave, merge_status: data.merge_status })
+  })
+
+  es.addEventListener('run_complete', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { status: string; waves: number; agents: number }
+    dispatch({ type: 'RUN_COMPLETE', status: data.status })
+  })
+
+  es.addEventListener('run_failed', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { error: string }
+    dispatch({ type: 'RUN_FAILED', error: data.error })
+  })
+
+  es.addEventListener('wave_gate_pending', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { wave: number; next_wave: number; slug: string }
+    dispatch({ type: 'WAVE_GATE_PENDING', wave: data.wave, next_wave: data.next_wave })
+  })
+
+  es.addEventListener('wave_gate_resolved', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { wave: number; action: string }
+    void data // consumed for side-effect only
+    dispatch({ type: 'WAVE_GATE_RESOLVED' })
+  })
+
+  es.addEventListener('merge_started', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { slug: string; wave: number }
+    dispatch({ type: 'MERGE_STARTED', wave: data.wave })
+  })
+
+  es.addEventListener('merge_output', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { slug: string; wave: number; chunk: string }
+    dispatch({ type: 'MERGE_OUTPUT', wave: data.wave, chunk: data.chunk })
+  })
+
+  es.addEventListener('merge_complete', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { slug: string; wave: number; status: string }
+    dispatch({ type: 'MERGE_COMPLETE', wave: data.wave })
+  })
+
+  es.addEventListener('merge_failed', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as {
+      slug: string
+      wave: number
+      error: string
+      conflicting_files: string[]
+    }
+    dispatch({
+      type: 'MERGE_FAILED',
+      wave: data.wave,
+      error: data.error,
+      conflicting_files: data.conflicting_files,
+    })
+  })
+
+  es.addEventListener('conflict_resolving', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { slug: string; wave: number; file: string }
+    dispatch({ type: 'CONFLICT_RESOLVING', wave: data.wave, file: data.file })
+  })
+
+  es.addEventListener('conflict_resolved', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { slug: string; wave: number; file: string }
+    dispatch({ type: 'CONFLICT_RESOLVED', wave: data.wave, file: data.file })
+  })
+
+  es.addEventListener('conflict_resolution_failed', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { slug: string; wave: number; file: string; error: string }
+    dispatch({
+      type: 'CONFLICT_RESOLUTION_FAILED',
+      wave: data.wave,
+      file: data.file,
+      error: data.error,
+    })
+  })
+
+  es.addEventListener('test_started', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { slug: string; wave: number }
+    dispatch({ type: 'TEST_STARTED', wave: data.wave })
+  })
+
+  es.addEventListener('test_output', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { slug: string; wave: number; chunk: string }
+    dispatch({ type: 'TEST_OUTPUT', wave: data.wave, chunk: data.chunk })
+  })
+
+  es.addEventListener('test_complete', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { slug: string; wave: number; status: string }
+    dispatch({ type: 'TEST_COMPLETE', wave: data.wave })
+  })
+
+  es.addEventListener('test_failed', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as {
+      slug: string
+      wave: number
+      status: string
+      output: string
+    }
+    dispatch({ type: 'TEST_FAILED', wave: data.wave, output: data.output })
+  })
+
+  es.addEventListener('stale_branches_detected', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { slug: string; branches: string[]; count: number }
+    dispatch({
+      type: 'STALE_BRANCHES_DETECTED',
+      slug: data.slug,
+      branches: data.branches,
+      count: data.count,
+    })
+  })
+
+  es.addEventListener('stage_transition', (event: MessageEvent) => {
+    const entry = JSON.parse(event.data) as {
+      stage: string
+      status: 'running' | 'complete' | 'failed' | 'skipped'
+      wave_num?: number
+      message?: string
+      started_at?: string
+      completed_at?: string
+    }
+    dispatch({ type: 'STAGE_TRANSITION', entry })
+  })
+
+  es.addEventListener('pipeline_step', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as {
+      step: string
+      status: string
+      wave: number
+      error?: string
+    }
+    dispatch({
+      type: 'PIPELINE_STEP',
+      step: data.step,
+      status: data.status,
+      wave: data.wave,
+      error: data.error,
+    })
+  })
+
+  es.addEventListener('fix_build_started', () => {
+    dispatch({ type: 'FIX_BUILD_STARTED' })
+  })
+
+  es.addEventListener('fix_build_output', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { chunk: string }
+    dispatch({ type: 'FIX_BUILD_OUTPUT', chunk: data.chunk })
+  })
+
+  es.addEventListener('fix_build_complete', () => {
+    dispatch({ type: 'FIX_BUILD_COMPLETE' })
+  })
+
+  es.addEventListener('fix_build_failed', (event: MessageEvent) => {
+    const data = JSON.parse(event.data) as { error: string }
+    dispatch({ type: 'FIX_BUILD_FAILED', error: data.error })
+  })
+}
