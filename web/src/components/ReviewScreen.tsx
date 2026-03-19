@@ -132,16 +132,6 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
     return () => observer.disconnect()
   }, [])
 
-  useEffect(() => {
-    const es = new EventSource(`/api/wave/${slug}/events`)
-    es.addEventListener('wave_complete', () => {
-      onRefreshImpl?.(slug)
-    })
-    return () => {
-      es.close()
-    }
-  }, [slug, onRefreshImpl])
-
   // Load disk-based wave status (survives server restarts)
   const [diskStatus, setDiskStatus] = useState<DiskWaveStatus | null>(null)
   useEffect(() => {
@@ -150,6 +140,18 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
       .catch(() => setDiskStatus(null))
   }, [slug])
   const hasWaveWork = (diskStatus?.agents?.length ?? 0) > 0
+
+  // Fire onRefreshImpl when a new wave merges (detected via disk status waves_merged count).
+  // This replaces the former standalone EventSource that listened for wave_complete — the
+  // event is already handled by useExecutionSync/useWaveEvents; we just need the refresh.
+  const prevMergedCount = useRef<number>(0)
+  useEffect(() => {
+    const count = diskStatus?.waves_merged?.length ?? 0
+    if (count > prevMergedCount.current) {
+      prevMergedCount.current = count
+      onRefreshImpl?.(slug)
+    }
+  }, [diskStatus?.waves_merged?.length, slug, onRefreshImpl])
 
   // Synthesize execution state from disk status when no live SSE
   const effectiveExecutionState = useMemo<ExecutionSyncState | null>(() => {
