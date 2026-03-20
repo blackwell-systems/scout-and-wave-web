@@ -4,13 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-web/build"
 	"github.com/blackwell-systems/scout-and-wave-web/pkg/service"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
@@ -237,10 +237,12 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("POST /api/daemon/stop", s.handleDaemonStop)
 	s.mux.HandleFunc("GET /api/daemon/status", s.handleDaemonStatus)
 	s.mux.HandleFunc("GET /api/daemon/events", s.handleDaemonEvents)
-
-	sub, err := fs.Sub(staticFiles, "dist")
+	sub, err := build.StaticFS()
 	if err != nil {
-		panic("saw: failed to sub embed.FS: " + err.Error())
+		panic("saw: failed to get static FS: " + err.Error())
+	}
+	if sub != nil {
+		s.mux.Handle("/", http.FileServer(http.FS(sub)))
 	}
 	s.mux.Handle("/", http.FileServer(http.FS(sub)))
 
