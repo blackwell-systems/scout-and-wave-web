@@ -13,6 +13,7 @@ interface ImplListProps {
   repos?: RepoEntry[]
   onManageRepos?: () => void
   onRemoveRepo?: (repoName: string) => void
+  onNewPlan?: () => void
 }
 
 interface DeleteModalProps {
@@ -183,7 +184,7 @@ function EntryRow({ e, selectedSlug, loading, onSelect, onRequestDelete }: Entry
 }
 
 export default function ImplList(props: ImplListProps): JSX.Element {
-  const { entries, selectedSlug, onSelect, onDelete, loading, repos, onManageRepos, onRemoveRepo } = props
+  const { entries, selectedSlug, onSelect, onDelete, loading, repos, onManageRepos, onRemoveRepo, onNewPlan } = props
   const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const [pendingRemoveRepo, setPendingRemoveRepo] = useState<string | null>(null)
   const [collapsedRepos, setCollapsedRepos] = useState<Set<string>>(new Set())
@@ -254,9 +255,15 @@ export default function ImplList(props: ImplListProps): JSX.Element {
       )}
       <div className="flex flex-col gap-1 p-2">
         {entries.length === 0 ? (
-          <p className="text-muted-foreground text-xs px-2">
-            No IMPL docs found. Run <code className="bg-muted px-1 rounded-none">saw scout</code> first.
-          </p>
+          <div className="text-muted-foreground text-xs px-2">
+            <p>No plans yet.</p>
+            <button
+              onClick={() => onNewPlan?.()}
+              className="mt-1 text-primary hover:underline"
+            >
+              Create your first plan →
+            </button>
+          </div>
         ) : repos && repos.length >= 2 ? (
           // Multi-repo: group by repo with collapsible sections
           <>
