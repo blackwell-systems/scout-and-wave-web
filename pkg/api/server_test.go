@@ -640,8 +640,8 @@ func TestHandleWaveStart_Returns409WhenActive(t *testing.T) {
 	s, dir := makeTestServer(t)
 	writeIMPLDoc(t, dir, "my-feature", minimalIMPL)
 
-	// Pre-load the slug to simulate an in-progress run.
-	s.activeRuns.Store("my-feature", struct{}{})
+	// Pre-load the slug to simulate an in-progress run (in service layer).
+	service.ActiveWaves.Store("my-feature", struct{}{})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/wave/my-feature/start", nil)
 	req.SetPathValue("slug", "my-feature")
