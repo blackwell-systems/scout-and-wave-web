@@ -11,6 +11,7 @@ import OverviewPanel from './review/OverviewPanel'
 import NotSuitableResearchPanel from './review/NotSuitableResearchPanel'
 import FileDiffPanel from './review/FileDiffPanel'
 import { ReviewLayout } from './review/ReviewLayout'
+import { Tooltip } from './ui/tooltip'
 import WorktreePanel from './WorktreePanel'
 import ChatPanel from './ChatPanel'
 import ManifestValidation from './ManifestValidation'
@@ -28,6 +29,12 @@ interface ReviewScreenProps {
 }
 
 type PanelKey = 'reactions' | 'pre-mortem' | 'wiring' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'worktrees' | 'context-viewer' | 'validation' | 'amend'
+
+const panelTooltips: Partial<Record<PanelKey, string>> = {
+  'file-ownership': 'Shows which agent owns which files. No two agents in the same wave may modify the same file (I1 invariant). This prevents merge conflicts.',
+  'wave-structure': 'Sequential execution phases with parallel agents. Wave N+1 depends on Wave N completing (I3). Shows dependency relationships.',
+  'interface-contracts': 'Shared types and function signatures defined before parallel work starts (I2 invariant). Ensures agents can integrate without runtime coordination.',
+}
 
 const panels: Array<{ key: PanelKey; label: string; essential?: boolean }> = [
   { key: 'wave-structure',       label: 'Wave Structure',      essential: true },
@@ -418,7 +425,13 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
                           : 'border-border bg-background text-foreground hover:bg-muted'
                       }`}
                     >
-                      {panel.label}
+                      {panelTooltips[panel.key] ? (
+                        <Tooltip content={panelTooltips[panel.key]!} position="bottom">
+                          <span>{panel.label}</span>
+                        </Tooltip>
+                      ) : (
+                        panel.label
+                      )}
                     </button>
                   ))}
 
