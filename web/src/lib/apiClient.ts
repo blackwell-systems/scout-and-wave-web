@@ -74,6 +74,9 @@ export interface SawClient {
       batchDelete(slug: string, req: WorktreeBatchDeleteRequest): Promise<WorktreeBatchDeleteResponse>
     }
     diff(slug: string, agent: string, wave: number, file: string): Promise<FileDiffResponse>
+    amend(slug: string, body: object): Promise<any>
+    manifest(slug: string): Promise<any>
+    validateManifest(slug: string): Promise<{ valid: boolean; errors: any[] }>
   }
   wave: {
     start(slug: string): Promise<void>
@@ -104,6 +107,7 @@ export interface SawClient {
     save(config: SAWConfig): Promise<void>
     browse(path?: string): Promise<BrowseResult>
     browseNative(prompt?: string): Promise<string | null>
+    validateRepo(path: string): Promise<{ valid: boolean; error?: string; error_code?: string }>
     context: {
       get(): Promise<string>
       put(content: string): Promise<void>
@@ -132,6 +136,13 @@ export interface SawClient {
     runPlanner(description: string, repo?: string): Promise<{ runId: string }>
     subscribePlannerEvents(runId: string): EventSource
     cancelPlanner(runId: string): Promise<void>
+  }
+  notifications: {
+    getPreferences(): Promise<any>
+    savePreferences(prefs: any): Promise<void>
+  }
+  bootstrap: {
+    run(description: string, repo?: string): Promise<{ run_id: string }>
   }
   files: {
     tree(repo: string, path?: string): Promise<FileTreeResponse>
@@ -310,6 +321,27 @@ export function createHttpClient(): SawClient {
         const r = await fetch(`/api/impl/${slug}/diff/${agent}?${params}`)
         if (!r.ok) throw new Error(await r.text())
         return r.json() as Promise<FileDiffResponse>
+      },
+
+      async amend(slug: string, body: object): Promise<any> {
+        const r = await fetch(`/api/impl/${enc(slug)}/amend`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        })
+        return r.json()
+      },
+
+      async manifest(slug: string): Promise<any> {
+        const r = await fetch(`/api/impl/${enc(slug)}/manifest`)
+        if (!r.ok) throw new Error(`Failed to load manifest: ${r.statusText}`)
+        return r.json()
+      },
+
+      async validateManifest(slug: string): Promise<{ valid: boolean; errors: any[] }> {
+        const r = await fetch(`/api/manifest/${enc(slug)}/validate`, { method: 'POST' })
+        if (!r.ok) throw new Error(`Failed to validate manifest: ${r.statusText}`)
+        return r.json()
       },
     },
 
@@ -510,6 +542,15 @@ export function createHttpClient(): SawClient {
         return data.path
       },
 
+      async validateRepo(path: string): Promise<{ valid: boolean; error?: string; error_code?: string }> {
+        const r = await fetch('/api/config/validate-repo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path }),
+        })
+        return r.json() as Promise<{ valid: boolean; error?: string; error_code?: string }>
+      },
+
       context: {
         async get(): Promise<string> {
           const r = await fetch('/api/context')
@@ -662,6 +703,40 @@ export function createHttpClient(): SawClient {
 
       async cancelPlanner(runId: string): Promise<void> {
         await fetch(`/api/planner/${enc(runId)}/cancel`, { method: 'POST' })
+      },
+    },
+
+    // ── notifications namespace ──────────────────────────────────────────
+    notifications: {
+      async getPreferences(): Promise<any> {
+        const r = await fetch('/api/notifications/preferences')
+        if (!r.ok) throw new Error(`Failed to fetch notification preferences: ${r.statusText}`)
+        return r.json()
+      },
+
+      async savePreferences(prefs: any): Promise<void> {
+        const r = await fetch('/api/notifications/preferences', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(prefs),
+        })
+        if (!r.ok) throw new Error(`Failed to save notification preferences: ${r.statusText}`)
+      },
+    },
+
+    // ── bootstrap namespace ──────────────────────────────────────────────
+    bootstrap: {
+      async run(description: string, repo?: string): Promise<{ run_id: string }> {
+        const r = await fetch('/api/bootstrap/run', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ description, repo }),
+        })
+        if (!r.ok) {
+          const text = await r.text()
+          throw new Error(`Bootstrap failed: ${text}`)
+        }
+        return r.json() as Promise<{ run_id: string }>
       },
     },
 

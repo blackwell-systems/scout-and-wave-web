@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
+import { sawClient } from '../../lib/apiClient'
 
-// TEMP stub — remove after Wave 1 merge (Agent B adds this to api.ts)
 async function fetchFileDiff(slug: string, agent: string, wave: number, file: string): Promise<string> {
-  const r = await fetch(
-    `/api/impl/${encodeURIComponent(slug)}/wave/${wave}/agent/${encodeURIComponent(agent)}/diff?file=${encodeURIComponent(file)}`
-  )
-  if (!r.ok) throw new Error(`HTTP ${r.status}: ${await r.text()}`)
-  return r.text()
+  const result = await sawClient.impl.diff(slug, agent, wave, file)
+  return result.diff ?? ''
 }
 
 interface FileDiffPanelProps {

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { WaveInfo } from '../types'
+import { sawClient } from '../lib/apiClient'
 
 interface AmendPanelProps {
   slug: string
@@ -17,13 +18,7 @@ interface AmendResult {
 }
 
 async function callAmend(slug: string, body: object): Promise<AmendResult> {
-  const res = await fetch(`/api/impl/${slug}/amend`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-  const data = await res.json()
-  return data as AmendResult
+  return await sawClient.impl.amend(slug, body) as AmendResult
 }
 
 type TabKey = 'add-wave' | 'redirect-agent' | 'extend-scope'

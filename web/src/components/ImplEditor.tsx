@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { sawClient } from '../lib/apiClient'
 
 interface ImplEditorProps {
   slug: string
@@ -16,11 +17,7 @@ export default function ImplEditor({ slug }: ImplEditorProps): JSX.Element {
     setLoading(true)
     setLoadError(null)
     try {
-      const res = await fetch(`/api/impl/${slug}/raw`)
-      if (!res.ok) {
-        throw new Error(`Server returned ${res.status} ${res.statusText}`)
-      }
-      const text = await res.text()
+      const text = await sawClient.impl.getRaw(slug)
       setContent(text)
       setSavedContent(text)
     } catch (err) {
@@ -40,14 +37,7 @@ export default function ImplEditor({ slug }: ImplEditorProps): JSX.Element {
     setSaveStatus('saving')
     setSaveError(null)
     try {
-      const res = await fetch(`/api/impl/${slug}/raw`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'text/plain' },
-        body: content,
-      })
-      if (!res.ok) {
-        throw new Error(`Save failed: ${res.status} ${res.statusText}`)
-      }
+      await sawClient.impl.saveRaw(slug, content)
       setSavedContent(content)
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 2000)

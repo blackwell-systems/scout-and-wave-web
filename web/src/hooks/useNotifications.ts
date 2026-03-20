@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { Toast } from '../components/ToastContainer'
 import { useGlobalEvents } from './useGlobalEvents'
+import { sawClient } from '../lib/apiClient'
 
 // Mirror the Go types from pkg/api/notification_types.go
 export type NotificationEventType =
@@ -29,24 +30,13 @@ export interface NotificationPreferences {
   toast_notify: boolean
 }
 
-// API functions for notification preferences
+// API functions for notification preferences — delegate to sawClient
 async function getNotificationPrefs(): Promise<NotificationPreferences> {
-  const response = await fetch('/api/notifications/preferences')
-  if (!response.ok) {
-    throw new Error(`Failed to fetch notification preferences: ${response.statusText}`)
-  }
-  return response.json()
+  return await sawClient.notifications.getPreferences() as NotificationPreferences
 }
 
 async function saveNotificationPrefs(prefs: NotificationPreferences): Promise<void> {
-  const response = await fetch('/api/notifications/preferences', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(prefs),
-  })
-  if (!response.ok) {
-    throw new Error(`Failed to save notification preferences: ${response.statusText}`)
-  }
+  await sawClient.notifications.savePreferences(prefs)
 }
 
 // Request browser notification permission

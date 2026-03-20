@@ -8,6 +8,7 @@ import StageTimeline from './StageTimeline'
 import FileOwnershipTable from './FileOwnershipTable'
 import { AgentStatus, RepoEntry, FileOwnershipEntry } from '../types'
 import { mergeWave, runWaveTests, rerunAgent, batchDeleteWorktrees, startWave, retryFinalize, fixBuild } from '../api'
+import { sawClient } from '../lib/apiClient'
 import ScaffoldCard from './wave/ScaffoldCard'
 import { WaveCompletionPanel } from './wave/WaveCompletionPanel'
 import { WaveRecoveryPanel } from './wave/WaveRecoveryPanel'
@@ -112,9 +113,10 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
   }
 
   async function handleProceedGate(nextWave: number): Promise<void> {
-    const res = await fetch(`/api/wave/${encodeURIComponent(slug)}/gate/proceed`, { method: 'POST' })
-    if (res.status === 404) {
-      await fetch(`/api/wave/${encodeURIComponent(slug)}/start`, { method: 'POST' })
+    try {
+      await sawClient.wave.proceedGate(slug)
+    } catch {
+      await sawClient.wave.start(slug)
     }
     void nextWave
   }

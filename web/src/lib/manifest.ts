@@ -110,15 +110,13 @@ export interface ValidationError {
   line?: number
 }
 
+import { sawClient } from './apiClient'
+
 // API functions
 export async function loadManifest(slug: string): Promise<IMPLManifest> {
-  const res = await fetch(`/api/impl/${slug}/manifest`)
-  if (!res.ok) throw new Error(`Failed to load manifest: ${res.statusText}`)
-  return res.json()
+  return await sawClient.impl.manifest(slug) as IMPLManifest
 }
 
 export async function validateManifest(slug: string): Promise<{ valid: boolean; errors: ValidationError[] }> {
-  const res = await fetch(`/api/manifest/${slug}/validate`, { method: 'POST' })
-  if (!res.ok) throw new Error(`Failed to validate manifest: ${res.statusText}`)
-  return res.json()
+  return await sawClient.impl.validateManifest(slug) as { valid: boolean; errors: ValidationError[] }
 }

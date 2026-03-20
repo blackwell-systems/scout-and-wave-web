@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { X, CheckCircle2 } from 'lucide-react'
 import { getConfig, saveConfig } from '../api'
 import { SAWConfig, RepoEntry } from '../types'
+import { sawClient } from '../lib/apiClient'
 import DirPicker from './DirPicker'
 import ModelPicker from './ModelPicker'
 import { Button } from './ui/button'
@@ -63,12 +64,7 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
       return
     }
     try {
-      const res = await fetch('/api/config/validate-repo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path }),
-      })
-      const data = await res.json() as { valid: boolean; error?: string; error_code?: string }
+      const data = await sawClient.config.validateRepo(path)
       setRepoValidation(prev => ({
         ...prev,
         [index]: {
