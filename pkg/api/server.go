@@ -244,7 +244,6 @@ func New(cfg Config) *Server {
 	if sub != nil {
 		s.mux.Handle("/", http.FileServer(http.FS(sub)))
 	}
-	s.mux.Handle("/", http.FileServer(http.FS(sub)))
 
 	return s
 }
