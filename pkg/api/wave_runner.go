@@ -264,6 +264,14 @@ func runWaveLoop(
 			}
 			for _, gate := range finalizeResult.GateResults {
 				publish("quality_gate_result", gate)
+				if gate.FromCache {
+					publish("gate_cache_hit", map[string]interface{}{
+						"gate_type": gate.Type,
+						"command":   gate.Command,
+						"wave":      waveNum,
+						"sha":       gate.SkipReason,
+					})
+				}
 			}
 			// Wiring gap events (E35): run wiring validation post-finalize and
 			// emit per-gap and summary SSE events. Non-blocking — does not abort
@@ -481,6 +489,14 @@ func runFinalizeSteps(slug string, waveNum int, implPath, repoPath, integrationM
 		}
 		for _, gate := range gateResults {
 			publish("quality_gate_result", gate)
+			if gate.FromCache {
+				publish("gate_cache_hit", map[string]interface{}{
+					"gate_type": gate.Type,
+					"command":   gate.Command,
+					"wave":      waveNum,
+					"sha":       gate.SkipReason,
+				})
+			}
 			if gate.Required && !gate.Passed {
 				err := fmt.Errorf("required gate %q failed", gate.Type)
 				_ = tracker.Fail(slug, waveNum, StepRunGates, err)
