@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { IMPLDocResponse } from '../../types'
+import { Tooltip } from '../ui/tooltip'
 
 interface OverviewPanelProps {
   impl: IMPLDocResponse
@@ -27,14 +28,26 @@ export default function OverviewPanel({ impl }: OverviewPanelProps): JSX.Element
           onClick={() => rationale && setShowRationale(v => !v)}
           className={`font-medium ${verdictColor} ${rationale ? 'cursor-pointer hover:underline' : ''}`}
         >
-          {verdict}{rationale ? (showRationale ? ' ▾' : ' ▸') : ''}
+          {verdict === 'SUITABLE' ? (
+            <Tooltip content="Scout verified this work can be parallelized. All agents have disjoint file ownership (I1) and interface contracts are defined (I2).">
+              <span className="underline decoration-dotted">{verdict}</span>
+            </Tooltip>
+          ) : (
+            verdict
+          )}{rationale ? (showRationale ? ' ▾' : ' ▸') : ''}
         </button>
         <span>·</span>
-        <span>{fileCount} files</span>
+        <Tooltip content="Number of files that will be created or modified. Each file is owned by exactly one agent (I1 invariant).">
+          <span className="underline decoration-dotted">{fileCount} files</span>
+        </Tooltip>
         <span>·</span>
-        <span>{agentCount} agents</span>
+        <Tooltip content="Number of parallel agents. Each owns distinct files and implements interface contracts.">
+          <span className="underline decoration-dotted">{agentCount} agents</span>
+        </Tooltip>
         <span>·</span>
-        <span>{waveCount} {waveCount === 1 ? 'wave' : 'waves'}</span>
+        <Tooltip content="Sequential execution phases. Wave N+1 depends on Wave N's outputs. Agents within a wave run in parallel.">
+          <span className="underline decoration-dotted">{waveCount} {waveCount === 1 ? 'wave' : 'waves'}</span>
+        </Tooltip>
       </div>
       {showRationale && rationale && (
         <pre className="mt-3 p-3 text-xs leading-relaxed text-muted-foreground bg-muted/50 rounded-md border border-border overflow-x-auto whitespace-pre-wrap font-mono">
