@@ -7,6 +7,29 @@ interface AgentCardProps {
   agent: AgentStatus
 }
 
+const FAILURE_EXPLANATIONS: Record<string, { title: string; why: string; action: string }> = {
+  merge_conflict: {
+    title: "Merge Conflict",
+    why: "File ownership overlap detected (I1 violation)",
+    action: "Check File Ownership table - two agents modified the same file"
+  },
+  failed_gate: {
+    title: "Quality Gate Failed",
+    why: "Build, test, or lint check did not pass",
+    action: "Review gate output above. Fix errors and retry agent."
+  },
+  timeout: {
+    title: "Agent Timeout",
+    why: "Agent exceeded max execution time (10 minutes)",
+    action: "Check for infinite loops or blocking operations. Simplify task."
+  },
+  unknown: {
+    title: "Unknown Error",
+    why: "Unexpected failure",
+    action: "Check agent output for details"
+  }
+}
+
 const statusLabels: Record<string, string> = {
   pending: 'Pending',
   running: 'Running',
@@ -153,12 +176,32 @@ export default function AgentCard({ agent }: AgentCardProps) {
             </ul>
           )}
 
-          {agent.status === 'failed' && agent.message && (
-            <div className="mt-2 text-xs text-red-400 bg-red-500/10 rounded p-2 break-words">
-              {agent.failure_type && <div className="font-semibold mb-1">{agent.failure_type}</div>}
-              {agent.message}
-            </div>
-          )}
+          {agent.status === 'failed' && (agent.message || agent.failure_type) && (() => {
+            const explanation = FAILURE_EXPLANATIONS[agent.failure_type ?? ''] ?? FAILURE_EXPLANATIONS.unknown
+            return (
+              <div className="mt-2 text-xs text-red-400 bg-red-500/10 rounded p-2 break-words">
+                <div className="font-semibold mb-2">
+                  {explanation?.title ?? agent.failure_type ?? 'Error'}
+                </div>
+                <dl className="space-y-1.5">
+                  <div>
+                    <dt className="text-red-300/70 font-medium">Why did this fail?</dt>
+                    <dd className="text-red-400/90 ml-2">{explanation?.why}</dd>
+                  </div>
+                  <div>
+                    <dt className="text-red-300/70 font-medium">What can I do?</dt>
+                    <dd className="text-red-400/90 ml-2">{explanation?.action}</dd>
+                  </div>
+                  {agent.message && (
+                    <div>
+                      <dt className="text-red-300/70 font-medium">Details</dt>
+                      <dd className="text-red-400/90 ml-2">{agent.message}</dd>
+                    </div>
+                  )}
+                </dl>
+              </div>
+            )
+          })()}
         </div>
       )}
     </div>
