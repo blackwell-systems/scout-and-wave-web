@@ -42,27 +42,22 @@ interface ReviewScreenProps {
 
 type PanelKey = 'reactions' | 'pre-mortem' | 'wiring' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'worktrees' | 'context-viewer' | 'validation' | 'amend'
 
-const panels: Array<{ key: PanelKey; label: string }> = [
-  // Structure & Plan
-  { key: 'wave-structure', label: 'Wave Structure' },
-  { key: 'dependency-graph', label: 'Dependency Graph' },
-  { key: 'file-ownership', label: 'File Ownership' },
-  { key: 'pre-mortem', label: 'Pre-Mortem' },
-  { key: 'wiring', label: 'Wiring' },
-  { key: 'reactions', label: 'Reactions' },
-  // Implementation Details
-  { key: 'interface-contracts', label: 'Interface Contracts' },
-  { key: 'scaffolds', label: 'Scaffolds' },
-  { key: 'agent-prompts', label: 'Agent Prompts' },
-  // Quality
-  { key: 'quality-gates', label: 'Quality Gates' },
-  { key: 'known-issues', label: 'Known Issues' },
-  // Project Context
-  { key: 'context-viewer', label: 'Project Memory' },
-  // Post-Execution
-  { key: 'stub-report', label: 'Stub Report' },
-  { key: 'post-merge-checklist', label: 'Post-Merge' },
-  { key: 'amend', label: 'Amend' },
+const panels: Array<{ key: PanelKey; label: string; essential?: boolean }> = [
+  { key: 'wave-structure',       label: 'Wave Structure',      essential: true },
+  { key: 'file-ownership',       label: 'File Ownership',      essential: true },
+  { key: 'interface-contracts',  label: 'Interface Contracts', essential: true },
+  { key: 'dependency-graph',     label: 'Dependency Graph',    essential: false },
+  { key: 'pre-mortem',           label: 'Pre-Mortem',          essential: false },
+  { key: 'wiring',               label: 'Wiring',              essential: false },
+  { key: 'reactions',            label: 'Reactions',           essential: false },
+  { key: 'agent-prompts',        label: 'Agent Prompts',       essential: false },
+  { key: 'scaffolds',            label: 'Scaffolds',           essential: false },
+  { key: 'quality-gates',        label: 'Quality Gates',       essential: false },
+  { key: 'known-issues',         label: 'Known Issues',        essential: false },
+  { key: 'context-viewer',       label: 'Project Memory',      essential: false },
+  { key: 'stub-report',          label: 'Stub Report',         essential: false },
+  { key: 'post-merge-checklist', label: 'Post-Merge',          essential: false },
+  { key: 'amend',                label: 'Amend',               essential: false },
 ]
 
 export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
@@ -107,19 +102,9 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
   }
 
   const [activePanels, setActivePanels] = useState<PanelKey[]>(() => {
-    const defaults: PanelKey[] = []
-    defaults.push('wave-structure', 'dependency-graph', 'file-ownership')
-    if ((impl as any).scaffolds_detail?.length > 0) {
-      defaults.push('scaffolds')
-    }
-    if (impl.pre_mortem) {
-      defaults.push('pre-mortem')
-    }
-    if (impl.reactions) {
-      defaults.push('reactions')
-    }
-    return defaults
+    return ['wave-structure', 'file-ownership', 'interface-contracts']
   })
+  const [showAdvanced, setShowAdvanced] = useState(false)
   const [isStuck, setIsStuck] = useState(false)
   const sentinelRef = useRef<HTMLDivElement>(null)
 
@@ -357,7 +342,11 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
                 }`}
               >
                 <div className="flex flex-wrap gap-2">
-                  {panels.map(panel => (
+                  {/* Essential label */}
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 self-center pr-1">
+                    Essential
+                  </span>
+                  {panels.filter(p => p.essential).map(panel => (
                     <button
                       key={panel.key}
                       onClick={() => togglePanel(panel.key)}
@@ -370,6 +359,36 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
                       {panel.label}
                     </button>
                   ))}
+
+                  {/* Show all / Show less toggle */}
+                  <button
+                    onClick={() => setShowAdvanced(v => !v)}
+                    className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground border border-dashed border-border px-3 h-10 transition-colors"
+                  >
+                    {showAdvanced ? 'Show less' : 'Show all'}
+                  </button>
+
+                  {/* Advanced panels — only when showAdvanced */}
+                  {showAdvanced && (
+                    <>
+                      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60 self-center px-1">
+                        Advanced
+                      </span>
+                      {panels.filter(p => !p.essential).map(panel => (
+                        <button
+                          key={panel.key}
+                          onClick={() => togglePanel(panel.key)}
+                          className={`flex items-center justify-center text-sm font-medium px-4 h-10 transition-colors border ${
+                            activePanels.includes(panel.key)
+                              ? 'bg-primary/10 border-primary/30 text-primary hover:bg-primary/15'
+                              : 'border-border bg-background text-foreground hover:bg-muted'
+                          }`}
+                        >
+                          {panel.label}
+                        </button>
+                      ))}
+                    </>
+                  )}
                 </div>
               </div>
 
