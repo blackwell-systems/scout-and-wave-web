@@ -255,15 +255,28 @@ export default function ImplList(props: ImplListProps): JSX.Element {
       )}
       <div className="flex flex-col gap-1 p-2">
         {entries.length === 0 ? (
-          <div className="text-muted-foreground text-xs px-2">
-            <p>No plans yet.</p>
-            <button
-              onClick={() => onNewPlan?.()}
-              className="mt-1 text-primary hover:underline"
-            >
-              Create your first plan →
-            </button>
-          </div>
+          repos && repos.length === 0 ? (
+            <div className="text-muted-foreground text-xs px-2">
+              <p>No repositories configured.</p>
+              <button
+                onClick={() => onManageRepos?.()}
+                className="mt-1 text-primary hover:underline"
+              >
+                Open Settings
+              </button>
+              <span className="ml-1">to add one, then create your first plan.</span>
+            </div>
+          ) : (
+            <div className="text-muted-foreground text-xs px-2">
+              <p>No plans yet.</p>
+              <button
+                onClick={() => onNewPlan?.()}
+                className="mt-1 text-primary hover:underline"
+              >
+                Create your first plan →
+              </button>
+            </div>
+          )
         ) : repos && repos.length >= 2 ? (
           // Multi-repo: group by repo with collapsible sections
           <>
