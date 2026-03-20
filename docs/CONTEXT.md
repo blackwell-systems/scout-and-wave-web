@@ -1,5 +1,17 @@
 # Project Context
 
+## Build & Test Commands
+
+**Correct commands for IMPL docs in this repo:**
+```
+test_command: go test ./... && cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run
+lint_command: go vet ./...
+```
+
+- Frontend uses **Vitest**, not Jest. Do NOT use `npm test -- --watchAll=false` — `--watchAll` is a Jest-only flag that Vitest rejects with `CACError: Unknown option`.
+- Use `node_modules/.bin/vitest run` for a single-pass frontend test run.
+- Go tests: `go test ./...`
+
 ## Features Completed
 - **yaml-structured-sections-v3**: completed 2026-03-10, 0 waves, 0 agents
   - IMPL doc: ../scout-and-wave/docs/IMPL/IMPL-yaml-structured-sections-v3.yaml
