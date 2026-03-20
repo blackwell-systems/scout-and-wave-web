@@ -4,14 +4,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-web/pkg/service"
 )
 
 // implCache is an in-memory cache for parsed IMPL doc metadata used by
@@ -70,23 +69,19 @@ type implListEntry struct {
 }
 
 // handleListImpls serves GET /api/impl and returns a JSON array of impl entries.
-// Scans all repos from saw.config.json (or falls back to startup IMPLDir if no config).
-// Uses an in-memory cache to avoid re-parsing YAML on every request.
+// Delegates to service.ListImpls and computes isExecuting from live server state.
 func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
-	cached := s.implListCache.get()
-
-	// If cache is invalid, rebuild it
-	if cached == nil {
-		cached = s.rebuildImplCache()
+	deps := s.makeDeps()
+	entries, err := service.ListImpls(deps)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 
-	// Build result from cache, computing isExecuting live each time
-	result := make([]implListEntry, 0, len(cached))
-	for _, ce := range cached {
-		entry := ce.entry
-
-		// isExecuting must be computed live — never cached
-		slug := entry.Slug
+	// Build result, computing isExecuting live from server state
+	result := make([]implListEntry, 0, len(entries))
+	for _, e := range entries {
+		slug := e.Slug
 		_, waveActive := s.activeRuns.Load(slug)
 		_, merging := s.mergingRuns.Load(slug)
 		_, testing := s.testingRuns.Load(slug)
@@ -100,9 +95,18 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 				return true
 			})
 		}
-		entry.IsExecuting = isExecuting
 
-		result = append(result, entry)
+		result = append(result, implListEntry{
+			Slug:          e.Slug,
+			Repo:          e.Repo,
+			RepoPath:      e.RepoPath,
+			DocStatus:     e.DocStatus,
+			WaveCount:     e.WaveCount,
+			AgentCount:    e.AgentCount,
+			IsMultiRepo:   e.IsMultiRepo,
+			InvolvedRepos: e.InvolvedRepos,
+			IsExecuting:   isExecuting,
+		})
 	}
 
 	if len(result) == 0 {
@@ -112,193 +116,43 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
-// rebuildImplCache scans all repos and re-parses IMPL docs, using modTime
-// to skip re-parsing unchanged files. Returns the new cache entries.
-func (s *Server) rebuildImplCache() map[string]cachedImplEntry {
-	// Read saw.config.json to get the list of repos
-	configPath := filepath.Join(s.cfg.RepoPath, "saw.config.json")
-	configData, err := os.ReadFile(configPath)
-
-	var repos []RepoEntry
-	if err == nil {
-		var cfg SAWConfig
-		if json.Unmarshal(configData, &cfg) == nil && len(cfg.Repos) > 0 {
-			repos = cfg.Repos
-		}
-	}
-
-	// Fallback: if no config or no repos, use the startup IMPLDir
-	if len(repos) == 0 {
-		repos = []RepoEntry{{
-			Name: filepath.Base(s.cfg.RepoPath),
-			Path: s.cfg.RepoPath,
-		}}
-	}
-
-	// Get previous cache entries for modTime comparison
-	s.implListCache.mu.RLock()
-	oldEntries := s.implListCache.entries
-	s.implListCache.mu.RUnlock()
-
-	newEntries := make(map[string]cachedImplEntry)
-
-	// Scan each configured repo's docs/IMPL and docs/IMPL/complete directories
-	for _, repo := range repos {
-		implDirs := []string{
-			filepath.Join(repo.Path, "docs", "IMPL"),
-			filepath.Join(repo.Path, "docs", "IMPL", "complete"),
-		}
-
-		for _, implDir := range implDirs {
-			dirEntries, err := os.ReadDir(implDir)
-			if err != nil {
-				continue // skip if directory doesn't exist
-			}
-
-			for _, e := range dirEntries {
-				name := e.Name()
-				if !strings.HasPrefix(name, "IMPL-") || !strings.HasSuffix(name, ".yaml") {
-					continue
-				}
-
-				fullPath := filepath.Join(implDir, name)
-				info, err := os.Stat(fullPath)
-				if err != nil {
-					continue
-				}
-				modTime := info.ModTime()
-
-				// If we have a cached entry with the same modTime, reuse it
-				if old, ok := oldEntries[fullPath]; ok && old.modTime.Equal(modTime) {
-					newEntries[fullPath] = old
-					continue
-				}
-
-				// Parse the file
-				slug := strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".yaml")
-				status := "active"
-				if strings.HasSuffix(implDir, "complete") {
-					status = "complete"
-				}
-				var waveCount, agentCount int
-				var isMultiRepo bool
-				var involvedRepos []string
-
-				if m, err := protocol.Load(fullPath); err == nil {
-					for _, w := range m.Waves {
-						waveCount++
-						agentCount += len(w.Agents)
-					}
-					repoSet := make(map[string]struct{})
-					hasEmptyRepo := false
-					for _, fo := range m.FileOwnership {
-						if fo.Repo != "" && fo.Repo != "system" {
-							repoSet[fo.Repo] = struct{}{}
-						} else if fo.Repo == "" {
-							hasEmptyRepo = true
-						}
-					}
-					if hasEmptyRepo && len(repoSet) > 0 {
-						repoSet[repo.Name] = struct{}{}
-					}
-					isMultiRepo = len(repoSet) >= 2
-					if isMultiRepo {
-						for repoName := range repoSet {
-							involvedRepos = append(involvedRepos, repoName)
-						}
-						sort.Strings(involvedRepos)
-					}
-				}
-
-				repoName := repo.Name
-				if repoName == "" {
-					repoName = filepath.Base(repo.Path)
-				}
-
-				newEntries[fullPath] = cachedImplEntry{
-					entry: implListEntry{
-						Slug:          slug,
-						Repo:          repoName,
-						RepoPath:      repo.Path,
-						DocStatus:     status,
-						WaveCount:     waveCount,
-						AgentCount:    agentCount,
-						IsMultiRepo:   isMultiRepo,
-						InvolvedRepos: involvedRepos,
-						// IsExecuting is computed live in handleListImpls, not cached
-					},
-					modTime: modTime,
-				}
-			}
-		}
-	}
-
-	s.implListCache.set(newEntries)
-	return newEntries
-}
-
 // InvalidateImplCache marks the IMPL list cache as stale so it is rebuilt
 // on the next request. Safe for concurrent use.
 func (s *Server) InvalidateImplCache() {
 	s.implListCache.Invalidate()
 }
 
-// findImplPath searches all configured repos for an IMPL doc by slug.
+// findImplPath is a helper that searches all configured repos for an IMPL doc by slug.
 // Returns the absolute file path and matched repo, or empty string if not found.
-func (s *Server) findImplPath(slug string) (string, RepoEntry) {
-	configPath := filepath.Join(s.cfg.RepoPath, "saw.config.json")
-	configData, err := os.ReadFile(configPath)
-
-	var repos []RepoEntry
-	if err == nil {
-		var cfg SAWConfig
-		if json.Unmarshal(configData, &cfg) == nil && len(cfg.Repos) > 0 {
-			repos = cfg.Repos
-		}
+// This is kept in the API layer for backward compatibility with other handlers.
+func (s *Server) findImplPath(slug string) (string, service.RepoEntry) {
+	deps := s.makeDeps()
+	path, repo, err := service.FindImplPath(deps, slug)
+	if err != nil {
+		return "", service.RepoEntry{}
 	}
-	if len(repos) == 0 {
-		repos = []RepoEntry{{
-			Name: filepath.Base(s.cfg.RepoPath),
-			Path: s.cfg.RepoPath,
-		}}
-	}
-
-	for _, repo := range repos {
-		for _, sub := range []string{"docs/IMPL", "docs/IMPL/complete"} {
-			candidate := filepath.Join(repo.Path, sub, "IMPL-"+slug+".yaml")
-			if _, err := os.Stat(candidate); err == nil {
-				return candidate, repo
-			}
-		}
-	}
-	return "", RepoEntry{}
+	return path, repo
 }
 
 // handleGetImpl serves GET /api/impl/{slug}.
-// Searches all configured repos for the IMPL doc. Returns IMPLDocResponse as JSON.
-// 404 if the file does not exist in any repo; 500 on parse error.
+// Delegates to service.GetImpl and returns IMPLDocResponse as JSON.
 func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 
-	implPath, matchedRepo := s.findImplPath(slug)
-	if implPath == "" {
-		http.Error(w, "IMPL doc not found", http.StatusNotFound)
+	deps := s.makeDeps()
+	manifest, repoName, repo, err := service.GetImpl(deps, slug)
+	if err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 
-	// Load YAML manifest via protocol.Load
-	manifest, err := protocol.Load(implPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			http.Error(w, "IMPL doc not found", http.StatusNotFound)
-			return
-		}
-		http.Error(w, "failed to load IMPL manifest", http.StatusInternalServerError)
-		return
-	}
 	resp := implDocResponseFromManifest(slug, manifest)
-	resp.Repo = matchedRepo.Name
-	resp.RepoPath = matchedRepo.Path
+	resp.Repo = repoName
+	resp.RepoPath = repo.Path
 
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
@@ -308,28 +162,42 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleApprove serves POST /api/impl/{slug}/approve.
-// Publishes a server-sent event to the slug's SSE broker and returns 202.
+// Delegates to service.ApproveImpl and returns 202.
 func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
-	s.broker.Publish(slug, SSEEvent{Event: "plan_approved", Data: map[string]string{"slug": slug}})
+
+	deps := s.makeDeps()
+	if err := service.ApproveImpl(deps, slug); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	s.globalBroker.broadcast("impl_list_updated") // status change visible in sidebar
 
 	// Auto-trigger critic gate if threshold is met (E37).
 	// Runs async so the 202 response returns immediately.
-	if implPath, _ := s.findImplPath(slug); implPath != "" {
-		if manifest, err := protocol.Load(implPath); err == nil && criticThresholdMet(manifest) {
+	implPath, repo, err := service.FindImplPath(deps, slug)
+	if err == nil {
+		if manifest, loadErr := protocol.Load(implPath); loadErr == nil && criticThresholdMet(manifest) {
 			go s.runCriticAsync(slug, implPath)
 		}
 	}
+	_ = repo // unused here, but returned by FindImplPath
 
 	w.WriteHeader(http.StatusAccepted)
 }
 
 // handleReject serves POST /api/impl/{slug}/reject.
-// Publishes a server-sent event to the slug's SSE broker and returns 202.
+// Delegates to service.RejectImpl and returns 202.
 func (s *Server) handleReject(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
-	s.broker.Publish(slug, SSEEvent{Event: "plan_rejected", Data: map[string]string{"slug": slug}})
+
+	deps := s.makeDeps()
+	if err := service.RejectImpl(deps, slug); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+
 	s.globalBroker.broadcast("impl_list_updated") // status change visible in sidebar
 	w.WriteHeader(http.StatusAccepted)
 }
@@ -697,7 +565,7 @@ func pluralS(n int) string {
 }
 
 // handleDeleteImpl handles DELETE /api/impl/{slug}.
-// Removes the IMPL doc file from disk (searches both active and complete directories).
+// Delegates to service.DeleteImpl and returns 204 on success.
 func (s *Server) handleDeleteImpl(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	if slug == "" {
@@ -705,37 +573,22 @@ func (s *Server) handleDeleteImpl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Search both active and complete directories
-	dirs := []string{
-		s.cfg.IMPLDir,
-		filepath.Join(s.cfg.IMPLDir, "complete"),
-	}
-
-	var implPath string
-	for _, dir := range dirs {
-		yamlPath := filepath.Join(dir, "IMPL-"+slug+".yaml")
-
-		if _, err := os.Stat(yamlPath); err == nil {
-			implPath = yamlPath
-			break
+	deps := s.makeDeps()
+	if err := service.DeleteImpl(deps, slug); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
-	}
-
-	if implPath == "" {
-		http.Error(w, "not found", http.StatusNotFound)
 		return
 	}
 
-	if err := os.Remove(implPath); err != nil {
-		http.Error(w, "failed to delete", http.StatusInternalServerError)
-		return
-	}
 	s.InvalidateImplCache()
 	w.WriteHeader(http.StatusNoContent)
 }
 
 // handleArchiveImpl handles POST /api/impl/{slug}/archive.
-// Moves a completed IMPL doc from docs/IMPL/ to docs/IMPL/complete/.
+// Delegates to service.ArchiveImpl and returns 200 on success.
 func (s *Server) handleArchiveImpl(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	if slug == "" {
@@ -743,31 +596,13 @@ func (s *Server) handleArchiveImpl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find the IMPL in the active directory
-	activeDir := s.cfg.IMPLDir
-	completeDir := filepath.Join(s.cfg.IMPLDir, "complete")
-
-	var sourcePath string
-	candidate := filepath.Join(activeDir, "IMPL-"+slug+".yaml")
-	if _, err := os.Stat(candidate); err == nil {
-		sourcePath = candidate
-	}
-
-	if sourcePath == "" {
-		http.Error(w, "IMPL not found in active directory", http.StatusNotFound)
-		return
-	}
-
-	// Ensure complete directory exists
-	if err := os.MkdirAll(completeDir, 0755); err != nil {
-		http.Error(w, "failed to create complete directory", http.StatusInternalServerError)
-		return
-	}
-
-	// Move file
-	destPath := filepath.Join(completeDir, filepath.Base(sourcePath))
-	if err := os.Rename(sourcePath, destPath); err != nil {
-		http.Error(w, "failed to archive IMPL", http.StatusInternalServerError)
+	deps := s.makeDeps()
+	if err := service.ArchiveImpl(deps, slug); err != nil {
+		if strings.Contains(err.Error(), "not found") {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
 	}
 
