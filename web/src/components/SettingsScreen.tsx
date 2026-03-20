@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react'
-import { X } from 'lucide-react'
+import { useState, useEffect, useCallback } from 'react'
+import { X, CheckCircle2 } from 'lucide-react'
 import { getConfig, saveConfig } from '../api'
 import { SAWConfig, RepoEntry } from '../types'
 import DirPicker from './DirPicker'
@@ -8,6 +8,11 @@ import { Button } from './ui/button'
 import NotificationSettings from './NotificationSettings'
 import { useNotifications } from '../hooks/useNotifications'
 
+interface RepoValidationResult {
+  valid: boolean
+  error: string
+  errorCode: string
+}
 
 interface SettingsScreenProps {
   onClose: () => void
@@ -29,6 +34,7 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
   const [error, setError] = useState<string | null>(null)
   const [savedMsg, setSavedMsg] = useState(false)
   const [repoErrors, setRepoErrors] = useState<string | null>(null)
+  const [repoValidation, setRepoValidation] = useState<Record<number, RepoValidationResult | null>>({})
 
   useEffect(() => {
     getConfig()
@@ -50,6 +56,33 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
       })
   }, [])
 
+  const validateRepoPath = useCallback(async (index: number, path: string) => {
+    if (!path.trim()) {
+      // Don't validate empty paths — user may not have typed yet.
+      setRepoValidation(prev => ({ ...prev, [index]: null }))
+      return
+    }
+    try {
+      const res = await fetch('/api/config/validate-repo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path }),
+      })
+      const data = await res.json() as { valid: boolean; error?: string; error_code?: string }
+      setRepoValidation(prev => ({
+        ...prev,
+        [index]: {
+          valid: data.valid,
+          error: data.error ?? '',
+          errorCode: data.error_code ?? '',
+        },
+      }))
+    } catch {
+      // Network failure — clear validation, don't block save
+      setRepoValidation(prev => ({ ...prev, [index]: null }))
+    }
+  }, [])
+
   function updateRepo(index: number, field: keyof RepoEntry, value: string) {
     setConfig(c => {
       const repos = c.repos.map((r, i) =>
@@ -58,6 +91,10 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
       return { ...c, repos }
     })
     setRepoErrors(null)
+    // Clear validation result when path changes so stale status isn't shown.
+    if (field === 'path') {
+      setRepoValidation(prev => ({ ...prev, [index]: null }))
+    }
   }
 
   function addRepo() {
@@ -67,13 +104,32 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
   function removeRepo(index: number) {
     setConfig(c => ({ ...c, repos: c.repos.filter((_, i) => i !== index) }))
     setRepoErrors(null)
+    setRepoValidation(prev => {
+      const next: Record<number, RepoValidationResult | null> = {}
+      Object.entries(prev).forEach(([k, v]) => {
+        const ki = Number(k)
+        if (ki < index) next[ki] = v
+        else if (ki > index) next[ki - 1] = v
+        // ki === index is dropped
+      })
+      return next
+    })
   }
+
+  // Returns true if any repo has been validated and found invalid.
+  const hasInvalidRepo = Object.values(repoValidation).some(v => v !== null && !v.valid)
 
   async function handleSave() {
     // Validate: every repo must have a non-empty path
     const hasEmptyPath = config.repos.some(r => r.path.trim() === '')
     if (hasEmptyPath) {
       setRepoErrors('All repositories must have a path set.')
+      return
+    }
+
+    // Block save if any repo has a known invalid validation result.
+    if (hasInvalidRepo) {
+      setRepoErrors('Please fix invalid repository paths before saving.')
       return
     }
 
@@ -137,31 +193,57 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
           <p className="text-xs text-muted-foreground">No repositories configured. Add one below.</p>
         )}
 
-        {config.repos.map((repo, index) => (
-          <div key={index} className="flex items-start gap-2">
-            <input
-              type="text"
-              value={repo.name}
-              onChange={e => updateRepo(index, 'name', e.target.value)}
-              placeholder="name"
-              className="w-24 text-xs font-mono px-2 py-1.5 rounded-md border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-            />
-            <div className="flex-1">
-              <DirPicker
-                value={repo.path}
-                onChange={path => updateRepo(index, 'path', path)}
-              />
+        {config.repos.map((repo, index) => {
+          const validation = repoValidation[index] ?? null
+          return (
+            <div key={index} className="flex flex-col gap-1">
+              <div className="flex items-start gap-2">
+                <input
+                  type="text"
+                  value={repo.name}
+                  onChange={e => updateRepo(index, 'name', e.target.value)}
+                  placeholder="name"
+                  className="w-24 text-xs font-mono px-2 py-1.5 rounded-md border border-border bg-background text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+                <div
+                  className="flex-1 relative"
+                  onBlur={e => {
+                    // Trigger validation when focus leaves the DirPicker container.
+                    if (!e.currentTarget.contains(e.relatedTarget as Node | null)) {
+                      validateRepoPath(index, repo.path)
+                    }
+                  }}
+                >
+                  <DirPicker
+                    value={repo.path}
+                    onChange={path => updateRepo(index, 'path', path)}
+                  />
+                  {validation?.valid && (
+                    <span className="absolute right-8 top-1/2 -translate-y-1/2 text-green-500 pointer-events-none">
+                      <CheckCircle2 size={14} />
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeRepo(index)}
+                  className="text-xs text-muted-foreground hover:text-destructive mt-1.5 px-1"
+                  title="Remove repository"
+                >
+                  &times;
+                </button>
+              </div>
+              {validation && !validation.valid && (
+                <p className="text-xs text-destructive ml-26 pl-1">
+                  {validation.errorCode === 'not_found' && 'Path does not exist'}
+                  {validation.errorCode === 'not_git' && 'Not a git repository (run `git init` first)'}
+                  {validation.errorCode === 'no_commits' && "Repository has no commits (run `git commit --allow-empty -m 'init'` first)"}
+                  {!['not_found', 'not_git', 'no_commits'].includes(validation.errorCode) && validation.error}
+                </p>
+              )}
             </div>
-            <button
-              type="button"
-              onClick={() => removeRepo(index)}
-              className="text-xs text-muted-foreground hover:text-destructive mt-1.5 px-1"
-              title="Remove repository"
-            >
-              &times;
-            </button>
-          </div>
-        ))}
+          )
+        })}
 
         {repoErrors && (
           <p className="text-xs text-destructive">{repoErrors}</p>
@@ -326,7 +408,7 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
         <Button onClick={onClose} variant="outline" disabled={saving}>
           Cancel
         </Button>
-        <Button onClick={handleSave} disabled={saving}>
+        <Button onClick={handleSave} disabled={saving || hasInvalidRepo}>
           {saving ? 'Saving...' : 'Save'}
         </Button>
       </div>

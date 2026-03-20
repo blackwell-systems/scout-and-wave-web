@@ -150,6 +150,10 @@ func New(cfg Config) *Server {
 
 	s.mux.HandleFunc("GET /api/config", s.handleGetConfig)
 	s.mux.HandleFunc("POST /api/config", s.handleSaveConfig)
+	s.mux.HandleFunc("POST /api/config/validate-repo", s.handleValidateRepoPath)
+
+	// Bootstrap — greenfield project initialization
+	s.mux.HandleFunc("POST /api/bootstrap/run", s.handleBootstrapRun)
 
 	// Notification preferences
 	s.mux.HandleFunc("GET /api/notifications/preferences", s.handleGetNotificationPrefs)
