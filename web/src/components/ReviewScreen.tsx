@@ -138,7 +138,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
     fetchDiskWaveStatus(slug)
       .then(setDiskStatus)
       .catch(() => setDiskStatus(null))
-  }, [slug])
+  }, [slug, refreshTick])
   const hasWaveWork = (diskStatus?.agents?.length ?? 0) > 0
 
   // Fire onRefreshImpl when a new wave merges (detected via disk status waves_merged count).
