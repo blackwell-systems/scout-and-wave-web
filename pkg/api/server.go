@@ -45,6 +45,7 @@ type Server struct {
 	commitCounts     sync.Map        // "slug/wave/agent" -> int; tracks git commit counts per agent
 	filesOwnedCache  sync.Map        // "slug/wave/agent" -> []string; caches files owned per agent
 	agentSnapshots   sync.Map        // slug -> *agentSnapshot; latest agent lifecycle event per agent for SSE replay
+	implListCache    *implCache       // in-memory cache for handleListImpls metadata
 }
 
 // getConfiguredRepos reads saw.config.json and returns the list of configured
@@ -81,6 +82,7 @@ func New(cfg Config) *Server {
 		stages:          newStageManager(cfg.IMPLDir),
 		pipelineTracker: newPipelineTracker(cfg.IMPLDir),
 		progressTracker: NewProgressTracker(),
+		implListCache:   &implCache{entries: make(map[string]cachedImplEntry)},
 	}
 
 	// Populate fallback config so runWaveLoop can use it for cross-repo IMPLs
