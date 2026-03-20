@@ -1,20 +1,27 @@
+import React, { Suspense } from 'react'
 import { IMPLDocResponse } from '../../types'
 import { ExecutionSyncState } from '../../hooks/useExecutionSync'
-import WaveStructurePanel from './WaveStructurePanel'
-import DependencyGraphPanel from './DependencyGraphPanel'
 import FileOwnershipPanel from './FileOwnershipPanel'
 import InterfaceContractsPanel from './InterfaceContractsPanel'
-import AgentContextPanel from './AgentContextPanel'
-import ScaffoldsPanel from './ScaffoldsPanel'
-import PreMortemPanel from './PreMortemPanel'
-import WiringPanel from './WiringPanel'
-import ReactionsPanel from './ReactionsPanel'
-import KnownIssuesPanel from './KnownIssuesPanel'
-import StubReportPanel from './StubReportPanel'
-import PostMergeChecklistPanel from './PostMergeChecklistPanel'
-import QualityGatesPanel from './QualityGatesPanel'
-import ContextViewerPanel from './ContextViewerPanel'
-import AmendPanel from '../AmendPanel'
+
+// Lazy-loaded panels (non-essential, not shown by default)
+const LazyWaveStructurePanel = React.lazy(() => import('./WaveStructurePanel'))
+const LazyDependencyGraphPanel = React.lazy(() => import('./DependencyGraphPanel'))
+const LazyAgentContextPanel = React.lazy(() => import('./AgentContextPanel'))
+const LazyScaffoldsPanel = React.lazy(() => import('./ScaffoldsPanel'))
+const LazyPreMortemPanel = React.lazy(() => import('./PreMortemPanel'))
+const LazyWiringPanel = React.lazy(() => import('./WiringPanel'))
+const LazyReactionsPanel = React.lazy(() => import('./ReactionsPanel'))
+const LazyKnownIssuesPanel = React.lazy(() => import('./KnownIssuesPanel'))
+const LazyStubReportPanel = React.lazy(() => import('./StubReportPanel'))
+const LazyPostMergeChecklistPanel = React.lazy(() => import('./PostMergeChecklistPanel'))
+const LazyQualityGatesPanel = React.lazy(() => import('./QualityGatesPanel'))
+const LazyContextViewerPanel = React.lazy(() => import('./ContextViewerPanel'))
+const LazyAmendPanel = React.lazy(() => import('../AmendPanel'))
+
+function PanelFallback() {
+  return <div className="animate-pulse h-32 bg-muted rounded" />
+}
 
 type PanelKey = 'reactions' | 'pre-mortem' | 'wiring' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'worktrees' | 'context-viewer' | 'validation' | 'amend'
 
@@ -40,8 +47,16 @@ export function ReviewLayout(props: ReviewLayoutProps): JSX.Element {
             ? 'grid-cols-1 md:grid-cols-2'
             : 'grid-cols-1'
         }`}>
-          {activePanels.includes('wave-structure') && <WaveStructurePanel impl={impl} {...(executionState ? { executionState } : {})} />}
-          {activePanels.includes('dependency-graph') && <DependencyGraphPanel dependencyGraphText={(impl as any).dependency_graph_text} {...(executionState ? { executionState } : {})} />}
+          {activePanels.includes('wave-structure') && (
+            <Suspense fallback={<PanelFallback />}>
+              <LazyWaveStructurePanel impl={impl} {...(executionState ? { executionState } : {})} />
+            </Suspense>
+          )}
+          {activePanels.includes('dependency-graph') && (
+            <Suspense fallback={<PanelFallback />}>
+              <LazyDependencyGraphPanel dependencyGraphText={(impl as any).dependency_graph_text} {...(executionState ? { executionState } : {})} />
+            </Suspense>
+          )}
         </div>
       )}
 
@@ -58,59 +73,89 @@ export function ReviewLayout(props: ReviewLayoutProps): JSX.Element {
 
       {/* Agent Prompts — full width */}
       {activePanels.includes('agent-prompts') && (
-        <div className="panel-animate"><AgentContextPanel impl={impl} slug={slug} /></div>
+        <Suspense fallback={<PanelFallback />}>
+          <div className="panel-animate"><LazyAgentContextPanel impl={impl} slug={slug} /></div>
+        </Suspense>
       )}
 
       {/* Scaffolds — full width, above pre-mortem */}
       {activePanels.includes('scaffolds') && (
-        <div className="panel-animate"><ScaffoldsPanel scaffoldsDetail={(impl as any).scaffolds_detail} /></div>
+        <Suspense fallback={<PanelFallback />}>
+          <div className="panel-animate"><LazyScaffoldsPanel scaffoldsDetail={(impl as any).scaffolds_detail} /></div>
+        </Suspense>
       )}
 
       {/* Pre-Mortem — full width */}
-      {activePanels.includes('pre-mortem') && <div className="panel-animate"><PreMortemPanel preMortem={impl.pre_mortem} /></div>}
+      {activePanels.includes('pre-mortem') && (
+        <Suspense fallback={<PanelFallback />}>
+          <div className="panel-animate"><LazyPreMortemPanel preMortem={impl.pre_mortem} /></div>
+        </Suspense>
+      )}
 
       {/* Wiring Declarations — full width */}
       {activePanels.includes('wiring') && (
-        <div className="panel-animate">
-          <WiringPanel wiring={impl.wiring} />
-        </div>
+        <Suspense fallback={<PanelFallback />}>
+          <div className="panel-animate">
+            <LazyWiringPanel wiring={impl.wiring} />
+          </div>
+        </Suspense>
       )}
 
       {/* Reactions Config — full width */}
       {activePanels.includes('reactions') && (
-        <div className="panel-animate">
-          <ReactionsPanel reactions={impl.reactions} />
-        </div>
+        <Suspense fallback={<PanelFallback />}>
+          <div className="panel-animate">
+            <LazyReactionsPanel reactions={impl.reactions} />
+          </div>
+        </Suspense>
       )}
 
       {/* Known Issues — full width */}
-      {activePanels.includes('known-issues') && <div className="panel-animate"><KnownIssuesPanel knownIssues={(impl as any).known_issues} /></div>}
+      {activePanels.includes('known-issues') && (
+        <Suspense fallback={<PanelFallback />}>
+          <div className="panel-animate"><LazyKnownIssuesPanel knownIssues={(impl as any).known_issues} /></div>
+        </Suspense>
+      )}
 
       {/* Stub Report — full width */}
-      {activePanels.includes('stub-report') && <div className="panel-animate"><StubReportPanel stubReportText={impl.stub_report_text} /></div>}
+      {activePanels.includes('stub-report') && (
+        <Suspense fallback={<PanelFallback />}>
+          <div className="panel-animate"><LazyStubReportPanel stubReportText={impl.stub_report_text} /></div>
+        </Suspense>
+      )}
 
       {/* Post-Merge Checklist — full width */}
-      {activePanels.includes('post-merge-checklist') && <div className="panel-animate"><PostMergeChecklistPanel checklistText={(impl as any).post_merge_checklist_text} /></div>}
+      {activePanels.includes('post-merge-checklist') && (
+        <Suspense fallback={<PanelFallback />}>
+          <div className="panel-animate"><LazyPostMergeChecklistPanel checklistText={(impl as any).post_merge_checklist_text} /></div>
+        </Suspense>
+      )}
 
       {/* Amend — full width */}
       {activePanels.includes('amend') && (
-        <div className="panel-animate">
-          <AmendPanel
-            slug={slug}
-            waves={impl.waves}
-            onAmendComplete={onAmendComplete}
-          />
-        </div>
+        <Suspense fallback={<PanelFallback />}>
+          <div className="panel-animate">
+            <LazyAmendPanel
+              slug={slug}
+              waves={impl.waves}
+              onAmendComplete={onAmendComplete}
+            />
+          </div>
+        </Suspense>
       )}
 
       {/* Quality Gates — full width */}
       {activePanels.includes('quality-gates') && (
-        <div className="panel-animate"><QualityGatesPanel gatesText={(impl as any).quality_gates_text ?? ''} /></div>
+        <Suspense fallback={<PanelFallback />}>
+          <div className="panel-animate"><LazyQualityGatesPanel gatesText={(impl as any).quality_gates_text ?? ''} /></div>
+        </Suspense>
       )}
 
       {/* Project Memory (CONTEXT.md) — full width */}
       {activePanels.includes('context-viewer') && (
-        <div className="panel-animate"><ContextViewerPanel /></div>
+        <Suspense fallback={<PanelFallback />}>
+          <div className="panel-animate"><LazyContextViewerPanel /></div>
+        </Suspense>
       )}
     </div>
   )

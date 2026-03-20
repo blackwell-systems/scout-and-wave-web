@@ -10,7 +10,24 @@ export default defineConfig({
       '@': path.resolve(__dirname, './src'),
     },
   },
-  build: { outDir: 'dist', emptyOutDir: true },
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          'codemirror': [
+            '@uiw/react-codemirror',
+            '@codemirror/lang-go',
+            '@codemirror/lang-javascript',
+            '@codemirror/lang-python',
+            '@codemirror/theme-one-dark',
+          ],
+          'markdown': ['react-markdown'],
+        },
+      },
+    },
+  },
   test: {
     globals: true,
     environment: 'jsdom',
