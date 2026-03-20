@@ -53,3 +53,5 @@ lint_command: go vet ./...
   - IMPL doc: ../scout-and-wave/docs/IMPL/complete/IMPL-critic-agent.yaml
 - **greenfield-ux**: completed 2026-03-19, 1 waves, 7 agents
   - IMPL doc: docs/IMPL/complete/IMPL-greenfield-ux.yaml
+- **new-user-experience**: completed 2026-03-19, 1 waves, 5 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-new-user-experience.yaml

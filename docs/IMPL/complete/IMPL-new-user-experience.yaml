@@ -1,0 +1,767 @@
+completion_date: "2026-03-19"
+title: New User Experience Improvements
+feature_slug: new-user-experience
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability questions resolve cleanly.
+
+    1. File decomposition: Changes span 8+ distinct files across well-separated
+       components. Each issue from the FTUE analysis maps to a different component
+       with minimal overlap. Disjoint ownership is achievable with 7 agents.
+
+    2. No investigation-first items: The FTUE analysis already identified root
+       causes and specific file locations. No unknown crash or race condition.
+
+    3. Interface discoverability: All cross-agent interfaces are simple prop
+       additions to existing components. No novel shared types required — existing
+       IMPLDocResponse, WaveBoardProps, and RepoEntry are sufficient.
+
+    4. Pre-implementation status check: All 12 items are confirmed TODO. The
+       empty-state in App.tsx shows a document icon with no onboarding copy
+       (line 482-492). ScoutLauncher has no mode description (line 214-231).
+       WaveBoard completion banner is missing "Scout Next Feature" in compact
+       mode (line 370-384). ActionButtons has no confirmation step (line 22-33).
+       RevisePanel has no instructions (line 143-152). Programs empty state uses
+       CLI copy (App.tsx line 449-451). All confirmed unimplemented.
+
+    5. Parallelization value: Frontend Vitest + Go test suite adds ~10-20s per
+       cycle. 7 agents averaging 2-3 files each gives clear parallelization
+       value. All agents are fully independent (single wave), maximizing speedup.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~7 agents x ~8 min avg = ~56 min, running in parallel ~10 min
+    - Merge & verification: ~5 min
+    Total SAW time: ~25 min
+
+    Sequential baseline: ~7 agents x 12 min = ~84 min
+    Time savings: ~59 min (70% faster)
+
+    Recommendation: Clear speedup. Single-wave fully parallel execution.
+test_command: go test ./... && cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run
+lint_command: go vet ./...
+file_ownership:
+    - file: web/src/App.tsx
+      agent: A
+      wave: 1
+      action: modify
+    - file: web/src/components/ImplList.tsx
+      agent: A
+      wave: 1
+      action: modify
+    - file: web/src/components/ScoutLauncher.tsx
+      agent: B
+      wave: 1
+      action: modify
+    - file: web/src/components/ReviewScreen.tsx
+      agent: C
+      wave: 1
+      action: modify
+    - file: web/src/components/ActionButtons.tsx
+      agent: C
+      wave: 1
+      action: modify
+    - file: web/src/components/RevisePanel.tsx
+      agent: D
+      wave: 1
+      action: modify
+    - file: web/src/components/WaveBoard.tsx
+      agent: E
+      wave: 1
+      action: modify
+    - file: web/src/components/LiveRail.tsx
+      agent: E
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: WelcomeCard (new inline component in App.tsx)
+      description: Renders when repos.length === 0 and no plan is selected. Explains the tool and provides an Open Settings CTA.
+      definition: |
+        // Rendered inside the center-panel empty state branch in App.tsx
+        // Condition: !loading && impl === null && !error && repos.length === 0
+        function WelcomeCard({ onOpenSettings }: { onOpenSettings: () => void }): JSX.Element
+      location: web/src/App.tsx
+    - name: ApproveConfirmPanel (new inline component in ReviewScreen.tsx)
+      description: Shown before first approval. Displays agent/wave/file count and requires explicit confirmation. Replaces direct onApprove() call.
+      definition: |
+        // Inline component rendered conditionally in ReviewScreen, replacing the
+        // worktreeWarning dialog flow for first-time approval
+        // Props derived from impl: impl.waves, impl.file_ownership
+        interface ApproveConfirmPanelProps {
+          impl: IMPLDocResponse
+          onConfirm: () => void
+          onCancel: () => void
+        }
+      location: web/src/components/ReviewScreen.tsx
+    - name: ScoutSummaryBanner (augmented completion banner in ScoutLauncher.tsx)
+      description: After scout_complete fires, shows "N agents, N waves — SUITABLE" alongside the existing Plan ready banner.
+      definition: |
+        // Replaces the simple green banner at ScoutLauncher lines 406-416
+        // Parses completedSlug data; summary fetched from /api/impl/{slug}
+        // Displayed when completedSlug !== null
+        interface ScoutSummaryBannerProps {
+          slug: string
+          onReview: () => void
+        }
+      location: web/src/components/ScoutLauncher.tsx
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Agent A — Empty-State Onboarding & Settings CTA
+
+            ### Files
+            - `web/src/App.tsx`
+            - `web/src/components/ImplList.tsx`
+
+            ### What to implement
+
+            **1.1 — Welcome card when no repos configured (App.tsx)**
+
+            In App.tsx, find the center-panel empty state (lines 481-492):
+            ```tsx
+            {!loading && impl === null && !error && (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
+                <svg ...>...</svg>
+                <div>
+                  <p className="text-sm font-medium text-foreground">No plan selected</p>
+                  <p className="text-xs text-muted-foreground mt-1">Select a plan from the sidebar or create a new one with New Plan</p>
+                </div>
+              </div>
+            )}
+            ```
+
+            Replace this with a conditional: when `repos.length === 0`, render a
+            WelcomeCard; when `repos.length > 0`, render the existing "No plan selected"
+            state (unchanged).
+
+            The WelcomeCard should be defined as an inline component (or small
+            function) within App.tsx. It must:
+            - Explain Scout-and-Wave in 2-3 sentences: "Scout-and-Wave uses AI agents
+              to plan and implement features in parallel. A Scout agent reads your
+              codebase and produces an implementation plan (IMPL). You review the plan,
+              approve it, and parallel Wave agents implement it in isolated git branches."
+            - Show a clear first step: "First, add a repository in Settings."
+            - Include an "Open Settings" button that calls `setShowSettings(true)`
+            - Include a concrete example: e.g. "Add a dark mode toggle to the settings screen"
+            - Use clean card styling consistent with the app (border border-border, rounded-lg, bg-card, p-8)
+
+            **1.2 — No-repo inline prompt in ImplList.tsx**
+
+            In ImplList.tsx, the current empty state (lines 257-265) shows:
+            ```tsx
+            <p>No plans yet.</p>
+            <button onClick={() => onNewPlan?.()}>Create your first plan →</button>
+            ```
+
+            When `repos && repos.length === 0`, instead show:
+            ```
+            No repositories configured.
+            [Open Settings] to add one, then create your first plan.
+            ```
+
+            The "Open Settings" link/button should call `onManageRepos?.()` (which
+            opens Settings in App.tsx). This requires no new props — `onManageRepos`
+            already exists on ImplListProps.
+
+            When `repos.length > 0` but `entries.length === 0`, keep the existing
+            "No plans yet. / Create your first plan →" copy (unchanged).
+
+            **3.7 — Programs empty state (App.tsx)**
+
+            In App.tsx, find the Programs empty state (lines 448-451):
+            ```tsx
+            <p className="text-sm font-medium text-foreground">No programs found</p>
+            <p className="text-xs text-muted-foreground mt-1">Run <code className="font-mono">/saw program plan</code> to create a PROGRAM manifest</p>
+            ```
+
+            Replace with plain English:
+            ```tsx
+            <p className="text-sm font-medium text-foreground">No programs yet</p>
+            <p className="text-xs text-muted-foreground mt-1">Programs coordinate multiple related implementation plans as a single unit. Use the New Program button above to create one.</p>
+            ```
+
+            ### Tests
+            Run: `cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run`
+            Build check: `cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build`
+
+            **Cross-agent wiring (from Agent E): onRescout on LiveRail**
+
+            Agent E adds an `onRescout?: () => void` prop to LiveRailProps in LiveRail.tsx.
+            In App.tsx, where LiveRail is rendered (lines 507-525), add the prop:
+            ```tsx
+            onRescout={() => setLiveView('scout')}
+            ```
+            This enables the "Scout Next Feature" button in the compact WaveBoard completion view.
+
+            ### Constraints
+            - No new dependencies
+            - No Go API changes
+            - Keep all existing behavior when repos.length > 0
+            - TypeScript must compile without errors
+          files:
+            - web/src/App.tsx
+            - web/src/components/ImplList.tsx
+        - id: B
+          task: |
+            ## Agent B — ScoutLauncher UX Improvements
+
+            ### Files
+            - `web/src/components/ScoutLauncher.tsx`
+
+            ### What to implement
+
+            **2.1 — Feature input quality guidance**
+
+            In ScoutLauncher.tsx, the textarea (lines 232-241) has a plain placeholder.
+            Replace the placeholder text:
+            - Existing mode: `"Describe the feature to build..."` →
+              `"e.g. 'Add a dark mode toggle to the settings screen that persists across sessions.'"`
+            - New mode: `"Describe the project to build from scratch..."` →
+              `"e.g. 'A React app that tracks reading goals and shows weekly progress charts.'"`
+
+            Below the textarea (before the repo picker), add a small character hint that
+            appears when `feature.trim().length > 0 && feature.trim().length < 15`:
+            ```tsx
+            {feature.trim().length > 0 && feature.trim().length < 15 && (
+              <p className="text-xs text-amber-600 dark:text-amber-400">
+                Be specific — describe what, where, and any constraints ({feature.trim().length}/15 min)
+              </p>
+            )}
+            ```
+
+            **2.5 — Mode toggle description**
+
+            After the mode toggle buttons (after line 231, before the textarea), add a
+            one-sentence description that updates based on `mode`:
+            ```tsx
+            <p className="text-xs text-muted-foreground -mt-1">
+              {mode === 'existing'
+                ? 'Scout will analyze your codebase and plan a feature addition.'
+                : 'Scout will design and scaffold a new project from scratch.'}
+            </p>
+            ```
+
+            **3.1 — Run Scout disabled state hint**
+
+            The Run Scout button (lines 388-394) is disabled with no explanation when
+            `feature.trim().length < 15`. Replace the current disabled rendering by
+            adding a hint below the button row when the feature is non-empty but too short:
+
+            Actually the simpler approach: add an inline message near the button bar. Below
+            the card (after line 396, before the error banner), add:
+            ```tsx
+            {!running && feature.trim().length > 0 && feature.trim().length < 15 && (
+              <p className="text-xs text-muted-foreground text-right -mt-2">
+                Describe in at least 15 characters to run Scout
+              </p>
+            )}
+            ```
+
+            **1.5 — Scout completion summary banner**
+
+            The current completion banner (lines 406-416) shows only "Plan ready" and a
+            "Review →" button. Augment it to also show a summary fetched from the API.
+
+            Add a `summaryData` state:
+            ```tsx
+            const [summaryData, setSummaryData] = useState<{ agents: number; waves: number; verdict: string } | null>(null)
+            ```
+
+            When `scout_complete` fires and `slug` is available, fetch the impl summary:
+            ```tsx
+            // After setting completedSlug:
+            if (slug) {
+              fetch(`/api/impl/${encodeURIComponent(slug)}`)
+                .then(r => r.json())
+                .then((data: any) => {
+                  const agents = data.waves?.reduce((s: number, w: any) => s + (w.agents?.length ?? 0), 0) ?? 0
+                  const waves = data.waves?.length ?? 0
+                  const verdict = data.suitability?.verdict ?? ''
+                  setSummaryData({ agents, waves, verdict })
+                })
+                .catch(() => {})
+            }
+            ```
+
+            Update the completion banner to show the summary:
+            ```tsx
+            {completedSlug !== null && (
+              <div className="flex items-center justify-between bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg px-4 py-3">
+                <div>
+                  <span className="text-sm font-medium text-green-800 dark:text-green-400">Plan ready</span>
+                  {summaryData && (
+                    <p className="text-xs text-green-700 dark:text-green-500 mt-0.5">
+                      {summaryData.agents} agent{summaryData.agents !== 1 ? 's' : ''}, {summaryData.waves} wave{summaryData.waves !== 1 ? 's' : ''} — {summaryData.verdict}
+                    </p>
+                  )}
+                </div>
+                <button onClick={() => onComplete(completedSlug)} ...>
+                  Review →
+                </button>
+              </div>
+            )}
+            ```
+
+            Reset `summaryData` to null when a new run starts (in `handleRun`, alongside
+            `setOutput('')`).
+
+            **Working message carousel — keep showing longer**
+
+            The carousel currently stops when `displayed` has any content (the conditional
+            at line 461 shows the carousel only when `!displayed`). This is correct — the
+            carousel is replaced by live output. No change needed here; the improvement
+            in 1.5 is the post-completion summary, which is implemented above.
+
+            ### Tests
+            Run: `cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run`
+            Build check: `cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build`
+
+            ### Constraints
+            - No new dependencies; fetch is already available globally
+            - No Go API changes — `/api/impl/{slug}` already exists
+            - TypeScript must compile without errors
+            - The summaryData fetch is best-effort — if it fails, banner shows "Plan ready" only (no crash)
+          files:
+            - web/src/components/ScoutLauncher.tsx
+        - id: C
+          task: |
+            ## Agent C — ReviewScreen: Confirmation Panel, Tooltips, and First-Timer Callout
+
+            ### Files
+            - `web/src/components/ReviewScreen.tsx`
+            - `web/src/components/ActionButtons.tsx`
+
+            ### What to implement
+
+            **1.4 — Approve confirmation panel**
+
+            Currently, `handleApproveClick` in ReviewScreen.tsx either shows the stale
+            worktree warning or calls `onApprove()` directly. Add a first-time
+            confirmation step between these.
+
+            Add state: `const [showApproveConfirm, setShowApproveConfirm] = useState(false)`
+
+            Update `handleApproveClick` (lines 222-228):
+            ```tsx
+            function handleApproveClick() {
+              if (worktreeCount > 0) {
+                setWorktreeWarning(true)
+              } else {
+                setShowApproveConfirm(true)  // always show confirmation
+              }
+            }
+            ```
+
+            Add an inline confirmation dialog rendered as a modal (similar to the existing
+            worktreeWarning dialog at lines 546-600). It should show:
+            - Title: "Start wave execution?"
+            - Body: "This will launch N agents across N waves to modify N files in your
+              repository. Claude agents will write code in isolated git branches.
+              This action cannot be easily undone."
+            - Computed values from `impl`:
+              - N agents = `impl.waves.reduce((s, w) => s + w.agents.length, 0)`
+              - N waves = `impl.waves.length`
+              - N files = `impl.file_ownership.length`
+            - Two buttons: "Cancel" (calls `setShowApproveConfirm(false)`) and
+              "Start Execution" (calls `onApprove(); setShowApproveConfirm(false)`)
+
+            Place the dialog JSX near the worktreeWarning dialog (after line 598 in
+            the existing file).
+
+            **1.3 — Terminology: "What to check" callout for first-time reviewers**
+
+            At the top of the ReviewScreen content area, above the Overview panel
+            (before the `<div className="mb-6">` that wraps OverviewPanel at line 302),
+            add a dismissible info banner for users who haven't yet run a Critic Review:
+
+            Show the banner when `criticReport === null && !criticRunning`:
+            ```tsx
+            {criticReport === null && !criticRunning && (
+              <div className="mb-6 flex items-start gap-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3">
+                <span className="text-blue-500 mt-0.5 shrink-0">ℹ</span>
+                <div className="text-sm text-blue-800 dark:text-blue-300">
+                  <strong>Reviewing for the first time?</strong> Check the wave structure
+                  (does the agent split make sense?), verify suitability in the Overview,
+                  then run a Critic Review before approving.
+                </div>
+              </div>
+            )}
+            ```
+
+            **3.5 — Tooltips on Validate and Worktrees footer buttons**
+
+            In ReviewScreen.tsx, the Validate button (lines 488-497) and Worktrees button
+            (lines 498-516) have no descriptive `title` attributes.
+
+            Update the Validate button to add:
+            ```tsx
+            title="Run manifest validation to check for structural errors in the IMPL doc"
+            ```
+
+            Update the Worktrees button to add:
+            ```tsx
+            title="View and manage isolated git branches created for this plan's agents"
+            ```
+
+            (These replace or extend any existing `title` attributes on those buttons.)
+
+            **2.2 — ReviewScreen: "What to check" guidance (covered above in 1.3)**
+
+            The banner added for 1.3 also serves 2.2. No additional work needed.
+
+            ### Tests
+            Run: `cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run`
+            Build check: `cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build`
+            Also run ReviewScreen test: `cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run ReviewScreen`
+
+            ### Constraints
+            - No new dependencies
+            - No Go API changes
+            - The confirmation dialog must not duplicate the stale worktree warning dialog —
+              the worktree warning fires first (when worktreeCount > 0), so the new
+              confirmation fires only when worktreeCount === 0
+            - TypeScript must compile without errors; use existing IMPLDocResponse type
+          files:
+            - web/src/components/ReviewScreen.tsx
+            - web/src/components/ActionButtons.tsx
+        - id: D
+          task: |
+            ## Agent D — RevisePanel Instructions & Rejection Recovery
+
+            ### Files
+            - `web/src/components/RevisePanel.tsx`
+
+            ### What to implement
+
+            **3.6 — RevisePanel instructions copy**
+
+            In RevisePanel.tsx, the "Ask Claude to revise" section (lines 143-152) begins
+            with `<h2 className="text-base font-semibold">Ask Claude to revise</h2>`.
+
+            Add a brief description below the heading, before the textarea:
+            ```tsx
+            <h2 className="text-base font-semibold">Ask Claude to revise</h2>
+            <p className="text-sm text-muted-foreground">
+              Describe what to change. Claude will revise the IMPL doc based on your
+              feedback — for example: "Add a wave 2 agent for the database migration" or
+              "Split Agent A into two agents to reduce file ownership overlap."
+            </p>
+            ```
+
+            **3.3 — "Plan rejected" recovery in App.tsx**
+
+            NOTE: The rejection state lives in App.tsx (line 477), not in RevisePanel.
+            However, since Agent A owns App.tsx, and Agent D owns RevisePanel, coordinate
+            as follows: Agent D implements this as a self-contained component in RevisePanel
+            that is NOT used yet — the wiring into App.tsx is out of scope (Agent A handles
+            App.tsx). Instead, Agent D focuses purely on the RevisePanel instructions copy
+            (3.6 above).
+
+            CORRECTION — Agent D's sole task is 3.6. The "Plan rejected" recovery (3.3)
+            is handled by Agent A in App.tsx, where the rejected state lives (line 477).
+
+            **3.3 — "Plan rejected" recovery (App.tsx, handled here as context)**
+
+            In App.tsx, the rejected state renders (line 477):
+            ```tsx
+            {rejected && <p className="text-orange-600 text-sm p-4">Plan rejected.</p>}
+            ```
+
+            Agent A should replace this with:
+            ```tsx
+            {rejected && (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
+                <p className="text-orange-600 text-sm font-medium">Plan rejected.</p>
+                <p className="text-xs text-muted-foreground">You can run the Scout again to create a new plan for this feature.</p>
+                <button
+                  onClick={() => { setRejected(false); setLiveView('scout') }}
+                  className="text-sm font-medium px-4 py-2 rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+                >
+                  Run Scout Again
+                </button>
+              </div>
+            )}
+            ```
+
+            Agent D: implement ONLY the RevisePanel instructions copy (3.6). The App.tsx
+            rejection recovery is an additional task for Agent A (documented here for
+            completeness — Agent A should implement both the WelcomeCard AND the rejection
+            recovery in App.tsx).
+
+            ### Tests
+            Run: `cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run`
+            Build check: `cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build`
+
+            ### Constraints
+            - No new dependencies
+            - No Go API changes
+            - TypeScript must compile without errors
+          files:
+            - web/src/components/RevisePanel.tsx
+        - id: E
+          task: |
+            ## Agent E — WaveBoard: Post-Approval Banner & Completion Improvements
+
+            ### Files
+            - `web/src/components/WaveBoard.tsx`
+            - `web/src/components/LiveRail.tsx`
+
+            ### What to implement
+
+            **2.3 — "What happens after Approve" WaveBoard banner**
+
+            In WaveBoard.tsx, add a dismissible explanatory banner at the top of the
+            board, shown when agents are pending and no agents are yet complete.
+
+            Add state: `const [bannerDismissed, setBannerDismissed] = useState(false)`
+
+            Show the banner when:
+            - `!bannerDismissed`
+            - `totalAgents > 0`
+            - `completeAgents === 0`
+            - `!state.runComplete`
+            - `!state.runFailed`
+
+            Place the banner after the `StageTimeline` and before the `ProgressBar`
+            (around line 351-356 in the current file):
+
+            ```tsx
+            {!bannerDismissed && totalAgents > 0 && completeAgents === 0 && !state.runComplete && !state.runFailed && (
+              <div className="mx-4 mb-3 flex items-start gap-3 bg-blue-950/40 border border-blue-800/60 rounded-lg px-4 py-3">
+                <span className="text-blue-400 mt-0.5 shrink-0 text-sm">ℹ</span>
+                <div className="flex-1 text-xs text-blue-300">
+                  {totalAgents} agent{totalAgents !== 1 ? 's' : ''} are running in parallel git
+                  worktrees. Each implements its assigned files independently. When all complete,
+                  the results are merged into your branch.
+                </div>
+                <button
+                  onClick={() => setBannerDismissed(true)}
+                  className="text-blue-400/60 hover:text-blue-300 text-sm leading-none shrink-0"
+                  aria-label="Dismiss"
+                >
+                  ×
+                </button>
+              </div>
+            )}
+            ```
+
+            **2.4 — Post-completion improvements**
+
+            In WaveBoard.tsx, the completion banner (lines 358-386) shows "IMPL Complete"
+            with wave/agent count but no next-step guidance and no "Scout Next Feature"
+            button in compact mode.
+
+            Update the completion banner:
+            1. Always show "Scout Next Feature" button (not gated on `onRescout`).
+               In compact mode (LiveRail), `onRescout` is not passed (line 71 of LiveRail.tsx
+               shows `<WaveBoard slug={slug} compact={true} repos={repos} />`). Add the
+               button unconditionally and fall back to `onRescout?.()` — if not provided,
+               the button should not appear. Actually keep the existing `onRescout` gate but
+               also pass `onRescout` from LiveRail.
+
+               In LiveRail.tsx (line 71), update WaveBoard usage to pass a rescout handler:
+               ```tsx
+               <WaveBoard
+                 slug={slug}
+                 compact={true}
+                 repos={repos}
+                 onRescout={() => {
+                   // Close the wave view and open the scout launcher
+                   onClose()
+                   // Note: parent App.tsx will need to re-open scout liveView.
+                   // Since LiveRail cannot directly set liveView in App.tsx,
+                   // use the existing onClose callback — the user can click "New Plan"
+                   // to start a new scout. For now, just close the wave rail.
+                 }}
+               />
+               ```
+
+               Actually, the cleanest approach: in LiveRail, add an `onNewPlan` prop or
+               reuse the existing close+scout pattern. Check LiveRailProps — it has
+               `onScoutComplete` but no explicit onRescout. Pass onRescout via a new
+               optional prop `onRescout?: () => void` on LiveRailProps, and wire it in
+               App.tsx when rendering LiveRail:
+               ```tsx
+               // In App.tsx, LiveRail usage (lines 507-527):
+               // Add: onRescout={() => setLiveView('scout')}
+               ```
+
+               Since Agent A owns App.tsx and Agent E owns LiveRail.tsx, Agent E should:
+               - Add `onRescout?: () => void` to LiveRailProps interface in LiveRail.tsx
+               - Pass it down to WaveBoard when liveView === 'wave'
+               - Document in a comment that App.tsx wiring is needed (Agent A handles it)
+
+               Agent A should add `onRescout={() => setLiveView('scout')}` to the LiveRail
+               usage in App.tsx.
+
+            2. Add next-step guidance text to the completion banner:
+               ```tsx
+               {state.runComplete && (
+                 <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
+                   ...existing checkmark and IMPL Complete heading...
+                   <p className="text-sm text-muted-foreground mb-4">
+                     {state.waves.length} waves, {totalAgents} agents — all merged and verified
+                   </p>
+                   <p className="text-xs text-muted-foreground mb-4 max-w-xs">
+                     Your changes are on the current branch. Review the diff, run your test
+                     suite, and open the Post-Merge Checklist in the plan review for next steps.
+                   </p>
+                   <div className="flex gap-2">
+                     {onRescout && (
+                       <button onClick={onRescout} ...>Scout Next Feature</button>
+                     )}
+                   </div>
+                 </div>
+               )}
+               ```
+
+            ### Coordination note for Agent A
+            Agent A (App.tsx) must add two wiring changes that Agent E prepares:
+            1. Add `onRescout={() => setLiveView('scout')}` to the LiveRail JSX in App.tsx
+            2. Add the rejection recovery banner (from Agent D's task notes above)
+
+            Both are documented here so Agent A can implement them while working on App.tsx.
+
+            ### Tests
+            Run: `cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run`
+            Build check: `cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build`
+
+            ### Constraints
+            - No new dependencies
+            - No Go API changes
+            - The banner must be dismissible per-session (useState is sufficient; no localStorage needed)
+            - TypeScript must compile without errors
+          files:
+            - web/src/components/WaveBoard.tsx
+            - web/src/components/LiveRail.tsx
+      base_commit: 5cc3f8c38028792f6c8a8d7eee2c97ef6608adce
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: false
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/new-user-experience/wave1-agent-A
+        commit: 06cf04a
+        files_changed:
+            - web/src/App.tsx
+            - web/src/components/ImplList.tsx
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/new-user-experience/wave1-agent-B
+        commit: 0d0a5da
+        files_changed:
+            - web/src/components/ScoutLauncher.tsx
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/new-user-experience/wave1-agent-C
+        commit: 9c5c059
+        files_changed:
+            - web/src/components/ReviewScreen.tsx
+        verification: 'PASS: build succeeds, 226/226 tests pass'
+    D:
+        status: complete
+        branch: saw/new-user-experience/wave1-agent-D
+        commit: d8b482d
+        files_changed:
+            - web/src/components/RevisePanel.tsx
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/new-user-experience/wave1-agent-E
+        commit: 821a2ff
+        files_changed:
+            - web/src/components/WaveBoard.tsx
+            - web/src/components/LiveRail.tsx
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Agent A and Agent E both touch App.tsx wiring (onRescout prop)
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Agent E documents the App.tsx wiring requirement in a comment and in the task.
+            Agent A is explicitly instructed to add onRescout to LiveRail usage.
+            The merge reviewer must confirm both sides landed. If Agent E's LiveRailProps
+            change merges first, Agent A's App.tsx wiring must follow before the feature is complete.
+        - scenario: ApproveConfirmPanel appears on every approval (not just first-time)
+          likelihood: low
+          impact: low
+          mitigation: |
+            The FTUE analysis recommends confirmation on every Approve, not just first-time.
+            The confirmation dialog is intentionally shown always (not gated on a seen-before flag)
+            since Approve is a high-stakes irreversible action. If user feedback says it's too
+            much friction, a localStorage "don't show again" toggle can be added in a follow-up.
+        - scenario: summaryData fetch in ScoutLauncher fails or returns unexpected shape
+          likelihood: low
+          impact: low
+          mitigation: |
+            The fetch is explicitly best-effort — if it fails, the banner shows "Plan ready"
+            with no summary line. The catch block must be present and must not set any error state.
+            Agent B must test with summaryData = null rendering path.
+        - scenario: TypeScript compilation fails due to new props on existing interfaces
+          likelihood: low
+          impact: medium
+          mitigation: |
+            All new props use optional syntax (prop?: Type). No existing call sites
+            need updating unless they pass new required props. Agent E's onRescout
+            addition to LiveRailProps is optional. Verify with npm run build before committing.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+            issues:
+                - check: pattern_accuracy
+                  severity: warning
+                  description: Brief says to place ApproveConfirmPanel dialog after line 598 but the worktreeWarning dialog ends at line 584. Lines 586-601 contain the worktrees and validation modals. The intent is clear but the exact line reference is off by ~14 lines.
+                  file: web/src/components/ReviewScreen.tsx
+                  symbol: worktreeWarning dialog
+        D:
+            agent_id: D
+            verdict: PASS
+        E:
+            agent_id: E
+            verdict: PASS
+            issues:
+                - check: side_effect_completeness
+                  severity: warning
+                  description: Agent E adds onRescout prop to LiveRailProps and documents that Agent A must wire onRescout={() => setLiveView(scout)} on the LiveRail JSX in App.tsx (lines 507-525). However this wiring instruction appears only in Agent E coordination notes, not in Agent A task body. Agent A may miss this cross-agent dependency.
+                  file: web/src/App.tsx
+                  symbol: onRescout
+    summary: 'All 5 agents verified against the codebase. All files exist for modify actions. Line references in briefs are accurate within 1-2 lines. Symbol names (props, state variables, function names) match the actual source. Two advisory warnings: (1) Agent C references ''after line 598'' for dialog placement but the worktreeWarning dialog ends at line 584 -- the intent is clear but the line number is slightly off. (2) Agent E documents an App.tsx wiring requirement (onRescout prop on LiveRail) that is not explicitly listed in Agent A''s task body -- Agent A may miss this cross-agent coordination step. Neither issue blocks execution.'
+    reviewed_at: "2026-03-20T03:27:20Z"
+    issue_count: 2
+state: "COMPLETE"
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
+wiring_validation_reports:
+    wave1:
+        gaps: []
+        valid: true
+        summary: all 0 wiring declarations satisfied
