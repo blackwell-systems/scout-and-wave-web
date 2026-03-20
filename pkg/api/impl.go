@@ -8,9 +8,53 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
+
+// implCache is an in-memory cache for parsed IMPL doc metadata used by
+// handleListImpls. Uses sync.RWMutex for concurrent read access and
+// fsnotify-based invalidation.
+type implCache struct {
+	mu      sync.RWMutex
+	entries map[string]cachedImplEntry // key: absolute file path
+	valid   bool
+}
+
+// cachedImplEntry holds a cached implListEntry plus the file modification time
+// for staleness checking during cache rebuilds.
+type cachedImplEntry struct {
+	entry   implListEntry
+	modTime time.Time
+}
+
+// InvalidateImplCache marks the cache as stale so the next handleListImpls
+// call rebuilds it. Safe for concurrent use.
+func (c *implCache) Invalidate() {
+	c.mu.Lock()
+	c.valid = false
+	c.mu.Unlock()
+}
+
+// get returns the cached entries if the cache is valid, otherwise returns nil.
+func (c *implCache) get() map[string]cachedImplEntry {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if !c.valid {
+		return nil
+	}
+	return c.entries
+}
+
+// set replaces the cache entries and marks the cache as valid.
+func (c *implCache) set(entries map[string]cachedImplEntry) {
+	c.mu.Lock()
+	c.entries = entries
+	c.valid = true
+	c.mu.Unlock()
+}
 
 // implListEntry is one item in the GET /api/impl response.
 type implListEntry struct {
@@ -27,7 +71,50 @@ type implListEntry struct {
 
 // handleListImpls serves GET /api/impl and returns a JSON array of impl entries.
 // Scans all repos from saw.config.json (or falls back to startup IMPLDir if no config).
+// Uses an in-memory cache to avoid re-parsing YAML on every request.
 func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
+	cached := s.implListCache.get()
+
+	// If cache is invalid, rebuild it
+	if cached == nil {
+		cached = s.rebuildImplCache()
+	}
+
+	// Build result from cache, computing isExecuting live each time
+	result := make([]implListEntry, 0, len(cached))
+	for _, ce := range cached {
+		entry := ce.entry
+
+		// isExecuting must be computed live — never cached
+		slug := entry.Slug
+		_, waveActive := s.activeRuns.Load(slug)
+		_, merging := s.mergingRuns.Load(slug)
+		_, testing := s.testingRuns.Load(slug)
+		isExecuting := waveActive || merging || testing
+		if !isExecuting {
+			s.scoutRuns.Range(func(key, _ any) bool {
+				if runID, ok := key.(string); ok && strings.HasPrefix(runID, slug) {
+					isExecuting = true
+					return false
+				}
+				return true
+			})
+		}
+		entry.IsExecuting = isExecuting
+
+		result = append(result, entry)
+	}
+
+	if len(result) == 0 {
+		result = []implListEntry{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// rebuildImplCache scans all repos and re-parses IMPL docs, using modTime
+// to skip re-parsing unchanged files. Returns the new cache entries.
+func (s *Server) rebuildImplCache() map[string]cachedImplEntry {
 	// Read saw.config.json to get the list of repos
 	configPath := filepath.Join(s.cfg.RepoPath, "saw.config.json")
 	configData, err := os.ReadFile(configPath)
@@ -48,7 +135,12 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 		}}
 	}
 
-	var result []implListEntry
+	// Get previous cache entries for modTime comparison
+	s.implListCache.mu.RLock()
+	oldEntries := s.implListCache.entries
+	s.implListCache.mu.RUnlock()
+
+	newEntries := make(map[string]cachedImplEntry)
 
 	// Scan each configured repo's docs/IMPL and docs/IMPL/complete directories
 	for _, repo := range repos {
@@ -58,25 +150,40 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 		}
 
 		for _, implDir := range implDirs {
-			entries, err := os.ReadDir(implDir)
+			dirEntries, err := os.ReadDir(implDir)
 			if err != nil {
 				continue // skip if directory doesn't exist
 			}
 
-			for _, e := range entries {
-			name := e.Name()
-			if strings.HasPrefix(name, "IMPL-") && strings.HasSuffix(name, ".yaml") {
+			for _, e := range dirEntries {
+				name := e.Name()
+				if !strings.HasPrefix(name, "IMPL-") || !strings.HasSuffix(name, ".yaml") {
+					continue
+				}
+
+				fullPath := filepath.Join(implDir, name)
+				info, err := os.Stat(fullPath)
+				if err != nil {
+					continue
+				}
+				modTime := info.ModTime()
+
+				// If we have a cached entry with the same modTime, reuse it
+				if old, ok := oldEntries[fullPath]; ok && old.modTime.Equal(modTime) {
+					newEntries[fullPath] = old
+					continue
+				}
+
+				// Parse the file
 				slug := strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".yaml")
-				// Status is determined by directory location (source of truth after archival)
 				status := "active"
 				if strings.HasSuffix(implDir, "complete") {
 					status = "complete"
 				}
 				var waveCount, agentCount int
 				var isMultiRepo bool
-
-				fullPath := filepath.Join(implDir, name)
 				var involvedRepos []string
+
 				if m, err := protocol.Load(fullPath); err == nil {
 					for _, w := range m.Waves {
 						waveCount++
@@ -91,8 +198,6 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 							hasEmptyRepo = true
 						}
 					}
-					// If some entries have repo: and some don't, the empty ones
-					// are implicitly the host repo — that's a second distinct repo.
 					if hasEmptyRepo && len(repoSet) > 0 {
 						repoSet[repo.Name] = struct{}{}
 					}
@@ -110,43 +215,32 @@ func (s *Server) handleListImpls(w http.ResponseWriter, r *http.Request) {
 					repoName = filepath.Base(repo.Path)
 				}
 
-				// Check if any execution is in progress for this slug
-				_, waveActive := s.activeRuns.Load(slug)
-				_, merging := s.mergingRuns.Load(slug)
-				_, testing := s.testingRuns.Load(slug)
-				isExecuting := waveActive || merging || testing
-				// Also check scoutRuns (keyed by runID, not slug) — scan for slug prefix
-				if !isExecuting {
-					s.scoutRuns.Range(func(key, _ any) bool {
-						if runID, ok := key.(string); ok && strings.HasPrefix(runID, slug) {
-							isExecuting = true
-							return false
-						}
-						return true
-					})
+				newEntries[fullPath] = cachedImplEntry{
+					entry: implListEntry{
+						Slug:          slug,
+						Repo:          repoName,
+						RepoPath:      repo.Path,
+						DocStatus:     status,
+						WaveCount:     waveCount,
+						AgentCount:    agentCount,
+						IsMultiRepo:   isMultiRepo,
+						InvolvedRepos: involvedRepos,
+						// IsExecuting is computed live in handleListImpls, not cached
+					},
+					modTime: modTime,
 				}
-
-				result = append(result, implListEntry{
-					Slug:          slug,
-					Repo:          repoName,
-					RepoPath:      repo.Path,
-					DocStatus:     status,
-					WaveCount:     waveCount,
-					AgentCount:    agentCount,
-					IsMultiRepo:   isMultiRepo,
-					InvolvedRepos: involvedRepos,
-					IsExecuting:   isExecuting,
-				})
 			}
 		}
-		}
 	}
 
-	if result == nil {
-		result = []implListEntry{}
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(result)
+	s.implListCache.set(newEntries)
+	return newEntries
+}
+
+// InvalidateImplCache marks the IMPL list cache as stale so it is rebuilt
+// on the next request. Safe for concurrent use.
+func (s *Server) InvalidateImplCache() {
+	s.implListCache.Invalidate()
 }
 
 // findImplPath searches all configured repos for an IMPL doc by slug.
@@ -636,6 +730,7 @@ func (s *Server) handleDeleteImpl(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "failed to delete", http.StatusInternalServerError)
 		return
 	}
+	s.InvalidateImplCache()
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -676,6 +771,7 @@ func (s *Server) handleArchiveImpl(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.InvalidateImplCache()
 	s.globalBroker.broadcast("impl_list_updated")
 	w.WriteHeader(http.StatusOK)
 }
