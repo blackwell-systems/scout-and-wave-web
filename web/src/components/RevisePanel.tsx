@@ -143,6 +143,11 @@ export default function RevisePanel({ slug, onBack, onSaved }: RevisePanelProps)
         {/* Ask Claude */}
         <div className="space-y-3">
           <h2 className="text-base font-semibold">Ask Claude to revise</h2>
+          <p className="text-sm text-muted-foreground">
+            Describe what to change. Claude will revise the IMPL doc based on your
+            feedback — for example: &quot;Add a wave 2 agent for the database migration&quot; or
+            &quot;Split Agent A into two agents to reduce file ownership overlap.&quot;
+          </p>
           <textarea
             className="w-full bg-muted/30 border border-border rounded-lg px-3 py-2 text-sm font-mono resize-none outline-none focus:ring-1 focus:ring-primary min-h-[80px]"
             placeholder="Describe the changes you want Claude to make…"
