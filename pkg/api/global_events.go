@@ -26,6 +26,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/fsnotify/fsnotify"
 )
 
@@ -205,6 +206,15 @@ func (s *Server) implWatchDirs(fallbackDir string) []string {
 		}
 	}
 	return dirs
+}
+
+// EmitCriticReviewComplete broadcasts a critic_review_complete SSE event
+// to all connected clients. Called after sawtools run-critic completes.
+func (s *Server) EmitCriticReviewComplete(slug string, result *protocol.CriticResult) {
+	s.globalBroker.broadcastJSON("critic_review_complete", map[string]interface{}{
+		"slug":   slug,
+		"result": result,
+	})
 }
 
 // findColon returns the index of the first ':' in s, or -1 if not found.

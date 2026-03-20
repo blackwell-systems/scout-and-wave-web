@@ -683,3 +683,9 @@ func allScaffoldsCommitted(scaffolds []protocol.ScaffoldFile) bool {
 	}
 	return true
 }
+
+// RegisterCriticRoutes registers the critic-review HTTP route.
+// Called from server.go after the other impl routes are registered.
+func (s *Server) RegisterCriticRoutes() {
+	s.mux.HandleFunc("GET /api/impl/{slug}/critic-review", s.handleGetCriticReview)
+}
