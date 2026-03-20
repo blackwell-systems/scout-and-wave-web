@@ -1,5 +1,6 @@
 import React from 'react'
 import { Play, Eye, Pencil, X } from 'lucide-react'
+import { Tooltip } from './ui/tooltip'
 
 interface ActionButtonsProps {
   onApprove: () => void
@@ -20,10 +21,15 @@ export default React.memo(function ActionButtons({ onApprove, onReject, onReques
           View WaveBoard
         </button>
       )}
-      <button onClick={onApprove} className={`${base} border-t-green-500 text-green-700 dark:text-green-400 hover:bg-green-500/10 active:bg-green-500/20`}>
-        <Play className="w-4 h-4" />
-        Approve
-      </button>
+      <Tooltip
+        content="Launches Wave 1 agents in parallel. Each agent works in an isolated git worktree (I3). Scaffolds are created first if needed (I2). Estimated time: 5-15 minutes depending on complexity."
+        position="top"
+      >
+        <button onClick={onApprove} className={`${base} border-t-green-500 text-green-700 dark:text-green-400 hover:bg-green-500/10 active:bg-green-500/20`}>
+          <Play className="w-4 h-4" />
+          Approve
+        </button>
+      </Tooltip>
       <button onClick={onRequestChanges} className={`${base} border-t-amber-500 text-amber-700 dark:text-amber-400 hover:bg-amber-500/10 active:bg-amber-500/20`}>
         <Pencil className="w-4 h-4" />
         Request Changes
