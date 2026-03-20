@@ -1,7 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import ReactMarkdown from 'react-markdown'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { vscDarkPlus, vs } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import CodeMirror from '@uiw/react-codemirror'
+import { javascript } from '@codemirror/lang-javascript'
+import { python } from '@codemirror/lang-python'
+import { go } from '@codemirror/lang-go'
 
 interface MarkdownContentProps {
   children: string
@@ -57,6 +59,47 @@ function guessLanguage(code: string): string | null {
   return null
 }
 
+/** Map a language identifier to a CodeMirror language extension. */
+function getLanguageExtension(lang: string) {
+  switch (lang) {
+    case 'go':
+      return go()
+    case 'typescript':
+    case 'tsx':
+      return javascript({ typescript: true, jsx: lang === 'tsx' })
+    case 'javascript':
+    case 'jsx':
+    case 'js':
+    case 'ts':
+      return javascript({ typescript: lang === 'ts', jsx: false })
+    case 'python':
+    case 'py':
+      return python()
+    default:
+      return null
+  }
+}
+
+/** Read-only CodeMirror block for fenced code in markdown. */
+function CodeBlock({ code, lang, isDark }: { code: string; lang: string; isDark: boolean }): JSX.Element {
+  const extensions = useMemo(() => {
+    const ext = getLanguageExtension(lang)
+    return ext ? [ext] : []
+  }, [lang])
+
+  return (
+    <CodeMirror
+      value={code}
+      extensions={extensions}
+      theme={isDark ? 'dark' : 'light'}
+      readOnly={true}
+      editable={false}
+      basicSetup={{ lineNumbers: false, foldGutter: false, highlightActiveLine: false }}
+      style={{ fontSize: '0.75rem', borderRadius: '0.375rem', margin: '0.5rem 0' }}
+    />
+  )
+}
+
 export default function MarkdownContent({ children, compact = true }: MarkdownContentProps): JSX.Element {
   const [isDark, setIsDark] = useState(false)
 
@@ -92,19 +135,7 @@ export default function MarkdownContent({ children, compact = true }: MarkdownCo
             // Use explicit language, or auto-detect for multi-line code blocks
             const lang = match?.[1] ?? (isBlock ? guessLanguage(code) : null)
             if (lang) {
-              return (
-                <SyntaxHighlighter
-                  language={lang}
-                  style={isDark ? vscDarkPlus : vs}
-                  customStyle={{
-                    fontSize: '0.75rem',
-                    borderRadius: '0.375rem',
-                    margin: '0.5rem 0',
-                  }}
-                >
-                  {code}
-                </SyntaxHighlighter>
-              )
+              return <CodeBlock code={code} lang={lang} isDark={isDark} />
             }
             return (
               <code className={className} {...props}>

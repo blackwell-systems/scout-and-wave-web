@@ -17,13 +17,11 @@
     "@codemirror/theme-one-dark": "^6.1.0",
     "@radix-ui/react-tabs": "^1.1.13",
     "@types/js-yaml": "^4.0.9",
-    "@types/react-syntax-highlighter": "^15.5.13",
     "@uiw/react-codemirror": "^4.25.8",
     "js-yaml": "^4.1.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-markdown": "^10.1.0",
-    "react-syntax-highlighter": "^16.1.1"
+    "react-markdown": "^10.1.0"
   },
   "devDependencies": {
     "@radix-ui/react-slot": "^1.2.4",
