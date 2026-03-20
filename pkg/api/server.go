@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-web/build"
 	"github.com/blackwell-systems/scout-and-wave-web/pkg/service"
 	"golang.org/x/net/http2"
@@ -48,6 +49,8 @@ type Server struct {
 	agentSnapshots   sync.Map        // slug -> *agentSnapshot; latest agent lifecycle event per agent for SSE replay
 	implListCache    *implCache       // in-memory cache for handleListImpls metadata
 	svcDeps          service.Deps     // dependency injection for service layer
+	obsMu            sync.RWMutex            // guards obsStoreInstance
+	obsStoreInstance observability.Store      // observability event store (may be nil)
 }
 
 // getConfiguredRepos reads saw.config.json and returns the list of configured
@@ -197,6 +200,9 @@ func New(cfg Config) *Server {
 
 	// v0.32.0 — Manifest routes (validate, load, wave, completion)
 	s.RegisterManifestRoutes()
+
+	// Observability API — metrics, events, rollups, cost breakdown
+	s.RegisterObservabilityRoutes()
 
 	// File browser API — tree, read, diff, status
 	s.mux.HandleFunc("GET /api/files/tree", s.handleFilesTree)
