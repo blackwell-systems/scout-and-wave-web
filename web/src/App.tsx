@@ -11,7 +11,7 @@ import { LiveView } from './components/LiveRail'
 import SettingsScreen from './components/SettingsScreen'
 import CommandPalette from './components/CommandPalette'
 import { useResizableDivider } from './hooks/useResizableDivider'
-import { ChevronLeft, ChevronRight, Settings, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, ChevronDown, Settings, Search } from 'lucide-react'
 import ModelPicker from './components/ModelPicker'
 import ResumeBanner from './components/ResumeBanner'
 import PipelineView from './components/PipelineView'
@@ -338,40 +338,38 @@ export default function App() {
           </button>
         </div>
         <div className="flex items-stretch">
-          {(['planner', 'scout', 'scaffold', 'wave', 'integration', 'chat'] as const).map(field => {
-            const model = field === 'planner' ? plannerModel : field === 'scout' ? scoutModel : field === 'scaffold' ? scaffoldModel : field === 'wave' ? waveModel : field === 'integration' ? integrationModel : chatModel
-            const label = field.charAt(0).toUpperCase() + field.slice(1)
-            return (
-              <div key={field} className="relative flex items-stretch border-r border-border">
-                <button
-                  title={`${label} model: ${model}\nClick to configure`}
-                  onClick={() => setPickerOpen(field)}
-                  className="flex items-center gap-2 px-4 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors group"
-                >
-                  <span className="text-xs text-muted-foreground/60 group-hover:text-muted-foreground uppercase tracking-wider">{field}</span>
-                  <span className="text-sm font-mono truncate max-w-[140px]">{model}</span>
-                </button>
-                {pickerOpen === field && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-40"
-                      onClick={() => setPickerOpen(null)}
-                    />
-                    <div className="absolute top-full left-0 mt-2 z-50 bg-popover border border-border rounded-lg shadow-2xl p-4 w-[480px] animate-in fade-in slide-in-from-top-2 duration-200">
+          {/* Single Models button */}
+          <div className="relative flex items-stretch border-r border-border">
+            <button
+              title="Configure agent models"
+              onClick={() => setPickerOpen(pickerOpen === 'all' ? null : 'all')}
+              className="flex items-center gap-2 px-4 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            >
+              <span className="text-sm font-medium">Models</span>
+              <ChevronDown size={12} className={`transition-transform ${pickerOpen === 'all' ? 'rotate-180' : ''}`} />
+            </button>
+            {pickerOpen === 'all' && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setPickerOpen(null)} />
+                <div className="absolute top-full right-0 mt-2 z-50 bg-popover border border-border rounded-lg shadow-2xl p-4 w-[520px] animate-in fade-in slide-in-from-top-2 duration-200 space-y-4">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Agent Models</p>
+                  {(['planner', 'scout', 'scaffold', 'wave', 'integration', 'chat'] as const).map(field => {
+                    const model = field === 'planner' ? plannerModel : field === 'scout' ? scoutModel : field === 'scaffold' ? scaffoldModel : field === 'wave' ? waveModel : field === 'integration' ? integrationModel : chatModel
+                    const label = field.charAt(0).toUpperCase() + field.slice(1)
+                    return (
                       <ModelPicker
+                        key={field}
                         id={`header-${field}-model`}
                         label={`${label} Model`}
                         value={model}
-                        onChange={value => {
-                          saveModel(field, value)
-                        }}
+                        onChange={value => saveModel(field, value)}
                       />
-                    </div>
-                  </>
-                )}
-              </div>
-            )
-          })}
+                    )
+                  })}
+                </div>
+              </>
+            )}
+          </div>
           <ThemePicker />
           <DarkModeToggle />
           <button onClick={() => setShowSettings(s => !s)} title="Settings" className="flex items-center justify-center px-4 border-l border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors">
@@ -421,6 +419,7 @@ export default function App() {
                       repos={repos}
                       onManageRepos={() => setShowSettings(true)}
                       onRemoveRepo={(name) => void handleRemoveRepo(name)}
+                      onNewPlan={() => setLiveView(v => v === 'scout' ? null : 'scout')}
                     />
                   </>
                 )}
