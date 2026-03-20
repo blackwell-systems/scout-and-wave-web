@@ -1,18 +1,19 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useEffect } from 'react'
 import { useWaveEvents } from '../hooks/useWaveEvents'
 import type { AppWaveState } from '../hooks/useWaveEvents'
-import { WaveMergeState, WaveTestState } from '../hooks/useWaveEvents'
+import { WaveTestState } from '../hooks/useWaveEvents'
 import { useFileActivity } from '../hooks/useFileActivity'
 import AgentCard from './AgentCard'
 import ProgressBar from './ProgressBar'
 import ImplEditor from './ImplEditor'
 import StageTimeline from './StageTimeline'
-import ConflictResolutionPanel from './ConflictResolutionPanel'
 import FileOwnershipTable from './FileOwnershipTable'
 import { AgentStatus, RepoEntry, FileOwnershipEntry } from '../types'
-import { mergeWave, runWaveTests, rerunAgent, resolveConflicts, batchDeleteWorktrees, startWave, retryFinalize, fixBuild, retryStep, skipStep, forceMarkComplete } from '../api'
-import RecoveryControlsPanel from './RecoveryControlsPanel'
-import LiveOutputPanel from './LiveOutputPanel'
+import { mergeWave, runWaveTests, rerunAgent, batchDeleteWorktrees, startWave, retryFinalize, fixBuild } from '../api'
+import ScaffoldCard from './wave/ScaffoldCard'
+import { WaveCompletionPanel } from './wave/WaveCompletionPanel'
+import { WaveRecoveryPanel } from './wave/WaveRecoveryPanel'
+import { WaveMergePanel } from './wave/WaveMergePanel'
 
 interface WaveBoardProps {
   slug: string
@@ -52,83 +53,15 @@ function agentKey(agent: string, wave: number): string {
   return `${wave}:${agent}`
 }
 
-/** Scaffold card — matches AgentCard styling with streaming output. */
-function ScaffoldCard({ status, output, error }: { status: string; output: string; error?: string }) {
-  const preRef = useRef<HTMLPreElement>(null)
-  const [expanded, setExpanded] = useState(false)
-
-  useEffect(() => {
-    if (!expanded && preRef.current) preRef.current.scrollTop = preRef.current.scrollHeight
-  }, [output, expanded])
-
-  const borderStyle = status === 'complete'
-    ? { borderColor: 'rgb(63, 185, 80)', boxShadow: '0 0 10px rgba(63, 185, 80, 0.3)' }
-    : status === 'failed'
-    ? { borderColor: 'rgb(248, 81, 73)', boxShadow: '0 0 12px rgba(248, 81, 73, 0.5)' }
-    : { borderColor: 'rgb(88, 166, 255)', boxShadow: '0 0 12px rgba(88, 166, 255, 0.4)' }
-
-  return (
-    <div className="flex flex-col w-full overflow-hidden transition-all duration-200" style={{ borderRadius: '12px', border: '3px solid', ...borderStyle }}>
-      <div className="flex items-center justify-between p-3 bg-black/20 dark:bg-white/5 border-b border-white/10">
-        <div className="flex items-center gap-2">
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg font-bold text-sm" style={{ backgroundColor: '#6b728020', color: '#6b7280', border: '2px solid #6b728050' }}>
-            Sc
-          </div>
-          <div className="text-xs font-medium text-white/90">
-            {status === 'complete' ? 'Complete' : status === 'failed' ? 'Failed' : 'Running'}
-          </div>
-        </div>
-        {status === 'running' && (
-          <div className="flex items-center gap-1">
-            <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-            <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" style={{ animationDelay: '0.2s' }} />
-            <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" style={{ animationDelay: '0.4s' }} />
-          </div>
-        )}
-      </div>
-      {output.length > 0 && (
-        <div className="p-3">
-          {output.length > 200 && (
-            <button onClick={() => setExpanded(prev => !prev)} className="text-xs text-white/50 hover:text-white/80 cursor-pointer mb-1 block">
-              {expanded ? '▲ Show less' : '▼ Show more'}
-            </button>
-          )}
-          <pre ref={preRef} className={`text-xs font-mono text-white/70 bg-black/30 rounded p-2 overflow-y-auto whitespace-pre-wrap break-all ${expanded ? 'max-h-96' : 'max-h-32'}`}>
-            {output}
-          </pre>
-        </div>
-      )}
-      {status === 'failed' && error && (
-        <div className="p-3 pt-0">
-          <div className="text-xs text-red-400 bg-red-500/10 rounded p-2 break-words">{error}</div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoardProps): JSX.Element {
   // Optimistic status overrides — keyed by "wave:agent"
   const [statusOverrides, setStatusOverrides] = useState<Map<string, 'pending'>>(new Map())
   const [staleDismissed, setStaleDismissed] = useState(false)
   const [bannerDismissed, setBannerDismissed] = useState(false)
   const [fileActivityExpanded, setFileActivityExpanded] = useState(false)
-  const [testOutputOpen, setTestOutputOpen] = useState<number | null>(null)
-  const [fixBuildWave, setFixBuildWave] = useState<number | null>(null)
-  const [fixOutputOpen, setFixOutputOpen] = useState<number | null>(null)
 
   const state = useWaveEvents(slug)
   const liveStatus = useFileActivity(state)
-
-  // Auto-close test output panel when tests pass
-  useEffect(() => {
-    if (testOutputOpen !== null) {
-      const testState = (state as AppWaveState & { wavesTestState?: Map<number, WaveTestState> }).wavesTestState?.get(testOutputOpen)
-      if (testState?.status === 'pass') {
-        setTestOutputOpen(null)
-      }
-    }
-  }, [testOutputOpen, state])
 
   // Merge optimistic overrides on top of SSE-driven agent state
   function applyOverrides(agent: AgentStatus): AgentStatus {
@@ -143,7 +76,6 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
   const completeAgents = displayAgents.filter(a => a.status === 'complete').length
 
   async function handleRerun(agent: AgentStatus, opts?: { scopeHint?: string }): Promise<void> {
-    // Optimistic update: mark agent as pending immediately
     setStatusOverrides(prev => {
       const next = new Map(prev)
       next.set(agentKey(agent.agent, agent.wave), 'pending')
@@ -152,7 +84,6 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
     try {
       await rerunAgent(slug, agent.wave, agent.agent, opts)
     } catch {
-      // Revert optimistic update on error
       setStatusOverrides(prev => {
         const next = new Map(prev)
         next.delete(agentKey(agent.agent, agent.wave))
@@ -162,7 +93,6 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
   }
 
   async function handleRescout(agent: AgentStatus): Promise<void> {
-    // Optimistic update: mark agent as pending immediately
     setStatusOverrides(prev => {
       const next = new Map(prev)
       next.set(agentKey(agent.agent, agent.wave), 'pending')
@@ -174,7 +104,6 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
       try {
         await rerunAgent(slug, agent.wave, agent.agent)
       } catch {
-        // Revert optimistic update on error
         setStatusOverrides(prev => {
           const next = new Map(prev)
           next.delete(agentKey(agent.agent, agent.wave))
@@ -187,8 +116,6 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
   async function handleProceedGate(nextWave: number): Promise<void> {
     const res = await fetch(`/api/wave/${encodeURIComponent(slug)}/gate/proceed`, { method: 'POST' })
     if (res.status === 404) {
-      // Gate channel expired (server restarted or loop exited) — re-launch the run
-      // which will pick up from the next pending wave automatically.
       await fetch(`/api/wave/${encodeURIComponent(slug)}/start`, { method: 'POST' })
     }
     void nextWave
@@ -205,9 +132,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
   async function handleFixBuild(waveNum?: number, errorLog?: string, gateType?: string): Promise<void> {
     const wave = waveNum ?? Math.max(...state.waves.map(w => w.wave), 1)
-    setFixBuildWave(wave)
     const log = errorLog ?? state.runFailed ?? ''
-    // Extract gate type from error message if not provided (e.g. 'required gate "typecheck" failed')
     let gate = gateType
     if (!gate) {
       const gateMatch = log.match(/gate "(\w+)"/)
@@ -351,7 +276,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
         {/* Stage timeline — shows pipeline progress */}
         <StageTimeline entries={state.stageEntries} />
 
-        {/* Post-approval explanatory banner — shown when agents are running but none complete yet */}
+        {/* Post-approval explanatory banner */}
         {!bannerDismissed && totalAgents > 0 && completeAgents === 0 && !state.runComplete && !state.runFailed && (
           <div className="mx-4 mb-3 flex items-start gap-3 bg-blue-950/40 border border-blue-800/60 rounded-lg px-4 py-3">
             <span className="text-blue-400 mt-0.5 shrink-0 text-sm">&#x2139;</span>
@@ -377,109 +302,19 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
         {/* Run complete banner */}
         {state.runComplete && (
-          <div className="flex flex-col items-center justify-center py-8 px-4 text-center">
-            <div className="w-14 h-14 rounded-full bg-green-100 dark:bg-green-900/50 flex items-center justify-center mb-4">
-              <span className="text-green-600 dark:text-green-400 text-2xl">&#x2713;</span>
-            </div>
-            <h2 className="text-base font-semibold text-green-800 dark:text-green-300 mb-1">
-              IMPL Complete
-            </h2>
-            <p className="text-sm text-muted-foreground mb-4">
-              {state.waves.length} {state.waves.length === 1 ? 'wave' : 'waves'}, {totalAgents} {totalAgents === 1 ? 'agent' : 'agents'} — all merged and verified
-            </p>
-            <p className="text-xs text-muted-foreground mb-4 max-w-xs">
-              Your changes are on the current branch. Review the diff, run your test
-              suite, and open the Post-Merge Checklist in the plan review for next steps.
-            </p>
-            <div className="flex gap-2">
-              {onRescout && (
-                <button
-                  onClick={onRescout}
-                  className="text-sm font-medium px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 transition-colors"
-                >
-                  Scout Next Feature
-                </button>
-              )}
-            </div>
-          </div>
+          <WaveCompletionPanel state={state} totalAgents={totalAgents} onRescout={onRescout} />
         )}
 
-        {/* Run failed — prominent display when no waves rendered */}
-        {state.runFailed && state.waves.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 px-4 text-center">
-            <div className="w-12 h-12 rounded-full bg-red-100 dark:bg-red-900/50 flex items-center justify-center mb-4">
-              <span className="text-red-600 dark:text-red-400 text-xl font-bold">!</span>
-            </div>
-            <h2 className="text-base font-semibold text-red-800 dark:text-red-300 mb-2">Wave Execution Failed</h2>
-            <p className="text-sm text-red-700 dark:text-red-400 max-w-md break-words">{state.runFailed}</p>
-            {state.runFailed.includes('FinalizeWave') && (
-              <div className="flex gap-2 mt-4">
-                <button
-                  onClick={() => void handleRetryFinalize()}
-                  className="text-sm font-medium px-4 py-2 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
-                >
-                  &#x21BA; Retry Finalization
-                </button>
-                <button
-                  onClick={() => void handleFixBuild()}
-                  disabled={state.fixBuildStatus === 'running'}
-                  className="text-sm font-medium px-4 py-2 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  {state.fixBuildStatus === 'running' ? 'Fixing…' : '✦ Fix with AI'}
-                </button>
-              </div>
-            )}
-            {Object.keys(state.pipelineSteps ?? {}).length > 0 && (
-              <div className="mt-4 w-full max-w-md">
-                <RecoveryControlsPanel
-                  slug={slug}
-                  wave={Math.max(...state.waves.map(w => w.wave), 1)}
-                  pipelineSteps={state.pipelineSteps ?? {}}
-                  onRetryStep={async (step, wave) => { await retryStep(slug, step, wave) }}
-                  onSkipStep={async (step, wave, reason) => { await skipStep(slug, step, wave, reason) }}
-                  onForceComplete={async () => { await forceMarkComplete(slug) }}
-                  onRetryFinalize={async () => { await handleRetryFinalize() }}
-                />
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground mt-4">Press Escape to close this panel</p>
-          </div>
-        )}
-        {/* Run failed banner — inline when waves are also showing */}
-        {state.runFailed && state.waves.length > 0 && (
-          <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-red-800 text-sm dark:bg-red-950 dark:border-red-800 dark:text-red-400 flex items-center justify-between gap-2">
-            <span><span className="font-medium">Wave failed:</span> {state.runFailed}</span>
-            {state.runFailed.includes('FinalizeWave') && (
-              <div className="flex gap-2 shrink-0">
-                <button
-                  onClick={() => void handleRetryFinalize()}
-                  className="text-xs font-medium px-3 py-1.5 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
-                >
-                  &#x21BA; Retry
-                </button>
-                <button
-                  onClick={() => void handleFixBuild()}
-                  disabled={state.fixBuildStatus === 'running'}
-                  className="text-xs font-medium px-3 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                >
-                  {state.fixBuildStatus === 'running' ? 'Fixing…' : '✦ Fix with AI'}
-                </button>
-              </div>
-            )}
-          </div>
-        )}
-        {state.runFailed && state.waves.length > 0 && Object.keys(state.pipelineSteps ?? {}).length > 0 && (
-          <RecoveryControlsPanel
+        {/* Run failed displays */}
+        {state.runFailed && (
+          <WaveRecoveryPanel
             slug={slug}
-            wave={Math.max(...state.waves.map(w => w.wave), 1)}
-            pipelineSteps={state.pipelineSteps ?? {}}
-            onRetryStep={async (step, wave) => { await retryStep(slug, step, wave) }}
-            onSkipStep={async (step, wave, reason) => { await skipStep(slug, step, wave, reason) }}
-            onForceComplete={async () => { await forceMarkComplete(slug) }}
-            onRetryFinalize={async () => { await handleRetryFinalize() }}
+            state={state}
+            onRetryFinalize={() => void handleRetryFinalize()}
+            onFixBuild={() => void handleFixBuild()}
+            onRescout={onRescout}
           />
         )}
-
 
         {/* Scaffold row */}
         {state.scaffoldStatus !== 'idle' && (
@@ -512,7 +347,6 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
         {/* Wave rows */}
         {state.waves.map(wave => {
-          // Compute display agents for this wave (with overrides applied)
           const waveAgents = wave.agents.map(applyOverrides)
           const waveComplete = waveAgents.filter(a => a.status === 'complete').length
           const waveTotal = waveAgents.length
@@ -552,263 +386,27 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
               </div>
 
               {/* Merge and test controls */}
-              {(() => {
-                const mergeState = (state as AppWaveState & { wavesMergeState?: Map<number, WaveMergeState>; wavesTestState?: Map<number, WaveTestState> }).wavesMergeState?.get(wave.wave)
-                const testState = (state as AppWaveState & { wavesMergeState?: Map<number, WaveMergeState>; wavesTestState?: Map<number, WaveTestState> }).wavesTestState?.get(wave.wave)
-                const allComplete = waveComplete === waveTotal && waveTotal > 0
-                const alreadyMerged = wave.merge_status === 'merged' || wave.merge_status === 'success'
-                // Live SSE merge state takes priority over disk-seeded status —
-                // if the pipeline just failed, don't show "merged" from a stale disk read.
-                const mergeStatus = mergeState?.status ?? (alreadyMerged ? 'success' : 'idle')
-                const testStatus = testState?.status ?? 'idle'
+              <WaveMergePanel
+                slug={slug}
+                wave={wave}
+                waveAgents={waveAgents}
+                mergeState={state.wavesMergeState?.get(wave.wave)}
+                testState={state.wavesTestState?.get(wave.wave)}
+                hasGate={hasGate}
+                waveGate={state.waveGate}
+                fixBuildStatus={state.fixBuildStatus}
+                fixBuildOutput={state.fixBuildOutput}
+                fixBuildError={state.fixBuildError}
+                onMerge={handleMergeWave}
+                onRunTests={handleRunTests}
+                onRetryFinalize={(w) => void handleRetryFinalize(w)}
+                onFixBuild={(w, log, gate) => void handleFixBuild(w, log, gate)}
+                onProceedGate={(nextWave) => void handleProceedGate(nextWave)}
+                onStartWave={() => void startWave(slug)}
+                allWaves={state.waves}
+              />
 
-                return (
-                  <>
-                    {/* Merge button */}
-                    {allComplete && mergeStatus === 'idle' && !hasGate && (
-                      <button
-                        onClick={() => void handleMergeWave(wave.wave)}
-                        className="mt-3 w-full text-sm font-medium px-4 py-2.5 rounded-none bg-violet-600 text-white hover:bg-violet-700 active:scale-[0.98] transition-all"
-                      >
-                        Merge Wave {wave.wave}
-                      </button>
-                    )}
-
-                    {/* Merging in progress */}
-                    {mergeStatus === 'merging' && (
-                      <div className="mt-3 bg-violet-50 border border-violet-200 rounded-none px-4 py-2 text-violet-700 text-sm animate-pulse dark:bg-violet-950 dark:border-violet-800 dark:text-violet-400">
-                        Merging Wave {wave.wave}...
-                      </div>
-                    )}
-
-                    {/* Merge success */}
-                    {mergeStatus === 'success' && (
-                      <div className="mt-3 space-y-2">
-                        <div className="flex items-center justify-between bg-green-50 border border-green-200 rounded-none px-4 py-2 dark:bg-green-950 dark:border-green-800">
-                          <span className="text-green-800 text-sm dark:text-green-400">Wave {wave.wave} merged successfully</span>
-                          <button
-                            onClick={async () => {
-                              const branches = wave.agents.map(a => `wave${wave.wave}-agent-${a.agent}`)
-                              try { await batchDeleteWorktrees(slug, { branches, force: true }) } catch { /* already cleaned */ }
-                            }}
-                            className="text-xs text-green-700 hover:text-green-900 dark:text-green-400 dark:hover:text-green-200 underline"
-                          >
-                            Clean worktrees
-                          </button>
-                        </div>
-
-                        {testStatus === 'idle' && (
-                          <div className="flex">
-                            <button
-                              onClick={() => void handleRunTests(wave.wave)}
-                              className="flex-1 text-sm font-medium px-4 py-2.5 rounded-none bg-teal-500/15 text-teal-400 border border-teal-500/30 hover:bg-teal-500/25 hover:border-teal-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
-                            >
-                              Run Tests
-                            </button>
-                            <button
-                              onClick={() => setTestOutputOpen(testOutputOpen === wave.wave ? null : wave.wave)}
-                              className={`px-3 py-2.5 rounded-none border-l-0 border text-xs font-medium transition-all backdrop-blur-sm ${testOutputOpen === wave.wave ? 'bg-teal-500/30 border-teal-500/50 text-teal-300' : 'bg-teal-500/15 border-teal-500/30 text-teal-400 hover:bg-teal-500/25'}`}
-                              title="Toggle live output"
-                            >
-                              Watch
-                            </button>
-                          </div>
-                        )}
-
-                        {testStatus === 'running' && (
-                          <div className="flex">
-                            <div className="flex-1 bg-teal-500/15 border border-teal-500/30 rounded-none px-4 py-2.5 text-teal-400 text-sm animate-pulse">
-                              Running tests...
-                            </div>
-                            <button
-                              onClick={() => setTestOutputOpen(testOutputOpen === wave.wave ? null : wave.wave)}
-                              className={`px-3 py-2.5 rounded-none border-l-0 border text-xs font-medium transition-all backdrop-blur-sm ${testOutputOpen === wave.wave ? 'bg-teal-500/30 border-teal-500/50 text-teal-300' : 'bg-teal-500/15 border-teal-500/30 text-teal-400 hover:bg-teal-500/25'}`}
-                              title="Toggle live output"
-                            >
-                              Watch
-                            </button>
-                          </div>
-                        )}
-
-                        {testStatus === 'pass' && (
-                          <div className="bg-green-50 border border-green-200 rounded-none px-4 py-2 text-green-800 text-sm dark:bg-green-950 dark:border-green-800 dark:text-green-400">
-                            Tests passed ✓
-                          </div>
-                        )}
-
-                        {testStatus === 'fail' && !(fixBuildWave === wave.wave && fixOutputOpen === wave.wave) && (
-                          <div className="bg-red-50 border border-red-200 rounded-none px-4 py-3 space-y-2 dark:bg-red-950 dark:border-red-800">
-                            <div className="flex items-center justify-between">
-                              <p className="text-red-800 text-sm font-medium dark:text-red-400">Tests failed</p>
-                              <div className="flex gap-2">
-                                <button
-                                  onClick={() => void handleRunTests(wave.wave)}
-                                  className="text-xs font-medium px-2 py-1 rounded bg-amber-600 text-white hover:bg-amber-700 transition-colors"
-                                >
-                                  &#x21BA; Retry
-                                </button>
-                                <div className="flex">
-                                  <button
-                                    onClick={() => void handleFixBuild(wave.wave, testState?.output || 'Tests failed', 'test')}
-                                    disabled={state.fixBuildStatus === 'running'}
-                                    className="text-xs font-medium px-2 py-1 rounded-none rounded-l bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-                                  >
-                                    {state.fixBuildStatus === 'running' ? 'Fixing…' : '✦ Fix with AI'}
-                                  </button>
-                                  <button
-                                    onClick={() => setFixOutputOpen(fixOutputOpen === wave.wave ? null : wave.wave)}
-                                    className={`text-xs font-medium px-2 py-1 rounded-none rounded-r border-l border-blue-500 transition-colors ${fixOutputOpen === wave.wave ? 'bg-blue-500 text-white' : 'bg-blue-600/60 text-blue-200 hover:bg-blue-600'}`}
-                                    title="Toggle AI fix output"
-                                  >
-                                    Watch
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                            {testState?.output && (
-                              <pre className="text-xs font-mono text-red-700 bg-red-100 dark:bg-red-900 dark:text-red-300 rounded p-2 overflow-y-auto max-h-48 whitespace-pre-wrap break-all">
-                                {testState.output}
-                              </pre>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Live test output panel — toggled by Watch button */}
-                        {testOutputOpen === wave.wave && (
-                          <LiveOutputPanel
-                            status={testStatus === 'running' ? 'running' : testStatus === 'pass' ? 'complete' : testStatus === 'fail' ? 'failed' : 'idle'}
-                            output={testState?.output ?? ''}
-                            runningLabel="⬤ Live output"
-                            doneLabel="Test output"
-                            failedLabel="Test output"
-                            accentColor="teal"
-                            onClose={() => setTestOutputOpen(null)}
-                          />
-                        )}
-
-                        {/* AI fix output — toggled by Watch button */}
-                        {fixBuildWave === wave.wave && fixOutputOpen === wave.wave && state.fixBuildStatus !== 'idle' && (
-                          <LiveOutputPanel
-                            status={state.fixBuildStatus}
-                            output={state.fixBuildOutput + (state.fixBuildError ? `\n\nError: ${state.fixBuildError}` : '')}
-                            runningLabel="⬤ AI fixing…"
-                            doneLabel="✦ AI fix complete"
-                            failedLabel="✦ AI fix failed"
-                            accentColor="blue"
-                            onClose={() => setFixOutputOpen(null)}
-                            actions={state.fixBuildStatus === 'complete' ? (
-                              <button
-                                onClick={() => void handleRetryFinalize(wave.wave)}
-                                className="text-xs font-medium px-2 py-1 rounded-none bg-green-600 text-white hover:bg-green-700 transition-colors"
-                              >
-                                &#x21BA; Retry Finalization
-                              </button>
-                            ) : undefined}
-                          />
-                        )}
-
-                        {/* Start Next Wave — show after merge success if next wave is still fully pending and no gate is active */}
-                        {(() => {
-                          const nextWave = state.waves.find(w => w.wave === wave.wave + 1)
-                          const nextWaveFullyPending = nextWave && !nextWave.complete && nextWave.agents.every(a => a.status === 'pending' || !a.status)
-                          const isLastWave = wave.wave >= Math.max(...state.waves.map(w => w.wave))
-                          return !isLastWave && nextWaveFullyPending && !hasGate && !state.waveGate && (
-                            <div className="mt-3 bg-green-500/10 border border-green-500/30 rounded-lg px-4 py-4 flex items-center justify-between gap-4">
-                              <div>
-                                <p className="text-sm font-semibold text-green-700 dark:text-green-300">
-                                  Wave {wave.wave} complete
-                                </p>
-                                <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">
-                                  Wave {wave.wave + 1} is ready to run
-                                </p>
-                              </div>
-                              <button
-                                onClick={() => void startWave(slug)}
-                                className="shrink-0 text-sm font-semibold px-5 py-2.5 rounded-lg bg-green-600 text-white hover:bg-green-700 active:scale-[0.98] transition-all shadow-sm"
-                              >
-                                Run Wave {wave.wave + 1} &rarr;
-                              </button>
-                            </div>
-                          )
-                        })()}
-                      </div>
-                    )}
-
-                    {/* Merge failed */}
-                    {mergeStatus === 'failed' && (
-                      <div className="mt-3 space-y-2">
-                        <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 space-y-2 dark:bg-red-950 dark:border-red-800">
-                          <p className="text-red-800 text-sm font-medium dark:text-red-400">
-                            Merge failed: {mergeState?.error}
-                          </p>
-                          {(mergeState?.conflictingFiles?.length ?? 0) > 0 && (
-                            <ul className="mt-1 space-y-0.5">
-                              {mergeState!.conflictingFiles.map(f => (
-                                <li key={f} className="font-mono text-xs text-red-700 dark:text-red-300">{f}</li>
-                              ))}
-                            </ul>
-                          )}
-                          <div className="flex items-center gap-2 mt-3">
-                            <button
-                              onClick={() => void handleMergeWave(wave.wave)}
-                              className="text-xs font-medium px-3 py-1.5 rounded-md bg-gray-600 text-white hover:bg-gray-700 transition-colors"
-                            >
-                              Abort Merge
-                            </button>
-                            {(mergeState?.conflictingFiles?.length ?? 0) > 0 && (
-                              <button
-                                onClick={() => void resolveConflicts(slug, wave.wave)}
-                                className="text-xs font-medium px-3 py-1.5 rounded-md bg-violet-600 text-white hover:bg-violet-700 transition-colors"
-                              >
-                                Resolve with AI
-                              </button>
-                            )}
-                            <button
-                              onClick={() => void handleMergeWave(wave.wave)}
-                              className="text-xs font-medium px-3 py-1.5 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
-                            >
-                              Retry Merge
-                            </button>
-                          </div>
-                        </div>
-                        
-                        {mergeState?.resolutionError && (
-                          <ConflictResolutionPanel
-                            slug={slug}
-                            wave={wave.wave}
-                            conflictingFiles={mergeState?.conflictingFiles ?? []}
-                            onResolveStart={() => void resolveConflicts(slug, wave.wave)}
-                            resolvingFile={mergeState?.resolvingFile}
-                            resolvedFiles={mergeState?.resolvedFiles ?? []}
-                            resolutionError={mergeState?.resolutionError}
-                            failedFile={mergeState?.failedFile}
-                            isResolving={false}
-                            output={mergeState?.output}
-                          />
-                        )}
-                      </div>
-                    )}
-
-                    {/* AI Resolving conflicts */}
-                    {mergeStatus === 'resolving' && (
-                      <ConflictResolutionPanel
-                        slug={slug}
-                        wave={wave.wave}
-                        conflictingFiles={mergeState?.conflictingFiles ?? []}
-                        onResolveStart={() => void resolveConflicts(slug, wave.wave)}
-                        resolvingFile={mergeState?.resolvingFile}
-                        resolvedFiles={mergeState?.resolvedFiles ?? []}
-                        resolutionError={mergeState?.resolutionError}
-                        failedFile={mergeState?.failedFile}
-                        isResolving={true}
-                        output={mergeState?.output}
-                      />
-                    )}
-                  </>
-                )
-              })()}
-
-              {/* Wave gate banner — shown after this wave row when gate is pending */}
+              {/* Wave gate banner */}
               {hasGate && state.waveGate && (
                 <div className="mt-3 bg-blue-500/10 border border-blue-500/30 rounded-none p-4 space-y-4">
                   <div>
@@ -834,12 +432,11 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
           )
         })}
 
-        {/* File Activity section — only shown when there are running agents */}
+        {/* File Activity section */}
         {(() => {
           const hasRunningAgents = displayAgents.some(a => a.status === 'running')
           if (!hasRunningAgents) return null
 
-          // Build FileOwnershipEntry[] from running agents
           const fileEntries: FileOwnershipEntry[] = displayAgents
             .filter(a => a.status === 'running')
             .flatMap(a =>
@@ -864,7 +461,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                   File Activity
                 </span>
                 <span className="text-muted-foreground text-xs">
-                  {fileActivityExpanded ? '▼' : '▶'}
+                  {fileActivityExpanded ? '\u25BC' : '\u25B6'}
                 </span>
               </button>
               {fileActivityExpanded && (
