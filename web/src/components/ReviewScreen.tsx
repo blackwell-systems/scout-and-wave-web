@@ -84,6 +84,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
   }
 
   const [showRevise, setShowRevise] = useState(false)
+  const [showApproveConfirm, setShowApproveConfirm] = useState(false)
   const [showChat, setShowChat] = useState(false)
   const [diffTarget, setDiffTarget] = useState<{ agent: string; wave: number; file: string } | null>(null)
   const [chatWidthPx, setChatWidthPx] = useState(420)
@@ -223,7 +224,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
     if (worktreeCount > 0) {
       setWorktreeWarning(true)
     } else {
-      onApprove()
+      setShowApproveConfirm(true)
     }
   }
 
@@ -297,6 +298,18 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
             </p>
           )}
         </div>
+
+        {/* First-timer guidance banner */}
+        {criticReport === null && !criticRunning && (
+          <div className="mb-6 flex items-start gap-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3">
+            <span className="text-blue-500 mt-0.5 shrink-0">&#8505;</span>
+            <div className="text-sm text-blue-800 dark:text-blue-300">
+              <strong>Reviewing for the first time?</strong> Check the wave structure
+              (does the agent split make sense?), verify suitability in the Overview,
+              then run a Critic Review before approving.
+            </div>
+          </div>
+        )}
 
         {/* Overview - always visible */}
         <div className={`mb-6 ${isNotSuitable ? 'opacity-40 pointer-events-none' : ''}`}>
@@ -487,6 +500,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
           <ActionButtons onApprove={handleApproveClick} onReject={onReject} onRequestChanges={() => setShowRevise(true)} onViewWaves={onViewWaves} hasWaveWork={hasWaveWork} />
           <button
             onClick={() => togglePanel('validation')}
+            title="Run manifest validation to check for structural errors in the IMPL doc"
             className={`flex items-center justify-center text-sm font-medium px-6 h-14 transition-all duration-150 border-t-2 ${
               activePanels.includes('validation')
                 ? 'border-t-blue-500 text-blue-700 dark:text-blue-400 bg-blue-500/10'
@@ -497,6 +511,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
           </button>
           <button
             onClick={() => { togglePanel('worktrees'); refreshWorktreeCount() }}
+            title="View and manage isolated git branches created for this plan's agents"
             className={`flex items-center justify-center gap-2 text-sm font-medium px-6 h-14 transition-all duration-150 border-t-2 ${
               worktreeCount > 0
                 ? activePanels.includes('worktrees')
@@ -577,6 +592,37 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
                 className="px-4 py-2 text-sm font-medium rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors disabled:opacity-50"
               >
                 {cleaningWorktrees ? 'Cleaning...' : 'Clean & Approve'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Approve confirmation dialog */}
+      {showApproveConfirm && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-popover border border-border rounded-xl shadow-2xl max-w-md w-full p-6">
+            <div className="flex items-center gap-3 mb-4">
+              <div className="flex items-center justify-center w-10 h-10 rounded-full bg-green-100 dark:bg-green-950">
+                <span className="text-green-600 dark:text-green-400 text-lg">&#9654;</span>
+              </div>
+              <h3 className="text-base font-semibold text-foreground">Start wave execution?</h3>
+            </div>
+            <p className="text-sm text-muted-foreground mb-5">
+              This will launch {impl.waves.reduce((s, w) => s + w.agents.length, 0)} agents across {impl.waves.length} wave{impl.waves.length !== 1 ? 's' : ''} to modify {impl.file_ownership.length} file{impl.file_ownership.length !== 1 ? 's' : ''} in your repository. Claude agents will write code in isolated git branches. This action cannot be easily undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setShowApproveConfirm(false)}
+                className="px-4 py-2 text-sm font-medium rounded-lg border border-border text-foreground hover:bg-muted transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { onApprove(); setShowApproveConfirm(false) }}
+                className="px-4 py-2 text-sm font-medium rounded-lg bg-green-600 text-white hover:bg-green-700 transition-colors"
+              >
+                Start Execution
               </button>
             </div>
           </div>
