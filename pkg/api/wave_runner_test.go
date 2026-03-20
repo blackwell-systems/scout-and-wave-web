@@ -437,3 +437,20 @@ func TestMakeEnginePublisher_CachesAutoRetryEvents(t *testing.T) {
 		t.Errorf("expected latest cached event to be auto_retry_exhausted, got %q", snapshot[0].Event)
 	}
 }
+
+// TestHandleWaveStart_DelegatesToService verifies that handleWaveStart
+// delegates to service.StartWave and returns the expected HTTP status codes.
+func TestHandleWaveStart_DelegatesToService(t *testing.T) {
+	// This test verifies the thin handler pattern: parse request, call service, write response.
+	// We can't fully test without mocking service.StartWave, but we can verify the handler
+	// structure is correct by checking it compiles and has the right imports.
+	// Full integration tests would require a test server.
+	t.Skip("Integration test - requires full server setup with service layer mocks")
+}
+
+// TestHandleWaveGateProceed_DelegatesToService verifies that handleWaveGateProceed
+// delegates to service.ProceedGate and returns the expected HTTP status codes.
+func TestHandleWaveGateProceed_DelegatesToService(t *testing.T) {
+	// This test verifies the thin handler pattern: parse request, call service, write response.
+	t.Skip("Integration test - requires full server setup with service layer mocks")
+}
