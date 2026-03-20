@@ -161,6 +161,22 @@ func (s *Server) startIMPLWatcher(fallbackDir string) {
 
 	go func() {
 		defer watcher.Close()
+
+		// Debounce: coalesce rapid fsnotify events into a single broadcast.
+		// When multiple files change in quick succession (e.g., scout writes
+		// IMPL doc + .saw-state files), only one impl_list_updated event is
+		// sent after 500ms of quiet.
+		var debounceTimer *time.Timer
+		var debounceMu sync.Mutex
+
+		defer func() {
+			debounceMu.Lock()
+			if debounceTimer != nil {
+				debounceTimer.Stop()
+			}
+			debounceMu.Unlock()
+		}()
+
 		for {
 			select {
 			case event, ok := <-watcher.Events:
@@ -169,7 +185,14 @@ func (s *Server) startIMPLWatcher(fallbackDir string) {
 				}
 				// Watch for creates, renames, and removes (archival/deletion).
 				if event.Has(fsnotify.Create) || event.Has(fsnotify.Rename) || event.Has(fsnotify.Remove) {
-					s.globalBroker.broadcast("impl_list_updated")
+					debounceMu.Lock()
+					if debounceTimer != nil {
+						debounceTimer.Stop()
+					}
+					debounceTimer = time.AfterFunc(500*time.Millisecond, func() {
+						s.globalBroker.broadcast("impl_list_updated")
+					})
+					debounceMu.Unlock()
 				}
 			case _, ok := <-watcher.Errors:
 				if !ok {
