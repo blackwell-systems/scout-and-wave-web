@@ -35,3 +35,5 @@
   - IMPL doc: docs/IMPL/complete/IMPL-ai-code-review-gate.yaml
 - **living-impl-docs**: completed 2026-03-19, 2 waves, 6 agents
   - IMPL doc: docs/IMPL/complete/IMPL-living-impl-docs.yaml
+- **sse-improvements**: completed 2026-03-19, 1 waves, 5 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-sse-improvements.yaml

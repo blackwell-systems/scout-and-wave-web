@@ -1,0 +1,845 @@
+completion_date: "2026-03-19"
+title: SSE System Improvements
+feature_slug: sse-improvements
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability questions resolve cleanly.
+
+    1. File decomposition: Changes span 10+ distinct files across Go backend and
+       TypeScript frontend. The work breaks cleanly into: (A) backend keepalive
+       additions (wave.go, scout.go, planner.go, impl_edit.go, chat_handler.go),
+       (B) a new shared TypeScript utility (waveEventListeners.ts) that both
+       useWaveEvents.ts and waveEventStore.ts will call, (C) ReviewScreen.tsx
+       deduplication, and (D) the useGlobalEvents singleton hook with its
+       consumers (App.tsx, useNotifications.ts, usePipeline.ts). File ownership
+       is fully disjoint across all wave-1 agents.
+
+    2. No investigation-first items. All problems are diagnosed and have
+       specific file:line references in the audit. No crashes to reproduce.
+
+    3. Interface contracts are fully definable up front. The shared
+       attachWaveEventListeners function signature and the useGlobalEvents
+       singleton API can be specified before any agent begins.
+
+    4. Pre-implementation status check: All items (R1-R5) are TODO.
+       R6 (Last-Event-ID) is deferred as a follow-on IMPL because it requires
+       server-side ring buffer state and atomic counter management that would
+       conflict with R1 changes to the same handler functions. Scoping R6 out
+       keeps all wave-1 agents fully independent with no shared file ownership.
+
+    5. Parallelization value: Go and TypeScript builds both take >10 seconds.
+       The 5 wave-1 agents are completely independent (no shared files). This
+       is a clear parallelization win — estimated 3-4x speedup vs sequential.
+
+    R6 (Last-Event-ID replay) is explicitly out of scope. The audit's F11
+    (ProgramBoard+ProgramContractsPanel duplicate /api/program/events) is
+    included as Agent E (wave 1, fully disjoint). The audit's R3 (per-slug
+    server-side filtering) maps to the high-effort F12/F13 findings and is
+    out of scope; it would require touching all globalBroker broadcast call
+    sites across the entire API package and is better suited to a dedicated
+    refactor IMPL.
+
+    Out-of-scope items: R3 (server-side slug filtering, high effort, low
+    priority for single-user tool), R6 (Last-Event-ID, complex, deferred).
+
+    Estimated times:
+    - Scout phase: ~15 min (audit read, file analysis, interface contracts)
+    - Agent execution: ~5 agents x ~10 min avg = ~50 min, but parallel = ~10 min
+    - Merge and verification: ~5 min
+    Total SAW time: ~30 min
+    Sequential baseline: ~55 min
+    Time savings: ~25 min (~45% faster)
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./... && cd web && npm test -- --watchAll=false
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/api/wave.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/api/scout.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/api/planner.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/api/chat_handler.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/api/impl_edit.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: web/src/lib/waveEventListeners.ts
+      agent: B
+      wave: 1
+      action: new
+    - file: web/src/hooks/useWaveEvents.ts
+      agent: B
+      wave: 1
+      action: modify
+    - file: web/src/stores/waveEventStore.ts
+      agent: B
+      wave: 1
+      action: modify
+    - file: web/src/components/ReviewScreen.tsx
+      agent: C
+      wave: 1
+      action: modify
+    - file: web/src/hooks/useGlobalEvents.ts
+      agent: D
+      wave: 1
+      action: new
+    - file: web/src/App.tsx
+      agent: D
+      wave: 1
+      action: modify
+    - file: web/src/hooks/useNotifications.ts
+      agent: D
+      wave: 1
+      action: modify
+    - file: web/src/hooks/usePipeline.ts
+      agent: D
+      wave: 1
+      action: modify
+    - file: web/src/components/ProgramBoard.tsx
+      agent: E
+      wave: 1
+      action: modify
+    - file: web/src/components/ProgramContractsPanel.tsx
+      agent: E
+      wave: 1
+      action: modify
+interface_contracts:
+    - name: attachWaveEventListeners
+      description: |
+        Shared utility that registers all wave SSE event listeners on an EventSource.
+        Extracted from the duplicated 260-line blocks in useWaveEvents.ts and
+        waveEventStore.ts. Both callers pass their own dispatch function so state
+        updates go to the correct store/reducer.
+      definition: |
+        // web/src/lib/waveEventListeners.ts
+        import { WaveAction } from '../hooks/waveEventsReducer'
+
+        export function attachWaveEventListeners(
+          es: EventSource,
+          dispatch: (action: WaveAction) => void
+        ): void
+      location: web/src/lib/waveEventListeners.ts
+    - name: useGlobalEvents
+      description: |
+        Singleton hook that manages a single module-level EventSource('/api/events').
+        Reference-counted: connection opens on first subscriber, closes on last.
+        Replaces the three separate EventSource('/api/events') instances in App.tsx,
+        useNotifications.ts, and usePipeline.ts.
+      definition: |
+        // web/src/hooks/useGlobalEvents.ts
+        type GlobalEventHandlers = Partial<Record<string, (event: MessageEvent) => void>>
+
+        export function useGlobalEvents(handlers: GlobalEventHandlers): void
+        // Registers the given handlers on the shared singleton EventSource.
+        // Cleans up on unmount (removes handlers, decrements refcount).
+        // onOpen/onError callbacks may be included as '__open' and '__error' keys.
+      location: web/src/hooks/useGlobalEvents.ts
+    - name: keepalive ticker pattern (Go)
+      description: |
+        The Go pattern to add to each of the 5 missing SSE handler select-loops.
+        Matches the existing implementation in handleGlobalEvents (global_events.go:103-130).
+      definition: |
+        // Add before the for loop in each handler:
+        ticker := time.NewTicker(30 * time.Second)
+        defer ticker.Stop()
+
+        // Add case inside the select{} block:
+        case <-ticker.C:
+            fmt.Fprintf(w, ": ping\n\n")
+            flusher.Flush()
+      location: pkg/api/wave.go
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Agent A — Backend SSE Keepalive (R1)
+
+            ### What to implement
+            Add 30-second keepalive tickers to the 5 SSE handler functions that are
+            currently missing them. Without keepalives, any nginx/proxy with a default
+            read timeout will silently kill long-running SSE connections (e.g. a scout
+            agent doing deep analysis, a wave waiting at a gate).
+
+            The pattern already exists in `handleGlobalEvents` (`pkg/api/global_events.go`,
+            lines 103-130). Replicate it exactly in the 5 missing handlers.
+
+            ### Files to modify
+
+            **`pkg/api/wave.go` — `handleWaveEvents` (line 154)**
+
+            Inside the `for { select { ... } }` loop at line 154, add:
+            1. Before the loop: `ticker := time.NewTicker(30 * time.Second)` and `defer ticker.Stop()`
+            2. New case in the select: `case <-ticker.C: fmt.Fprintf(w, ": ping\n\n"); flusher.Flush()`
+            Also add `"time"` to imports (wave.go does not currently import it).
+
+            **`pkg/api/scout.go` — `handleScoutEvents` (line 91)**
+
+            Same pattern. The select loop is at lines 91-103. Add ticker before the loop
+            and the ping case inside. Add `"time"` import (scout.go already imports "time"
+            for time.Now() — verify before adding).
+
+            **`pkg/api/planner.go` — `handlePlannerEvents` (line 85)**
+
+            Same pattern. The select loop is at lines 85-97. Add ticker and ping case.
+            Verify if `"time"` import already exists.
+
+            **`pkg/api/chat_handler.go` — `handleImplChatEvents` (line 67)**
+
+            Same pattern. The select loop is at lines 67-80. Add ticker and ping case.
+            Verify if `"time"` import already exists.
+
+            **`pkg/api/impl_edit.go` — `handleImplReviseEvents` (line 148)**
+
+            Same pattern. The select loop is at lines 148-160. Add ticker and ping case.
+            Verify if `"time"` import already exists.
+
+            ### Exact code pattern to add (from global_events.go:103-130)
+
+            ```go
+            ticker := time.NewTicker(30 * time.Second)
+            defer ticker.Stop()
+
+            for {
+                select {
+                case ev := <-ch:
+                    // ... existing event handling unchanged ...
+                case <-ticker.C:
+                    fmt.Fprintf(w, ": ping\n\n")
+                    flusher.Flush()
+                case <-r.Context().Done():
+                    return
+                }
+            }
+            ```
+
+            ### Tests
+
+            Run `go test ./pkg/api/...` to verify the package compiles correctly.
+            Also verify with `go vet ./...`.
+
+            ### Verification gate
+
+            ```
+            go build ./...
+            go vet ./...
+            go test ./pkg/api/...
+            ```
+
+            ### Constraints
+
+            - Do NOT modify any frontend files.
+            - Do NOT change any other behavior in the handlers — only add the ticker.
+            - The `time` import must be added to files that don't already have it.
+            - Match the exact `": ping\n\n"` format (SSE comment, not an event).
+          files:
+            - pkg/api/wave.go
+            - pkg/api/scout.go
+            - pkg/api/planner.go
+            - pkg/api/chat_handler.go
+            - pkg/api/impl_edit.go
+        - id: B
+          task: |
+            ## Agent B — Wave Event Listener Deduplication (R4)
+
+            ### What to implement
+
+            Extract the ~260-line duplicated event-listener registration block that exists
+            verbatim in both `useWaveEvents.ts` (lines 90-293) and `waveEventStore.ts`
+            (lines 140-368) into `web/src/lib/waveEventListeners.ts` (new file).
+
+            The comment at `waveEventStore.ts:139` acknowledges this duplication:
+            `// Wire up all SSE event listeners (replicated from useWaveEvents.ts lines 84-265)`.
+
+            ### Interface contract
+
+            ```typescript
+            // web/src/lib/waveEventListeners.ts
+            import { WaveAction } from '../hooks/waveEventsReducer'
+
+            export function attachWaveEventListeners(
+              es: EventSource,
+              dispatch: (action: WaveAction) => void
+            ): void
+            ```
+
+            The function registers all 30+ named addEventListener calls on `es`.
+            Each handler parses the event data and calls `dispatch(action)`.
+
+            ### Step 1: Create `web/src/lib/waveEventListeners.ts`
+
+            A scaffold stub may already exist at this path. Fill in or overwrite it with
+            the full implementation by copying the listener block from `useWaveEvents.ts:90-293`.
+            The dispatch target is the `dispatch` parameter.
+
+            The complete list of events to wire (verified from both files):
+            `scaffold_started`, `scaffold_output`, `scaffold_complete`, `scaffold_failed`,
+            `agent_started`, `agent_complete`, `agent_failed`, `agent_output`,
+            `agent_tool_call`, `wave_complete`, `run_complete`, `run_failed`,
+            `wave_gate_pending`, `wave_gate_resolved`, `merge_started`, `merge_output`,
+            `merge_complete`, `merge_failed`, `conflict_resolving`, `conflict_resolved`,
+            `conflict_resolution_failed`, `test_started`, `test_output`, `test_complete`,
+            `test_failed`, `stale_branches_detected`, `stage_transition`, `pipeline_step`,
+            `fix_build_started`, `fix_build_output`, `fix_build_complete`, `fix_build_failed`.
+
+            ### Step 2: Refactor `web/src/hooks/useWaveEvents.ts`
+
+            In the `useEffect` at line 78:
+            - Keep the `const es = new EventSource(...)`, `esRef`, `es.onopen`, `es.onerror` lines.
+            - Replace ALL `es.addEventListener(...)` calls (lines 90-293) with:
+              `attachWaveEventListeners(es, dispatch)`
+            - Add import: `import { attachWaveEventListeners } from '../lib/waveEventListeners'`
+
+            ### Step 3: Refactor `web/src/stores/waveEventStore.ts`
+
+            In the `subscribe` function, inside the `if (entry.refCount === 1)` block:
+            - Keep the `const es = new EventSource(...)`, `entry.eventSource = es`,
+              `es.onopen`, `es.onerror` lines.
+            - Replace ALL `es.addEventListener(...)` calls (lines 140-368) with:
+              `attachWaveEventListeners(es, (action) => dispatch(slug, action))`
+            - Add import: `import { attachWaveEventListeners } from '../lib/waveEventListeners'`
+
+            Note the dispatch adapter: `waveEventStore` calls `dispatch(slug, action)` (slug-scoped,
+            2 args) while `useWaveEvents` calls `dispatch(action)` (1 arg from useReducer). The
+            adapter lambda bridges this difference.
+
+            ### Tests
+
+            Run existing tests:
+            - `cd web && npm test -- --watchAll=false --testPathPattern="waveEventStore|useWaveEvents"`
+
+            Both test files import the real modules — if the refactor breaks the event
+            wiring, tests will fail. TypeScript compilation catches type errors.
+
+            ### Verification gate
+
+            ```
+            cd web && npx tsc --noEmit
+            cd web && npm test -- --watchAll=false --testPathPattern="waveEventStore|useWaveEvents"
+            ```
+
+            ### Constraints
+
+            - Do NOT modify `web/src/hooks/waveEventsReducer.ts`.
+            - Do NOT change the dispatch logic or reducer — only consolidate registration.
+            - The `WaveAction` type comes from `'../hooks/waveEventsReducer'` — use
+              that import path from the lib directory (one level up from lib/).
+          files:
+            - web/src/lib/waveEventListeners.ts
+            - web/src/hooks/useWaveEvents.ts
+            - web/src/stores/waveEventStore.ts
+        - id: C
+          task: |
+            ## Agent C — ReviewScreen Redundant Connection Fix (R5)
+
+            ### What to implement
+
+            Remove the standalone `EventSource` in `ReviewScreen.tsx` (lines 135-143)
+            that opens a second `/api/wave/${slug}/events` connection just to listen
+            for `wave_complete`. The `wave_complete` event is already received by
+            `useExecutionSync(slug)` which internally calls `useWaveEvents(slug)`, and
+            the `waveEventStore` singleton already handles it.
+
+            The current redundant code (lines 135-143):
+            ```typescript
+            useEffect(() => {
+              const es = new EventSource(`/api/wave/${slug}/events`)
+              es.addEventListener('wave_complete', () => {
+                onRefreshImpl?.(slug)
+              })
+              return () => { es.close() }
+            }, [slug, onRefreshImpl])
+            ```
+
+            ### Fix
+
+            Read `hooks/useExecutionSync.ts` to understand what fields are available on
+            `ExecutionSyncState`. The `executionState` variable is already present at
+            line 70 of ReviewScreen.tsx.
+
+            **IMPORTANT:** `executionState.waveCounts` does NOT exist on ExecutionSyncState.
+            Do not use it. The actual fields are: `agents`, `waveProgress`, `scaffoldStatus`,
+            `isLive`. Read `hooks/useExecutionSync.ts` to confirm the exact type before writing.
+
+            Use the `diskStatus` approach instead — it is reliable and already present at
+            line 147 of ReviewScreen.tsx:
+
+            ```typescript
+            const prevMergedCount = useRef<number>(0)
+            useEffect(() => {
+              const count = diskStatus?.waves_merged?.length ?? 0
+              if (count > prevMergedCount.current) {
+                prevMergedCount.current = count
+                onRefreshImpl?.(slug)
+              }
+            }, [diskStatus?.waves_merged?.length, slug, onRefreshImpl])
+            ```
+
+            The key invariant: eliminate the standalone `new EventSource(...)` at
+            line 136 entirely.
+
+            ### Read these files first
+
+            - `web/src/hooks/useExecutionSync.ts` — understand ExecutionSyncState type
+            - `web/src/components/ReviewScreen.tsx` — current full implementation
+
+            ### Tests
+
+            Run: `cd web && npm test -- --watchAll=false --testPathPattern="ReviewScreen"`
+
+            Verify that `ReviewScreen.test.tsx` still passes. If the test mocks
+            EventSource, it may need updating to reflect the removal.
+
+            ### Verification gate
+
+            ```
+            cd web && npx tsc --noEmit
+            cd web && npm test -- --watchAll=false --testPathPattern="ReviewScreen"
+            ```
+
+            ### Constraints
+
+            - Only modify `ReviewScreen.tsx`.
+            - The fix must not break the `onRefreshImpl` call — it must still fire
+              when a wave completes.
+            - Do NOT add a new EventSource of any kind.
+            - `useRef` is already imported in ReviewScreen.tsx (line 1).
+          files:
+            - web/src/components/ReviewScreen.tsx
+        - id: D
+          task: |
+            ## Agent D — Centralize /api/events into useGlobalEvents Singleton (R2)
+
+            ### What to implement
+
+            Three separate components each open `new EventSource('/api/events')`:
+            - `App.tsx:108` — listens for `impl_list_updated`
+            - `hooks/useNotifications.ts:112` — listens for `notification`
+            - `hooks/usePipeline.ts:54` — listens for `pipeline_updated`, `impl_list_updated`
+
+            This results in 3 simultaneous persistent connections to the same endpoint.
+            Create a shared singleton hook at `web/src/hooks/useGlobalEvents.ts` and
+            migrate all three consumers to use it.
+
+            ### Step 1: Create `web/src/hooks/useGlobalEvents.ts`
+
+            A scaffold stub may already exist at this path. Implement (or overwrite) it
+            with a module-level singleton using reference counting:
+
+            ```typescript
+            import { useEffect } from 'react'
+
+            let singletonEs: EventSource | null = null
+            let refCount = 0
+            const handlerMap = new Map<string, Set<(event: MessageEvent) => void>>()
+
+            type GlobalEventHandlers = Partial<Record<string, (event: MessageEvent) => void>>
+
+            export function useGlobalEvents(handlers: GlobalEventHandlers): void {
+              useEffect(() => {
+                refCount++
+                if (!singletonEs) {
+                  singletonEs = new EventSource('/api/events')
+                  singletonEs.onerror = () => { /* optional log */ }
+                }
+
+                const entries = Object.entries(handlers).filter(([, h]) => h != null) as [string, (e: MessageEvent) => void][]
+
+                for (const [eventType, handler] of entries) {
+                  if (!handlerMap.has(eventType)) {
+                    handlerMap.set(eventType, new Set())
+                    const es = singletonEs!
+                    es.addEventListener(eventType, (e) => {
+                      handlerMap.get(eventType)?.forEach(h => h(e as MessageEvent))
+                    })
+                  }
+                  handlerMap.get(eventType)!.add(handler)
+                }
+
+                return () => {
+                  for (const [eventType, handler] of entries) {
+                    handlerMap.get(eventType)?.delete(handler)
+                  }
+                  refCount--
+                  if (refCount === 0 && singletonEs) {
+                    singletonEs.close()
+                    singletonEs = null
+                    handlerMap.clear()
+                  }
+                }
+              }, []) // mount-only; handlers registered by stable identity
+            }
+            ```
+
+            Callers MUST pass stable handler references (via useCallback) to avoid
+            re-registration issues. Document this in a comment.
+
+            ### Step 2: Refactor `web/src/App.tsx`
+
+            Replace the useEffect block at lines 107-118 that creates `new EventSource('/api/events')`.
+
+            ```typescript
+            import { useGlobalEvents } from './hooks/useGlobalEvents'
+            import { useCallback } from 'react'
+
+            // In the component body:
+            useGlobalEvents({
+              impl_list_updated: useCallback(() => {
+                setSseConnected(true)
+                listImpls().then(setEntries).catch(() => {})
+                fetchInterruptedSessions().then(setInterruptedSessions).catch(() => {})
+                setSseRefreshTick(t => t + 1)
+              }, []),
+            })
+            ```
+
+            The `es.onopen = () => setSseConnected(true)` and `es.onerror = () => setSseConnected(false)`
+            lines from the old code won't map directly. Keep `sseConnected` behavior by setting it true
+            on the first `impl_list_updated` event (already done above). Remove the old useEffect entirely.
+
+            **Known behavioral tradeoff:** After this change, `sseConnected` will become `true` on
+            the first `impl_list_updated` event but will NEVER become `false` on disconnect (the
+            singleton has no per-consumer error callback). This is acceptable for a local single-user
+            tool — the reconnect indicator is a nice-to-have, not safety-critical. Add a TODO comment
+            in useGlobalEvents.ts noting that per-consumer error callbacks could be added later if needed.
+
+            ### Step 3: Refactor `web/src/hooks/useNotifications.ts`
+
+            Fix the stale-closure issue (F7): the current useEffect re-creates the EventSource
+            whenever `preferences`, `isPageVisible`, or `browserPermission` change.
+
+            Use refs to capture current values so a stable handler doesn't need re-registration.
+
+            **IMPORTANT: Import changes are ADDITIVE.** The existing file already imports
+            `useState`, `useEffect`, and other React hooks. Do NOT replace the existing import
+            line — MERGE `useCallback` and `useRef` into it:
+            ```typescript
+            // WRONG — deletes existing imports:
+            import { useCallback, useRef } from 'react'
+            // CORRECT — merge into existing:
+            import { useState, useEffect, useCallback, useRef } from 'react'
+            ```
+            Read the file first and add only what is missing.
+
+            ```typescript
+            import { useGlobalEvents } from './useGlobalEvents'
+
+            // In the hook body, add refs:
+            const preferencesRef = useRef(preferences)
+            const isPageVisibleRef = useRef(isPageVisible)
+            const browserPermissionRef = useRef(browserPermission)
+
+            useEffect(() => { preferencesRef.current = preferences }, [preferences])
+            useEffect(() => { isPageVisibleRef.current = isPageVisible }, [isPageVisible])
+            useEffect(() => { browserPermissionRef.current = browserPermission }, [browserPermission])
+
+            const handleNotification = useCallback((event: MessageEvent) => {
+              const prefs = preferencesRef.current
+              const visible = isPageVisibleRef.current
+              const permission = browserPermissionRef.current
+              // ... notification logic using refs instead of direct state variables ...
+            }, []) // stable — no deps, reads via refs
+
+            useGlobalEvents({ notification: handleNotification })
+            ```
+
+            Remove the old `useEffect([preferences, isPageVisible, browserPermission])` block entirely.
+            Keep all other logic (dismissToast, updatePreferences, etc.) unchanged.
+
+            ### Step 4: Refactor `web/src/hooks/usePipeline.ts`
+
+            Replace the useEffect at lines 49-74 that creates `new EventSource('/api/events')`:
+
+            ```typescript
+            import { useCallback } from 'react'
+            import { useGlobalEvents } from './useGlobalEvents'
+
+            // In the hook body (loadPipeline is already defined above):
+            useGlobalEvents({
+              pipeline_updated: useCallback(() => { void loadPipeline() }, []),
+              impl_list_updated: useCallback(() => { void loadPipeline() }, []),
+            })
+            ```
+
+            Remove the `esRef` ref and the old useEffect block.
+
+            ### Tests
+
+            ```
+            cd web && npx tsc --noEmit
+            cd web && npm run build
+            ```
+
+            ### Verification gate
+
+            ```
+            cd web && npx tsc --noEmit
+            cd web && npm run build
+            ```
+
+            ### Constraints
+
+            - Do NOT modify any Go backend files.
+            - Do NOT modify ReviewScreen.tsx, useWaveEvents.ts, or waveEventStore.ts.
+            - The `/api/events` endpoint is the ONLY endpoint managed by useGlobalEvents.
+              Do NOT route `/api/program/events` through it.
+            - Callers must use useCallback for handler stability — add a JSDoc comment
+              to useGlobalEvents documenting this requirement.
+          files:
+            - web/src/hooks/useGlobalEvents.ts
+            - web/src/App.tsx
+            - web/src/hooks/useNotifications.ts
+            - web/src/hooks/usePipeline.ts
+        - id: E
+          task: |
+            ## Agent E — ProgramContractsPanel Standalone EventSource Removal (F11 rescoped)
+
+            ### Context (read before implementing)
+
+            `ProgramContractsPanel.tsx` opens its own `new EventSource('/api/program/events')`
+            to listen for `program_contract_frozen`. However, `ProgramContractsPanel` is
+            **currently an orphaned component** — it is not imported or rendered anywhere in
+            the codebase. The two-simultaneous-connections problem does not occur at runtime.
+
+            The original brief assumed ProgramBoard and ProgramContractsPanel were always
+            co-rendered. That is incorrect. **Do NOT modify ProgramBoard.tsx.**
+
+            ### What to implement
+
+            Fix `ProgramContractsPanel.tsx` only:
+
+            1. Remove the standalone `new EventSource('/api/program/events')` useEffect
+               (currently around lines 49-65):
+               ```typescript
+               useEffect(() => {
+                 const eventSource = new EventSource('/api/program/events')
+                 eventSource.addEventListener('program_contract_frozen', handleContractFrozen)
+                 return () => { eventSource.close() }
+               }, [programSlug])
+               ```
+
+            2. Replace with an optional `onContractFrozen?: () => void` prop on the component:
+               ```typescript
+               interface ProgramContractsPanelProps {
+                 programSlug: string
+                 onContractFrozen?: () => void  // add this
+                 // ... existing props ...
+               }
+               ```
+
+            3. Call `void loadContracts()` (or equivalent) when the prop fires:
+               ```typescript
+               useEffect(() => {
+                 if (onContractFrozen) {
+                   // caller will invoke this when a contract freezes
+                 }
+               }, [onContractFrozen])
+               ```
+               Actually: the prop is a callback the parent calls, not an event the component
+               listens to. Wire it so that when `onContractFrozen` is called by the parent,
+               the component re-fetches contracts. A simple pattern:
+               ```typescript
+               const [contractRefreshTick, setContractRefreshTick] = useState(0)
+               // expose to parent:
+               // onContractFrozen = () => setContractRefreshTick(t => t + 1)
+               // internal useEffect depends on contractRefreshTick
+               ```
+               But since the parent calls the prop, just have the parent pass:
+               `onContractFrozen={() => triggerRefetch()}` when it wires this in future.
+               For now the component just accepts the prop and is ready.
+
+            ### Outcome
+
+            `ProgramContractsPanel` no longer contains a standalone EventSource. When a future
+            wave wires it into ProgramBoard (which already has the reconnecting EventSource),
+            the parent can pass `onContractFrozen` to trigger refreshes. No runtime behavior
+            changes today since the component is not rendered anywhere.
+
+            ### Verification gate
+
+            ```
+            cd web && npx tsc --noEmit
+            ```
+
+            ### Tests
+
+            No unit tests exist for ProgramBoard or ProgramContractsPanel:
+            ```
+            cd web && npx tsc --noEmit
+            ```
+
+            ### Verification gate
+
+            ```
+            cd web && npx tsc --noEmit
+            cd web && npm run build
+            ```
+
+            ### Constraints
+
+            - Only modify `ProgramBoard.tsx` and `ProgramContractsPanel.tsx`.
+            - Do NOT modify any Go backend files.
+            - Do NOT use `useGlobalEvents` (that hook is for `/api/events` only).
+            - ProgramBoard's exponential backoff reconnect MUST be preserved.
+          files:
+            - web/src/components/ProgramBoard.tsx
+            - web/src/components/ProgramContractsPanel.tsx
+      base_commit: 4a2500aabd672bffeb636c3e8ee85fba179e4acc
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: test
+          command: go test ./pkg/api/...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build
+          required: true
+scaffolds:
+    - file: web/src/lib/waveEventListeners.ts
+      contents: |
+        // Stub scaffold — Agent B will implement this file in full.
+        // It must export attachWaveEventListeners(es, dispatch) that registers
+        // all 30+ wave SSE event listeners. Agent B owns this file.
+      import_path: web/src/lib/waveEventListeners
+      status: committed (4a2500a)
+    - file: web/src/hooks/useGlobalEvents.ts
+      contents: |
+        // Stub scaffold — Agent D will implement this file in full.
+        // It must export useGlobalEvents(handlers) as a reference-counted singleton.
+        // Agent D owns this file.
+      import_path: web/src/hooks/useGlobalEvents
+      status: committed (4a2500a)
+completion_reports:
+    A:
+        status: complete
+        branch: saw/sse-improvements/wave1-agent-A
+        commit: 0f3cd24
+        files_changed:
+            - pkg/api/wave.go
+            - pkg/api/scout.go
+            - pkg/api/planner.go
+            - pkg/api/chat_handler.go
+            - pkg/api/impl_edit.go
+        verification: 'PASS: go build ./..., go vet ./..., go test ./pkg/api/... (3.575s). Added time import to wave.go. Copied web/dist from main repo for go:embed.'
+    B:
+        status: complete
+        branch: saw/sse-improvements/wave1-agent-B
+        commit: 15fd9a4
+        files_changed:
+            - web/src/lib/waveEventListeners.ts
+            - web/src/hooks/useWaveEvents.ts
+            - web/src/stores/waveEventStore.ts
+        files_created:
+            - web/src/lib/waveEventListeners.ts
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/sse-improvements/wave1-agent-C
+        commit: 3a892d1
+        files_changed:
+            - web/src/components/ReviewScreen.tsx
+            - web/src/components/ReviewScreen.test.tsx
+        tests_added:
+            - renders without crashing
+            - subscribes to SSE on mount via useExecutionSync
+            - calls onRefreshImpl when waves_merged count increases in disk status
+            - closes EventSource on unmount
+            - does not crash when onRefreshImpl is not provided
+        verification: PASS
+    D:
+        status: complete
+        branch: saw/sse-improvements/wave1-agent-D
+        commit: 820e9d5
+        files_changed:
+            - web/src/hooks/useGlobalEvents.ts
+            - web/src/App.tsx
+            - web/src/hooks/useNotifications.ts
+            - web/src/hooks/usePipeline.ts
+        files_created:
+            - web/src/hooks/useGlobalEvents.ts
+        verification: PASS
+    E:
+        status: complete
+        branch: saw/sse-improvements/wave1-agent-E
+        commit: 310881f
+        files_changed:
+            - web/src/components/ProgramContractsPanel.tsx
+        verification: 'PASS: tsc --noEmit clean, npm run build successful'
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |
+            Agent B's refactor of useWaveEvents.ts and waveEventStore.ts breaks the
+            event wiring (an event type is missing from attachWaveEventListeners).
+          likelihood: medium
+          impact: high
+          mitigation: |
+            The existing test suites (waveEventStore.test.ts, useWaveEvents.test.ts)
+            exercise the event handlers. If any listener is dropped, tests will catch
+            it. Agent B must run tests before completing.
+        - scenario: |
+            Agent D's useGlobalEvents singleton has stale-closure issues — the
+            notification handler captures old preference values.
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            The agent prompt explicitly specifies the useRef pattern to avoid stale
+            closures. The TypeScript compiler won't catch this at type level, but
+            manual testing of notification toggling will surface it.
+        - scenario: |
+            Agent C's ReviewScreen fix breaks onRefreshImpl firing — wave completions
+            no longer trigger IMPL refresh.
+          likelihood: low
+          impact: medium
+          mitigation: |
+            The ReviewScreen.test.tsx file covers this component. Agent C must verify
+            the test passes. The agent prompt gives two fallback approaches if the
+            first doesn't work cleanly.
+        - scenario: |
+            Multiple wave-1 agents conflict at merge (file ownership overlap).
+          likelihood: low
+          impact: high
+          mitigation: |
+            File ownership is fully disjoint across all 5 wave-1 agents. Verified
+            manually — no file appears in more than one agent's ownership list.
+        - scenario: |
+            The useGlobalEvents singleton persists stale handlers after a component
+            unmounts, causing memory leaks or stale event processing.
+          likelihood: low
+          impact: low
+          mitigation: |
+            The agent prompt specifies cleanup logic that removes handlers on unmount
+            and decrements refcount. The module-level handlerMap.clear() on last
+            unsubscribe prevents accumulation.
+        - scenario: |
+            Adding keepalive tickers to wave.go breaks the progress parsing logic
+            (ParseAndEmitProgress) that is called on agent_tool_call events.
+          likelihood: low
+          impact: low
+          mitigation: |
+            Agent A only adds a ticker case to the select loop. The existing cases
+            are untouched. ParseAndEmitProgress is called inside the ev case, not
+            the ticker case. No behavioral change to event handling.
+state: "COMPLETE"
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: 'Wave 1: all exports are integrated (no gaps detected)'
