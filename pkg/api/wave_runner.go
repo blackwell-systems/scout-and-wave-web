@@ -16,6 +16,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+	"github.com/blackwell-systems/scout-and-wave-web/pkg/service"
 )
 
 // gateChannels stores per-slug gate channels used to pause runWaveLoop
@@ -36,39 +37,42 @@ var runWaveLoopFunc = runWaveLoop
 func (s *Server) handleWaveStart(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 
-	// Check for an already-active run; store atomically if not present.
-	if _, loaded := s.activeRuns.LoadOrStore(slug, struct{}{}); loaded {
-		http.Error(w, "wave already running", http.StatusConflict)
-		return
-	}
-
-	// Resolve the IMPL doc path and repository from saw.config.json.
-	// This ensures we use the correct repository where the IMPL doc lives,
-	// not the global default repository.
-	implPath, repoPath, err := s.resolveIMPLPath(slug)
-	if err != nil {
-		s.activeRuns.Delete(slug)
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
-	publish := s.makePublisher(slug)
-
 	// Clear previous stage state so the timeline starts fresh for this run.
 	s.stages.Clear(slug)
 	if s.pipelineTracker != nil {
 		s.pipelineTracker.Clear(slug)
 	}
 	s.progressTracker.Clear(slug)
-	onStage := s.makeStageCallback(slug, publish)
 
 	// Notify sidebar that execution started (is_executing becomes true).
 	s.globalBroker.broadcast("impl_list_updated")
 
+	// Delegate to service layer. Service handles duplicate run detection,
+	// IMPL path resolution, and wave execution.
+	if err := service.StartWave(s.svcDeps, slug); err != nil {
+		// Restore UI state on failure.
+		s.globalBroker.broadcast("impl_list_updated")
+		if err.Error() == fmt.Sprintf("wave already running for slug %q", slug) {
+			http.Error(w, "wave already running", http.StatusConflict)
+		} else {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		}
+		return
+	}
+
+	// Start background goroutine to broadcast impl_list_updated when done.
+	// Service layer handles deferred activeWaves cleanup; we just need to
+	// notify UI that is_executing changed.
 	go func() {
-		defer s.activeRuns.Delete(slug)
-		defer s.globalBroker.broadcast("impl_list_updated") // is_executing becomes false
-		runWaveLoopFunc(implPath, slug, repoPath, publish, onStage)
+		// Subscribe to wave events to detect completion/failure.
+		ch, cancel := s.svcDeps.Publisher.Subscribe("wave:" + slug)
+		defer cancel()
+		for ev := range ch {
+			if ev.Name == "run_complete" || ev.Name == "run_failed" {
+				s.globalBroker.broadcast("impl_list_updated")
+				return
+			}
+		}
 	}()
 
 	w.WriteHeader(http.StatusAccepted)
@@ -687,23 +691,14 @@ func runFinalizeSteps(slug string, waveNum int, implPath, repoPath, integrationM
 func (s *Server) handleWaveGateProceed(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 
-	val, ok := gateChannels.Load(slug)
-	if !ok {
-		http.Error(w, fmt.Sprintf("no gate pending for slug %q", slug), http.StatusNotFound)
+	// Delegate to service layer.
+	if err := service.ProceedGate(s.svcDeps, slug); err != nil {
+		if err.Error() == fmt.Sprintf("no gate pending for slug %q", slug) {
+			http.Error(w, err.Error(), http.StatusNotFound)
+		} else {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+		}
 		return
-	}
-
-	ch, ok := val.(chan bool)
-	if !ok {
-		http.Error(w, "internal: gate channel type assertion failed", http.StatusInternalServerError)
-		return
-	}
-
-	// Non-blocking send: if the channel already has a value (e.g. double-click),
-	// we just drop this one rather than blocking.
-	select {
-	case ch <- true:
-	default:
 	}
 
 	w.WriteHeader(http.StatusAccepted)
@@ -730,65 +725,32 @@ func (s *Server) handleWaveAgentRerun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Resolve the IMPL doc path and repository (same as handleWaveStart)
-	implPath, repoPath, err := s.resolveIMPLPath(slug)
+	// Build structured failure context from previous completion report (if any).
+	// This is handler-level concern since it requires resolving the IMPL path
+	// which the service layer will also do. We augment scopeHint here to avoid
+	// double resolution.
+	implPath, _, err := s.resolveIMPLPath(slug)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
-	// Build structured failure context from previous completion report (if any).
-	promptPrefix := body.ScopeHint
+	scopeHint := body.ScopeHint
 	if rc, err := retryctx.BuildRetryContext(implPath, letter, 2); err == nil {
 		if rc.PromptText != "" {
-			if promptPrefix != "" {
-				promptPrefix = rc.PromptText + "\n" + promptPrefix
+			if scopeHint != "" {
+				scopeHint = rc.PromptText + "\n" + scopeHint
 			} else {
-				promptPrefix = rc.PromptText
+				scopeHint = rc.PromptText
 			}
 		}
 	}
 
-	// Read wave model and integration model from saw.config.json if present.
-	waveModel := ""
-	integrationModel := ""
-	if cfgData, err := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); err == nil {
-		var sawCfg SAWConfig
-		if json.Unmarshal(cfgData, &sawCfg) == nil {
-			waveModel = sawCfg.Agent.WaveModel
-			integrationModel = sawCfg.Agent.IntegrationModel
-		}
+	// Delegate to service layer.
+	if err := service.RerunAgent(s.svcDeps, slug, body.Wave, letter, scopeHint); err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
-	if fallbackSAWConfig != nil {
-		if waveModel == "" {
-			waveModel = fallbackSAWConfig.Agent.WaveModel
-		}
-		if integrationModel == "" {
-			integrationModel = fallbackSAWConfig.Agent.IntegrationModel
-		}
-	}
-
-	opts := engine.RunWaveOpts{
-		IMPLPath:         implPath,
-		RepoPath:         repoPath,
-		Slug:             slug,
-		WaveModel:        waveModel,
-		IntegrationModel: integrationModel,
-	}
-	enginePublisher := s.makeEnginePublisher(slug)
-
-	go func() {
-		if err := engine.RunSingleAgent(context.Background(), opts, body.Wave, letter, promptPrefix, enginePublisher); err != nil {
-			publish := s.makePublisher(slug)
-			publish("agent_failed", map[string]interface{}{
-				"agent":        letter,
-				"wave":         body.Wave,
-				"status":       "failed",
-				"failure_type": "rerun",
-				"message":      err.Error(),
-			})
-		}
-	}()
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusAccepted)
@@ -813,129 +775,57 @@ func (s *Server) handleWaveFinalize(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	implPath, repoPath, err := s.resolveIMPLPath(slug)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusNotFound)
-		return
-	}
-
 	// Guard against concurrent merges (reuses the same lock as handleWaveMerge)
 	if _, loaded := s.mergingRuns.LoadOrStore(slug, struct{}{}); loaded {
 		http.Error(w, "merge/finalize already in progress for this slug", http.StatusConflict)
 		return
 	}
 
-	publish := s.makePublisher(slug)
 	wave := body.Wave
+
+	// Delegate to service layer. Service launches finalization in background
+	// and returns immediately.
+	if err := service.FinalizeWave(s.svcDeps, slug, wave); err != nil {
+		s.mergingRuns.Delete(slug)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
 
 	w.WriteHeader(http.StatusAccepted)
 	s.globalBroker.broadcast("impl_list_updated") // execution started
 
-	// Resolve integration model for the integration agent step.
-	finalizeIntModel := ""
-	if cfgData, err := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); err == nil {
-		var sawCfg SAWConfig
-		if json.Unmarshal(cfgData, &sawCfg) == nil {
-			finalizeIntModel = sawCfg.Agent.IntegrationModel
-		}
-	}
-	if finalizeIntModel == "" && fallbackSAWConfig != nil {
-		finalizeIntModel = fallbackSAWConfig.Agent.IntegrationModel
-	}
-
+	// Subscribe to events to track completion and clean up UI state.
 	go func() {
 		defer s.mergingRuns.Delete(slug)
 		defer s.globalBroker.broadcast("impl_list_updated") // execution ended
 
-		publish("merge_started", map[string]interface{}{
-			"slug": slug,
-			"wave": wave,
-		})
-		publish("merge_output", map[string]interface{}{
-			"slug":  slug,
-			"wave":  wave,
-			"chunk": fmt.Sprintf("Retrying finalization for wave %d...\n", wave),
-		})
-
-		if defaultPipelineTracker != nil {
-			// Use decomposed pipeline with step tracking.
-			if err := runFinalizeSteps(slug, wave, implPath, repoPath, finalizeIntModel, publish); err != nil {
-				publish("merge_failed", map[string]interface{}{
-					"slug":  slug,
-					"wave":  wave,
-					"error": err.Error(),
-				})
+		ch, cancel := s.svcDeps.Publisher.Subscribe("wave:" + slug)
+		defer cancel()
+		for ev := range ch {
+			if ev.Name == "merge_complete" {
 				s.notificationBus.Notify(NotificationEvent{
-					Type:     NotifyMergeFailed,
+					Type:     NotifyMergeComplete,
 					Slug:     slug,
-					Title:    fmt.Sprintf("Wave %d Merge Failed", wave),
-					Message:  fmt.Sprintf("Finalization failed: %s", err.Error()),
-					Severity: "error",
+					Title:    fmt.Sprintf("Wave %d Complete", wave),
+					Message:  "Finalization completed successfully",
+					Severity: "success",
 				})
 				return
-			}
-		} else {
-			// Backward compatibility: monolithic finalize when no tracker.
-			finalizeResult, err := engine.FinalizeWave(context.Background(), engine.FinalizeWaveOpts{
-				IMPLPath: implPath,
-				RepoPath: repoPath,
-				WaveNum:  wave,
-			})
-
-			if finalizeResult != nil {
-				for _, gate := range finalizeResult.GateResults {
-					publish("quality_gate_result", gate)
-				}
-				// Emit cleanup results (worktree/branch removal)
-				if finalizeResult.CleanupResult != nil {
-					for _, status := range finalizeResult.CleanupResult.Agents {
-						if status.WorktreeRemoved || status.BranchDeleted {
-							publish("merge_output", map[string]interface{}{
-								"slug":  slug,
-								"wave":  wave,
-								"chunk": fmt.Sprintf("Cleaned up agent %s: worktree=%v, branch=%v\n", status.Agent, status.WorktreeRemoved, status.BranchDeleted),
-							})
-						}
+			} else if ev.Name == "merge_failed" {
+				if data, ok := ev.Data.(map[string]interface{}); ok {
+					if errMsg, ok := data["error"].(string); ok {
+						s.notificationBus.Notify(NotificationEvent{
+							Type:     NotifyMergeFailed,
+							Slug:     slug,
+							Title:    fmt.Sprintf("Wave %d Merge Failed", wave),
+							Message:  fmt.Sprintf("Finalization failed: %s", errMsg),
+							Severity: "error",
+						})
 					}
 				}
-			}
-
-			if err != nil {
-				publish("merge_failed", map[string]interface{}{
-					"slug":  slug,
-					"wave":  wave,
-					"error": err.Error(),
-				})
-				s.notificationBus.Notify(NotificationEvent{
-					Type:     NotifyMergeFailed,
-					Slug:     slug,
-					Title:    fmt.Sprintf("Wave %d Merge Failed", wave),
-					Message:  fmt.Sprintf("Finalization failed: %s", err.Error()),
-					Severity: "error",
-				})
 				return
 			}
-
-			// Post-finalize: go.mod fixup
-			if fixed, fixErr := protocol.FixGoModReplacePaths(repoPath); fixErr != nil {
-				publish("merge_output", map[string]interface{}{"slug": slug, "wave": wave, "chunk": fmt.Sprintf("go.mod fixup warning: %v\n", fixErr)})
-			} else if fixed {
-				publish("merge_output", map[string]interface{}{"slug": slug, "wave": wave, "chunk": "Auto-corrected go.mod replace paths\n"})
-			}
 		}
-
-		publish("merge_complete", map[string]interface{}{
-			"slug":   slug,
-			"wave":   wave,
-			"status": "success",
-		})
-		s.notificationBus.Notify(NotificationEvent{
-			Type:     NotifyWaveComplete,
-			Slug:     slug,
-			Title:    fmt.Sprintf("Wave %d Complete", wave),
-			Message:  "Wave finalized successfully and merged to main",
-			Severity: "success",
-		})
 	}()
 }
 

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-web/pkg/service"
 	"golang.org/x/net/http2"
 	"golang.org/x/net/http2/h2c"
 )
@@ -46,6 +47,7 @@ type Server struct {
 	filesOwnedCache  sync.Map        // "slug/wave/agent" -> []string; caches files owned per agent
 	agentSnapshots   sync.Map        // slug -> *agentSnapshot; latest agent lifecycle event per agent for SSE replay
 	implListCache    *implCache       // in-memory cache for handleListImpls metadata
+	svcDeps          service.Deps     // dependency injection for service layer
 }
 
 // getConfiguredRepos reads saw.config.json and returns the list of configured
@@ -69,12 +71,25 @@ func (s *Server) getConfiguredRepos() []RepoEntry {
 func New(cfg Config) *Server {
 	globalBroker := newGlobalBroker()
 	serverCtx, serverCancel := context.WithCancel(context.Background())
-	s := &Server{
-		cfg: cfg,
-		mux: http.NewServeMux(),
-		broker: &sseBroker{
-			clients: make(map[string][]chan SSEEvent),
+	broker := &sseBroker{
+		clients: make(map[string][]chan SSEEvent),
+	}
+
+	// Construct service layer dependencies.
+	ssePublisher := NewSSEPublisher(broker, globalBroker)
+	svcDeps := service.Deps{
+		RepoPath:  cfg.RepoPath,
+		IMPLDir:   cfg.IMPLDir,
+		Publisher: ssePublisher,
+		ConfigPath: func(repoPath string) string {
+			return filepath.Join(repoPath, "saw.config.json")
 		},
+	}
+
+	s := &Server{
+		cfg:             cfg,
+		mux:             http.NewServeMux(),
+		broker:          broker,
 		globalBroker:    globalBroker,
 		notificationBus: NewNotificationBus(globalBroker),
 		serverCtx:       serverCtx,
@@ -83,6 +98,7 @@ func New(cfg Config) *Server {
 		pipelineTracker: newPipelineTracker(cfg.IMPLDir),
 		progressTracker: NewProgressTracker(),
 		implListCache:   &implCache{entries: make(map[string]cachedImplEntry)},
+		svcDeps:         svcDeps,
 	}
 
 	// Populate fallback config so runWaveLoop can use it for cross-repo IMPLs
