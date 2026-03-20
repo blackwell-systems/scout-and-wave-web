@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
-import { listImpls, fetchImpl, approveImpl, rejectImpl, startWave, deleteImpl, getConfig, saveConfig, fetchInterruptedSessions } from './api'
-import { IMPLDocResponse, IMPLListEntry, RepoEntry } from './types'
+import { fetchImpl, approveImpl, rejectImpl, startWave, deleteImpl } from './api'
+import { IMPLDocResponse } from './types'
 import ReviewScreen from './components/ReviewScreen'
 import { LiveView } from './components/LiveRail'
 import LiveRail from './components/LiveRail'
@@ -11,16 +11,13 @@ import { useResizableDivider } from './hooks/useResizableDivider'
 import ModelPicker from './components/ModelPicker'
 import PipelineView from './components/PipelineView'
 import ProgramBoard from './components/ProgramBoard'
-import { listPrograms } from './programApi'
-import { InterruptedSession } from './types'
-import type { ProgramDiscovery } from './types/program'
 import { useNotifications } from './hooks/useNotifications'
-import { useGlobalEvents } from './hooks/useGlobalEvents'
 import { useModal } from './hooks/useModal'
 import ToastContainer from './components/ToastContainer'
 import { AppLayout } from './components/layout/AppLayout'
 import { AppHeader } from './components/layout/AppHeader'
 import { SidebarNav } from './components/layout/SidebarNav'
+import { useAppContext } from './contexts/AppContext'
 
 
 function WelcomeCard({ onOpenSettings }: { onOpenSettings: () => void }): JSX.Element {
@@ -63,34 +60,29 @@ export default function App() {
   const { toasts, dismissToast } = useNotifications()
   const settingsModal = useModal('settings')
 
+  // Shared state from AppContext (repos, entries, models, sseConnected, programs)
+  const {
+    repos, activeRepo, setActiveRepoIndex, setRepos,
+    entries, refreshEntries,
+    models, saveModel: contextSaveModel,
+    sseConnected,
+    programs, refreshPrograms,
+  } = useAppContext()
+
+  // UI-local state (only used within App.tsx)
   const [selectedSlug, setSelectedSlug] = useState<string | null>(null)
-  const [entries, setEntries] = useState<IMPLListEntry[]>([])
   const [liveView, setLiveView] = useState<LiveView>(null)
   const [impl, setImpl] = useState<IMPLDocResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [rejected, setRejected] = useState(false)
 
-  const [repos, setRepos] = useState<RepoEntry[]>([])
-  const [activeRepoIndex, setActiveRepoIndex] = useState<number>(0)
-  const activeRepo: RepoEntry | null = repos[activeRepoIndex] ?? null
-
-  const [scoutModel, setScoutModel] = useState<string>('claude-sonnet-4-6')
-  const [scaffoldModel, setScaffoldModel] = useState<string>('claude-sonnet-4-6')
-  const [waveModel, setWaveModel] = useState<string>('claude-sonnet-4-6')
-  const [integrationModel, setIntegrationModel] = useState<string>('claude-sonnet-4-6')
-  const [chatModel, setChatModel] = useState<string>('claude-sonnet-4-6')
-  const [plannerModel, setPlannerModel] = useState<string>('claude-sonnet-4-6')
-
   const [pickerOpen, setPickerOpen] = useState<'scout' | 'scaffold' | 'wave' | 'integration' | 'chat' | 'planner' | 'all' | null>(null)
 
-  const [interruptedSessions, setInterruptedSessions] = useState<InterruptedSession[]>([])
-  const [sseConnected, setSseConnected] = useState(false)
   const [sseRefreshTick, setSseRefreshTick] = useState(0)
   const [showPalette, setShowPalette] = useState(false)
   const [showPipeline, setShowPipeline] = useState(false)
   const [showPrograms, setShowPrograms] = useState(false)
-  const [programs, setPrograms] = useState<ProgramDiscovery[]>([])
   const [selectedProgramSlug, setSelectedProgramSlug] = useState<string | null>(null)
 
   // Close model picker on Escape
@@ -103,10 +95,17 @@ export default function App() {
     return () => document.removeEventListener('keydown', handler)
   }, [pickerOpen])
 
-  function handleReposChange(updated: RepoEntry[]): void {
+  // Bump refresh tick when entries change (SSE-driven via context)
+  useEffect(() => {
+    setSseRefreshTick(t => t + 1)
+  }, [entries])
+
+  const handleReposChange = useCallback((updated: typeof repos): void => {
     setRepos(updated)
-  }
-  async function handleRemoveRepo(repoName: string): Promise<void> {
+  }, [setRepos])
+
+  const handleRemoveRepo = useCallback(async (repoName: string): Promise<void> => {
+    const { getConfig, saveConfig } = await import('./api')
     const updated = repos.filter(r => (r.name || r.path) !== repoName)
     try {
       const cfg = await getConfig()
@@ -115,54 +114,16 @@ export default function App() {
     } catch (err) {
       console.error('Failed to remove repo:', err)
     }
-  }
-  function handleRepoSwitch(index: number): void {
+  }, [repos, setRepos])
+
+  const handleRepoSwitch = useCallback((index: number): void => {
     setActiveRepoIndex(index)
-  }
+  }, [setActiveRepoIndex])
 
   const { leftWidthPx, dividerProps } = useResizableDivider({ initialWidthPx: Math.round(window.innerWidth * 0.15) - 20, minWidthPx: 140, maxFraction: 0.15 })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const [rightWidthPx, setRightWidthPx] = useState(() => Math.min(680, Math.round(window.innerWidth * 0.60)))
-
-  // Subscribe to global server events so the IMPL list stays in sync
-  // with any external changes (CLI scout runs, wave completion, approve/reject).
-  const handleImplListUpdated = useCallback(() => {
-    setSseConnected(true)
-    listImpls().then(setEntries).catch(() => {})
-    fetchInterruptedSessions().then(setInterruptedSessions).catch(() => {})
-    setSseRefreshTick(t => t + 1)
-  }, [])
-  useGlobalEvents({ impl_list_updated: handleImplListUpdated })
-
-  useEffect(() => {
-    listImpls().then(setEntries).catch(() => {})
-    listPrograms().then(setPrograms).catch(() => {})
-    fetchInterruptedSessions().then(setInterruptedSessions).catch(() => {})
-    getConfig().then(config => {
-      if (config.repos && config.repos.length > 0) {
-        setRepos(config.repos)
-      } else if (config.repo?.path) {
-        setRepos([{ name: 'repo', path: config.repo.path }])
-      }
-      setScoutModel(config.agent?.scout_model || 'claude-sonnet-4-6')
-      setScaffoldModel(config.agent?.scaffold_model || 'claude-sonnet-4-6')
-      setWaveModel(config.agent?.wave_model || 'claude-sonnet-4-6')
-      setIntegrationModel(config.agent?.integration_model || 'claude-sonnet-4-6')
-      setChatModel(config.agent?.chat_model || 'claude-sonnet-4-6')
-      setPlannerModel(config.agent?.planner_model || 'claude-sonnet-4-6')
-    }).catch(() => {})
-    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
-      Notification.requestPermission()
-    }
-  }, [])
-
-  // Refetch IMPL list when repos configuration changes
-  useEffect(() => {
-    if (repos.length > 0) {
-      listImpls().then(setEntries).catch(() => {})
-    }
-  }, [repos])
 
   // Command palette keyboard shortcut (Cmd+K / Ctrl+K)
   useEffect(() => {
@@ -176,7 +137,14 @@ export default function App() {
     return () => document.removeEventListener('keydown', handler)
   }, [])
 
-  async function handleSelect(selected: string) {
+  // Notification permission request on mount
+  useEffect(() => {
+    if (typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission()
+    }
+  }, [])
+
+  const handleSelect = useCallback(async (selected: string) => {
     setSelectedSlug(selected)
     setShowPipeline(false)
     setRejected(false)
@@ -190,9 +158,9 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [])
 
-  async function handleApprove() {
+  const handleApprove = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -216,13 +184,13 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedSlug])
 
-  function handleViewWaves() {
+  const handleViewWaves = useCallback(() => {
     setLiveView(prev => prev === 'wave' ? null : 'wave')
-  }
+  }, [])
 
-  async function handleReject() {
+  const handleReject = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
@@ -233,13 +201,12 @@ export default function App() {
     } finally {
       setLoading(false)
     }
-  }
+  }, [selectedSlug])
 
-  async function handleDelete(slug: string) {
+  const handleDelete = useCallback(async (slug: string) => {
     try {
       await deleteImpl(slug)
-      const updated = await listImpls()
-      setEntries(updated)
+      await refreshEntries()
       if (selectedSlug === slug) {
         setSelectedSlug(null)
         setImpl(null)
@@ -248,48 +215,23 @@ export default function App() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
-  }
+  }, [selectedSlug, refreshEntries])
 
-  async function saveModel(field: 'scout' | 'scaffold' | 'wave' | 'integration' | 'chat' | 'planner' | 'all', value: string) {
-    try {
-      const cfg = await getConfig()
-      const updated = {
-        ...cfg,
-        agent: {
-          ...cfg.agent,
-          ...(field === 'scout' && { scout_model: value }),
-          ...(field === 'scaffold' && { scaffold_model: value }),
-          ...(field === 'wave' && { wave_model: value }),
-          ...(field === 'integration' && { integration_model: value }),
-          ...(field === 'chat' && { chat_model: value }),
-          ...(field === 'planner' && { planner_model: value }),
-          ...(field === 'all' && { scout_model: value, scaffold_model: value, wave_model: value, integration_model: value, chat_model: value, planner_model: value }),
-        }
-      }
-      await saveConfig(updated)
-      if (field === 'scout') setScoutModel(value)
-      if (field === 'scaffold') setScaffoldModel(value)
-      if (field === 'wave') setWaveModel(value)
-      if (field === 'integration') setIntegrationModel(value)
-      if (field === 'chat') setChatModel(value)
-      if (field === 'planner') setPlannerModel(value)
-      if (field === 'all') { setScoutModel(value); setScaffoldModel(value); setWaveModel(value); setIntegrationModel(value); setChatModel(value); setPlannerModel(value) }
-    } catch { /* ignore */ }
-  }
+  const saveModel = useCallback(async (field: 'scout' | 'scaffold' | 'wave' | 'integration' | 'chat' | 'planner' | 'all', value: string) => {
+    await contextSaveModel(field, value)
+  }, [contextSaveModel])
 
-  async function handleScoutReady() {
+  const handleScoutReady = useCallback(async () => {
     try {
-      const updated = await listImpls()
-      setEntries(updated)
+      await refreshEntries()
     } catch {
       // non-fatal
     }
-  }
+  }, [refreshEntries])
 
-  async function handleScoutComplete(slug: string) {
+  const handleScoutComplete = useCallback(async (slug: string) => {
     try {
-      const updated = await listImpls()
-      setEntries(updated)
+      await refreshEntries()
     } catch {
       // non-fatal
     }
@@ -307,19 +249,13 @@ export default function App() {
       }
     }
     setLiveView(null)
-  }
+  }, [refreshEntries])
 
-  function handleSettingsClose() {
+  const handleSettingsClose = useCallback(() => {
     settingsModal.close()
-    getConfig().then(config => {
-      setScoutModel(config.agent?.scout_model ?? '')
-      setScaffoldModel(config.agent?.scaffold_model ?? '')
-      setWaveModel(config.agent?.wave_model ?? '')
-      setIntegrationModel(config.agent?.integration_model ?? '')
-      setChatModel(config.agent?.chat_model ?? '')
-      setPlannerModel(config.agent?.planner_model ?? '')
-    }).catch(() => {})
-  }
+    // Models are managed by AppContext now; just refresh entries in case repos changed
+    refreshEntries().catch(() => {})
+  }, [settingsModal, refreshEntries])
 
   // Model picker dropdown content
   const modelPickerContent = pickerOpen === 'all' ? (
@@ -328,7 +264,7 @@ export default function App() {
       <div className="absolute top-full right-0 mt-2 z-50 bg-popover border border-border rounded-lg shadow-2xl p-4 w-[520px] animate-in fade-in slide-in-from-top-2 duration-200 space-y-4">
         <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">Agent Models</p>
         {(['planner', 'scout', 'scaffold', 'wave', 'integration', 'chat'] as const).map(field => {
-          const model = field === 'planner' ? plannerModel : field === 'scout' ? scoutModel : field === 'scaffold' ? scaffoldModel : field === 'wave' ? waveModel : field === 'integration' ? integrationModel : chatModel
+          const model = models[field]
           const label = field.charAt(0).toUpperCase() + field.slice(1)
           return (
             <ModelPicker
@@ -383,7 +319,7 @@ export default function App() {
       )}
       {rejected && <p className="text-orange-600 text-sm p-4">Plan rejected.</p>}
       {!loading && impl !== null && selectedSlug !== null && (
-        <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onViewWaves={handleViewWaves} onRefreshImpl={handleSelect} repos={repos} chatModel={chatModel} refreshTick={sseRefreshTick} />
+        <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onViewWaves={handleViewWaves} onRefreshImpl={handleSelect} repos={repos} chatModel={models.chat} refreshTick={sseRefreshTick} />
       )}
       {!loading && impl === null && !error && (
         repos.length === 0 ? (
@@ -415,7 +351,7 @@ export default function App() {
       onRescout={() => setLiveView('scout')}
       onPlannerComplete={(slug) => {
         setLiveView(null)
-        listPrograms().then(p => { setPrograms(p); if (slug) setSelectedProgramSlug(slug) }).catch(() => {})
+        refreshPrograms().then(() => { if (slug) setSelectedProgramSlug(slug) }).catch(() => {})
         setShowPrograms(true)
         setShowPipeline(false)
         setSelectedSlug(null)
@@ -457,7 +393,7 @@ export default function App() {
             programs={programs}
             selectedProgramSlug={selectedProgramSlug}
             onSelectProgram={setSelectedProgramSlug}
-            interruptedSessions={interruptedSessions}
+            interruptedSessions={[]}
             entries={entries}
             selectedSlug={selectedSlug}
             onSelect={handleSelect}
