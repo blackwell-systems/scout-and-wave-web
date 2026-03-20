@@ -25,6 +25,42 @@ import { useGlobalEvents } from './hooks/useGlobalEvents'
 import ToastContainer from './components/ToastContainer'
 
 
+function WelcomeCard({ onOpenSettings }: { onOpenSettings: () => void }): JSX.Element {
+  return (
+    <div className="flex flex-col items-center justify-center h-full px-8">
+      <div className="border border-border rounded-lg bg-card p-8 max-w-lg w-full space-y-6">
+        <div className="space-y-2">
+          <h2 className="text-lg font-semibold text-foreground">Welcome to Scout-and-Wave</h2>
+          <p className="text-sm text-muted-foreground leading-relaxed">
+            Scout-and-Wave uses AI agents to plan and implement features in parallel.
+            A Scout agent reads your codebase and produces an implementation plan (IMPL).
+            You review the plan, approve it, and parallel Wave agents implement it in isolated git branches.
+          </p>
+        </div>
+        <div className="space-y-3">
+          <p className="text-sm font-medium text-foreground">Get started</p>
+          <p className="text-sm text-muted-foreground">
+            First, add a repository in Settings so Scout knows which codebase to analyze.
+          </p>
+          <button
+            onClick={onOpenSettings}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+          >
+            Open Settings
+          </button>
+        </div>
+        <div className="border-t border-border pt-4">
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Example:</span>{' '}
+            Once a repository is configured, try creating a plan like{' '}
+            <span className="font-mono text-xs">"Add a dark mode toggle to the settings screen"</span>.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   const { toasts, dismissToast } = useNotifications()
 
@@ -446,8 +482,8 @@ export default function App() {
               />
             ) : (
               <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
-                <p className="text-sm font-medium text-foreground">No programs found</p>
-                <p className="text-xs text-muted-foreground mt-1">Run <code className="font-mono">/saw program plan</code> to create a PROGRAM manifest</p>
+                <p className="text-sm font-medium text-foreground">No programs yet</p>
+                <p className="text-xs text-muted-foreground mt-1">Programs coordinate multiple related implementation plans as a single unit. Use the New Program button above to create one.</p>
               </div>
             )
           ) : showPipeline ? (
@@ -479,16 +515,20 @@ export default function App() {
             <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onViewWaves={handleViewWaves} onRefreshImpl={handleSelect} repos={repos} chatModel={chatModel} refreshTick={sseRefreshTick} />
           )}
           {!loading && impl === null && !error && (
-            <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
-              <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className="text-muted-foreground/30">
-                <rect x="6" y="8" width="36" height="32" rx="3" stroke="currentColor" strokeWidth="2"/>
-                <path d="M14 18h20M14 24h14M14 30h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
-              </svg>
-              <div>
-                <p className="text-sm font-medium text-foreground">No plan selected</p>
-                <p className="text-xs text-muted-foreground mt-1">Select a plan from the sidebar or create a new one with New Plan</p>
+            repos.length === 0 ? (
+              <WelcomeCard onOpenSettings={() => setShowSettings(true)} />
+            ) : (
+              <div className="flex flex-col items-center justify-center h-full gap-4 text-center px-8">
+                <svg width="48" height="48" viewBox="0 0 48 48" fill="none" className="text-muted-foreground/30">
+                  <rect x="6" y="8" width="36" height="32" rx="3" stroke="currentColor" strokeWidth="2"/>
+                  <path d="M14 18h20M14 24h14M14 30h10" stroke="currentColor" strokeWidth="2" strokeLinecap="round"/>
+                </svg>
+                <div>
+                  <p className="text-sm font-medium text-foreground">No plan selected</p>
+                  <p className="text-xs text-muted-foreground mt-1">Select a plan from the sidebar or create a new one with New Plan</p>
+                </div>
               </div>
-            </div>
+            )
           )}
           </>
           )}
@@ -510,6 +550,7 @@ export default function App() {
               widthPx={rightWidthPx}
               onScoutComplete={handleScoutComplete}
               onScoutReady={handleScoutReady}
+              // TODO(integration): wire onRescout={() => setLiveView('scout')} after Agent E adds prop to LiveRailProps
               onPlannerComplete={(slug) => {
                 setLiveView(null)
                 listPrograms().then(p => { setPrograms(p); if (slug) setSelectedProgramSlug(slug) }).catch(() => {})
