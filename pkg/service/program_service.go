@@ -6,71 +6,18 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"sync"
 
 	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
-// RunTracker guards against concurrent execution of the same slug.
-// Uses sync.Map for lock-free concurrent access.
-type RunTracker struct {
-	active sync.Map // slug -> struct{}
-}
-
-// TryAcquire attempts to mark a slug as running. Returns true if acquired,
-// false if already running.
-func (rt *RunTracker) TryAcquire(slug string) bool {
-	_, loaded := rt.active.LoadOrStore(slug, struct{}{})
-	return !loaded
-}
-
-// Release marks a slug as no longer running.
-func (rt *RunTracker) Release(slug string) {
-	rt.active.Delete(slug)
-}
-
-// IsRunning returns true if the slug is currently executing.
-func (rt *RunTracker) IsRunning(slug string) bool {
-	_, ok := rt.active.Load(slug)
-	return ok
-}
-
 // ProgramRuns is the package-level RunTracker for program tier executions.
 var ProgramRuns RunTracker
-
-// RepoEntry represents a configured repository. Mirrors the api.RepoEntry type
-// to avoid importing net/http-dependent packages.
-type RepoEntry struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-}
-
-// getConfiguredRepos reads the config file and returns repo entries.
-// Falls back to a single entry using deps.RepoPath if no config or repos found.
-func getConfiguredRepos(deps Deps) []RepoEntry {
-	type sawConfig struct {
-		Repos []RepoEntry `json:"repos,omitempty"`
-	}
-
-	configPath := deps.ConfigPath(deps.RepoPath)
-	if data, err := os.ReadFile(configPath); err == nil {
-		var cfg sawConfig
-		if json.Unmarshal(data, &cfg) == nil && len(cfg.Repos) > 0 {
-			return cfg.Repos
-		}
-	}
-
-	return []RepoEntry{{
-		Name: filepath.Base(deps.RepoPath),
-		Path: deps.RepoPath,
-	}}
-}
 
 // ListPrograms scans all configured repos for PROGRAM-*.yaml files and returns
 // discovery summaries.
 func ListPrograms(deps Deps) ([]protocol.ProgramDiscovery, error) {
-	repos := getConfiguredRepos(deps)
+	repos := GetConfiguredRepos(deps)
 
 	var allPrograms []protocol.ProgramDiscovery
 
@@ -116,20 +63,20 @@ func GetProgramStatus(deps Deps, slug string) (*protocol.ProgramStatusResult, er
 // Returns an error if the slug is already executing or the program path cannot
 // be resolved. The actual tier execution runs asynchronously.
 func ExecuteTier(deps Deps, slug string, tier int, auto bool) error {
-	if !ProgramRuns.TryAcquire(slug) {
+	if !ProgramRuns.TryStart(slug) {
 		return fmt.Errorf("program tier already executing")
 	}
 
 	programPath, repoPath, err := ResolveProgramPath(deps, slug)
 	if err != nil {
-		ProgramRuns.Release(slug)
+		ProgramRuns.Done(slug)
 		return err
 	}
 
 	publish := makeProgramPublisher(deps, slug)
 
 	go func() {
-		defer ProgramRuns.Release(slug)
+		defer ProgramRuns.Done(slug)
 
 		if err := runProgramTier(programPath, slug, tier, repoPath, publish); err != nil {
 			log.Printf("ExecuteTier(%s, tier=%d) error: %v", slug, tier, err)
@@ -202,7 +149,7 @@ func ReplanProgram(deps Deps, slug string, reason string, failedTier int) error 
 // ResolveProgramPath searches all configured repos for PROGRAM-{slug}.yaml.
 // Returns (programPath, repoPath, nil) on success, or error if not found.
 func ResolveProgramPath(deps Deps, slug string) (string, string, error) {
-	repos := getConfiguredRepos(deps)
+	repos := GetConfiguredRepos(deps)
 
 	for _, repo := range repos {
 		docsDir := filepath.Join(repo.Path, "docs")

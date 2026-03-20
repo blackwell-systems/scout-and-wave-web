@@ -8,8 +8,8 @@ import (
 	"testing"
 )
 
-// testDeps creates a Deps struct for testing with optional repos config.
-func testDeps(t *testing.T, repos []RepoEntry) Deps {
+// programTestDeps creates a Deps struct for testing with optional repos config.
+func programTestDeps(t *testing.T, repos []RepoEntry) Deps {
 	t.Helper()
 	tmpDir := t.TempDir()
 
@@ -33,7 +33,7 @@ func testDeps(t *testing.T, repos []RepoEntry) Deps {
 }
 
 func TestListPrograms_EmptyRepos(t *testing.T) {
-	deps := testDeps(t, nil)
+	deps := programTestDeps(t, nil)
 
 	programs, err := ListPrograms(deps)
 	if err != nil {
@@ -46,7 +46,7 @@ func TestListPrograms_EmptyRepos(t *testing.T) {
 }
 
 func TestResolveProgramPath_NotFound(t *testing.T) {
-	deps := testDeps(t, nil)
+	deps := programTestDeps(t, nil)
 
 	// Create docs dir but no program files
 	os.MkdirAll(filepath.Join(deps.RepoPath, "docs"), 0755)
@@ -64,10 +64,10 @@ func TestResolveProgramPath_NotFound(t *testing.T) {
 func TestExecuteTier_ConcurrentGuard(t *testing.T) {
 	// Pre-acquire the slug to simulate a running execution
 	slug := "test-concurrent-guard"
-	ProgramRuns.active.Store(slug, struct{}{})
-	defer ProgramRuns.active.Delete(slug)
+	ProgramRuns.runs.Store(slug, struct{}{})
+	defer ProgramRuns.runs.Delete(slug)
 
-	deps := testDeps(t, nil)
+	deps := programTestDeps(t, nil)
 
 	err := ExecuteTier(deps, slug, 1, false)
 	if err == nil {
@@ -79,22 +79,22 @@ func TestExecuteTier_ConcurrentGuard(t *testing.T) {
 	}
 }
 
-func TestRunTracker_TryAcquireAndRelease(t *testing.T) {
+func TestRunTracker_TryStartAndRelease(t *testing.T) {
 	var rt RunTracker
 
 	// First acquire should succeed
-	if !rt.TryAcquire("slug-a") {
-		t.Error("first TryAcquire should succeed")
+	if !rt.TryStart("slug-a") {
+		t.Error("first TryStart should succeed")
 	}
 
 	// Second acquire same slug should fail
-	if rt.TryAcquire("slug-a") {
-		t.Error("second TryAcquire should fail for same slug")
+	if rt.TryStart("slug-a") {
+		t.Error("second TryStart should fail for same slug")
 	}
 
 	// Different slug should succeed
-	if !rt.TryAcquire("slug-b") {
-		t.Error("TryAcquire should succeed for different slug")
+	if !rt.TryStart("slug-b") {
+		t.Error("TryStart should succeed for different slug")
 	}
 
 	// IsRunning checks
@@ -106,16 +106,16 @@ func TestRunTracker_TryAcquireAndRelease(t *testing.T) {
 	}
 
 	// Release and re-acquire
-	rt.Release("slug-a")
+	rt.Done("slug-a")
 	if rt.IsRunning("slug-a") {
 		t.Error("slug-a should not be running after release")
 	}
-	if !rt.TryAcquire("slug-a") {
-		t.Error("TryAcquire should succeed after release")
+	if !rt.TryStart("slug-a") {
+		t.Error("TryStart should succeed after release")
 	}
 
-	rt.Release("slug-a")
-	rt.Release("slug-b")
+	rt.Done("slug-a")
+	rt.Done("slug-b")
 }
 
 func TestRunTracker_ConcurrentAccess(t *testing.T) {
@@ -131,7 +131,7 @@ func TestRunTracker_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			acquired <- rt.TryAcquire(slug)
+			acquired <- rt.TryStart(slug)
 		}()
 	}
 
@@ -149,12 +149,12 @@ func TestRunTracker_ConcurrentAccess(t *testing.T) {
 		t.Errorf("expected exactly 1 successful acquire, got %d", successCount)
 	}
 
-	rt.Release(slug)
+	rt.Done(slug)
 }
 
-func TestGetConfiguredRepos_Fallback(t *testing.T) {
-	deps := testDeps(t, nil)
-	repos := getConfiguredRepos(deps)
+func TestProgramGetConfiguredRepos_Fallback(t *testing.T) {
+	deps := programTestDeps(t, nil)
+	repos := GetConfiguredRepos(deps)
 
 	if len(repos) != 1 {
 		t.Fatalf("expected 1 fallback repo, got %d", len(repos))
@@ -169,8 +169,8 @@ func TestGetConfiguredRepos_FromConfig(t *testing.T) {
 		{Name: "repo1", Path: "/tmp/repo1"},
 		{Name: "repo2", Path: "/tmp/repo2"},
 	}
-	deps := testDeps(t, configuredRepos)
-	repos := getConfiguredRepos(deps)
+	deps := programTestDeps(t, configuredRepos)
+	repos := GetConfiguredRepos(deps)
 
 	if len(repos) != 2 {
 		t.Fatalf("expected 2 repos from config, got %d", len(repos))

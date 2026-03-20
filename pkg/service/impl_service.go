@@ -1,7 +1,6 @@
 package service
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,19 +9,6 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
-
-// RepoEntry is one named repository in the repo registry.
-// Mirrors api.RepoEntry to avoid import cycles between service and api.
-type RepoEntry struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-}
-
-// SAWConfig is the shape of saw.config.json.
-// Mirrors api.SAWConfig (only the fields needed by the service layer).
-type SAWConfig struct {
-	Repos []RepoEntry `json:"repos,omitempty"`
-}
 
 // ImplListEntry is one item returned by ListImpls.
 type ImplListEntry struct {
@@ -36,34 +22,11 @@ type ImplListEntry struct {
 	InvolvedRepos []string `json:"involved_repos"`
 }
 
-// getConfiguredRepos reads saw.config.json and returns the repo list.
-// Falls back to a single entry using deps.RepoPath if no config is found.
-func getConfiguredRepos(deps Deps) []RepoEntry {
-	configPath := deps.ConfigPath(deps.RepoPath)
-	data, err := os.ReadFile(configPath)
-
-	var repos []RepoEntry
-	if err == nil {
-		var cfg SAWConfig
-		if json.Unmarshal(data, &cfg) == nil && len(cfg.Repos) > 0 {
-			repos = cfg.Repos
-		}
-	}
-
-	if len(repos) == 0 {
-		repos = []RepoEntry{{
-			Name: filepath.Base(deps.RepoPath),
-			Path: deps.RepoPath,
-		}}
-	}
-	return repos
-}
-
 // ListImpls scans all configured repos for IMPL YAML files and returns a
 // structured list. It does NOT compute IsExecuting — that requires runtime
 // state (active runs) which stays in the API layer.
 func ListImpls(deps Deps) ([]ImplListEntry, error) {
-	repos := getConfiguredRepos(deps)
+	repos := GetConfiguredRepos(deps)
 
 	var result []ImplListEntry
 
@@ -239,7 +202,7 @@ func ArchiveImpl(deps Deps, slug string) error {
 // FindImplPath searches all configured repos for an IMPL doc by slug.
 // Returns the absolute file path and matched repo entry, or error if not found.
 func FindImplPath(deps Deps, slug string) (string, RepoEntry, error) {
-	repos := getConfiguredRepos(deps)
+	repos := GetConfiguredRepos(deps)
 
 	for _, repo := range repos {
 		for _, sub := range []string{"docs/IMPL", "docs/IMPL/complete"} {

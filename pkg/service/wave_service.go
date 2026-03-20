@@ -22,16 +22,6 @@ var gateChannels sync.Map
 // Used by StartWave to prevent duplicate runs.
 var activeWaves sync.Map
 
-// SAWConfig mirrors the config structure for model resolution.
-// Kept here to avoid importing pkg/api types.
-type SAWConfig struct {
-	Agent struct {
-		WaveModel        string `json:"wave_model"`
-		ScaffoldModel    string `json:"scaffold_model"`
-		IntegrationModel string `json:"integration_model"`
-	} `json:"agent"`
-}
-
 // FallbackSAWConfig is populated once from the server's default repo path.
 // StartWave uses it when the target repo has no saw.config.json of its own.
 var FallbackSAWConfig *SAWConfig

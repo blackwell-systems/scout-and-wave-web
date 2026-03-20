@@ -9,24 +9,24 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 )
 
-// mockPublisher implements EventPublisher for testing.
-type mockPublisher struct {
+// mergeTestPublisher implements EventPublisher for testing.
+type mergeTestPublisher struct {
 	mu     sync.Mutex
 	events []Event
 }
 
-func (m *mockPublisher) Publish(channel string, event Event) {
+func (m *mergeTestPublisher) Publish(channel string, event Event) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.events = append(m.events, event)
 }
 
-func (m *mockPublisher) Subscribe(channel string) (<-chan Event, func()) {
+func (m *mergeTestPublisher) Subscribe(channel string) (<-chan Event, func()) {
 	ch := make(chan Event, 100)
 	return ch, func() { close(ch) }
 }
 
-func (m *mockPublisher) getEvents() []Event {
+func (m *mergeTestPublisher) getEvents() []Event {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	copied := make([]Event, len(m.events))
@@ -90,7 +90,7 @@ func TestMergeWave_ConcurrentGuard(t *testing.T) {
 		return nil
 	}
 
-	pub := &mockPublisher{}
+	pub := &mergeTestPublisher{}
 	deps := Deps{
 		RepoPath:  "/tmp/test-repo",
 		IMPLDir:   "/tmp/test-impl",
@@ -127,7 +127,7 @@ func TestMergeWave_ConcurrentGuard(t *testing.T) {
 
 func TestAbortMerge_NotRunning(t *testing.T) {
 	// AbortMerge on a non-existent repo should fail with git error
-	pub := &mockPublisher{}
+	pub := &mergeTestPublisher{}
 	deps := Deps{
 		RepoPath: "/tmp/nonexistent-repo-for-test",
 		Publisher: pub,

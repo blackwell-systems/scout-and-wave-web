@@ -7,24 +7,24 @@ import (
 	"time"
 )
 
-// mockPublisher is a test double for EventPublisher.
-type mockPublisher struct {
+// scoutTestPublisher is a test double for EventPublisher.
+type scoutTestPublisher struct {
 	mu     sync.Mutex
 	events []Event
 }
 
-func (m *mockPublisher) Publish(_ string, event Event) {
+func (m *scoutTestPublisher) Publish(_ string, event Event) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.events = append(m.events, event)
 }
 
-func (m *mockPublisher) Subscribe(_ string) (<-chan Event, func()) {
+func (m *scoutTestPublisher) Subscribe(_ string) (<-chan Event, func()) {
 	ch := make(chan Event, 16)
 	return ch, func() { close(ch) }
 }
 
-func (m *mockPublisher) getEvents() []Event {
+func (m *scoutTestPublisher) getEvents() []Event {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cp := make([]Event, len(m.events))
@@ -33,7 +33,7 @@ func (m *mockPublisher) getEvents() []Event {
 }
 
 func TestStartScout_GeneratesRunID(t *testing.T) {
-	pub := &mockPublisher{}
+	pub := &scoutTestPublisher{}
 	deps := Deps{
 		RepoPath:  "/tmp/test-repo",
 		IMPLDir:   "/tmp/test-repo/docs/IMPL",
@@ -75,7 +75,7 @@ func TestCancelScout_CancelsContext(t *testing.T) {
 	scoutRuns.Store("test-run-123", cancel)
 	defer scoutRuns.Delete("test-run-123")
 
-	pub := &mockPublisher{}
+	pub := &scoutTestPublisher{}
 	deps := Deps{Publisher: pub}
 
 	err := CancelScout(deps, "test-run-123")

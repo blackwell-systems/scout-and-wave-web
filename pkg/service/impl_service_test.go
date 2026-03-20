@@ -6,8 +6,8 @@ import (
 	"testing"
 )
 
-// testDeps creates a Deps suitable for testing with a temporary directory.
-func testDeps(t *testing.T) (Deps, string) {
+// implTestDeps creates a Deps suitable for testing with a temporary directory.
+func implTestDeps(t *testing.T) (Deps, string) {
 	t.Helper()
 	tmpDir := t.TempDir()
 	return Deps{
@@ -34,7 +34,7 @@ func writeIMPL(t *testing.T, dir, slug string) string {
 }
 
 func TestListImpls_EmptyDir(t *testing.T) {
-	deps, tmpDir := testDeps(t)
+	deps, tmpDir := implTestDeps(t)
 	// Create the IMPL dir but leave it empty
 	implDir := filepath.Join(tmpDir, "docs", "IMPL")
 	if err := os.MkdirAll(implDir, 0755); err != nil {
@@ -51,7 +51,7 @@ func TestListImpls_EmptyDir(t *testing.T) {
 }
 
 func TestListImpls_NonExistentDir(t *testing.T) {
-	deps, _ := testDeps(t)
+	deps, _ := implTestDeps(t)
 	// Don't create the IMPL dir at all
 
 	entries, err := ListImpls(deps)
@@ -64,7 +64,7 @@ func TestListImpls_NonExistentDir(t *testing.T) {
 }
 
 func TestListImpls_FindsYAMLFiles(t *testing.T) {
-	deps, tmpDir := testDeps(t)
+	deps, tmpDir := implTestDeps(t)
 	implDir := filepath.Join(tmpDir, "docs", "IMPL")
 	writeIMPL(t, implDir, "my-feature")
 	writeIMPL(t, implDir, "other-feature")
@@ -90,7 +90,7 @@ func TestListImpls_FindsYAMLFiles(t *testing.T) {
 }
 
 func TestListImpls_CompleteDir(t *testing.T) {
-	deps, tmpDir := testDeps(t)
+	deps, tmpDir := implTestDeps(t)
 	completeDir := filepath.Join(tmpDir, "docs", "IMPL", "complete")
 	writeIMPL(t, completeDir, "done-feature")
 
@@ -107,7 +107,7 @@ func TestListImpls_CompleteDir(t *testing.T) {
 }
 
 func TestFindImplPath_SearchesMultipleRepos(t *testing.T) {
-	deps, _ := testDeps(t)
+	deps, _ := implTestDeps(t)
 
 	// Create two repo dirs with config
 	repo1 := t.TempDir()
@@ -136,7 +136,7 @@ func TestFindImplPath_SearchesMultipleRepos(t *testing.T) {
 }
 
 func TestFindImplPath_NotFound(t *testing.T) {
-	deps, _ := testDeps(t)
+	deps, _ := implTestDeps(t)
 	_, _, err := FindImplPath(deps, "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent slug")
@@ -144,7 +144,7 @@ func TestFindImplPath_NotFound(t *testing.T) {
 }
 
 func TestFindImplPath_CompleteDirectory(t *testing.T) {
-	deps, tmpDir := testDeps(t)
+	deps, tmpDir := implTestDeps(t)
 	completeDir := filepath.Join(tmpDir, "docs", "IMPL", "complete")
 	writeIMPL(t, completeDir, "archived-feature")
 
@@ -158,7 +158,7 @@ func TestFindImplPath_CompleteDirectory(t *testing.T) {
 }
 
 func TestDeleteImpl_NotFound(t *testing.T) {
-	deps, tmpDir := testDeps(t)
+	deps, tmpDir := implTestDeps(t)
 	// Create empty IMPL dir
 	implDir := filepath.Join(tmpDir, "docs", "IMPL")
 	if err := os.MkdirAll(implDir, 0755); err != nil {
@@ -172,7 +172,7 @@ func TestDeleteImpl_NotFound(t *testing.T) {
 }
 
 func TestDeleteImpl_Success(t *testing.T) {
-	deps, tmpDir := testDeps(t)
+	deps, tmpDir := implTestDeps(t)
 	implDir := filepath.Join(tmpDir, "docs", "IMPL")
 	path := writeIMPL(t, implDir, "to-delete")
 
@@ -193,7 +193,7 @@ func TestDeleteImpl_Success(t *testing.T) {
 }
 
 func TestArchiveImpl_Success(t *testing.T) {
-	deps, tmpDir := testDeps(t)
+	deps, tmpDir := implTestDeps(t)
 	implDir := filepath.Join(tmpDir, "docs", "IMPL")
 	writeIMPL(t, implDir, "to-archive")
 
@@ -216,7 +216,7 @@ func TestArchiveImpl_Success(t *testing.T) {
 }
 
 func TestArchiveImpl_NotFound(t *testing.T) {
-	deps, tmpDir := testDeps(t)
+	deps, tmpDir := implTestDeps(t)
 	if err := os.MkdirAll(filepath.Join(tmpDir, "docs", "IMPL"), 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +228,7 @@ func TestArchiveImpl_NotFound(t *testing.T) {
 }
 
 func TestResolveIMPLPath_Success(t *testing.T) {
-	deps, tmpDir := testDeps(t)
+	deps, tmpDir := implTestDeps(t)
 	implDir := filepath.Join(tmpDir, "docs", "IMPL")
 	writeIMPL(t, implDir, "resolve-me")
 
@@ -245,7 +245,7 @@ func TestResolveIMPLPath_Success(t *testing.T) {
 }
 
 func TestResolveIMPLPath_NotFound(t *testing.T) {
-	deps, _ := testDeps(t)
+	deps, _ := implTestDeps(t)
 	_, _, err := ResolveIMPLPath(deps, "nonexistent")
 	if err == nil {
 		t.Fatal("expected error for nonexistent slug")
@@ -253,7 +253,7 @@ func TestResolveIMPLPath_NotFound(t *testing.T) {
 }
 
 func TestApproveImpl_PublishesEvent(t *testing.T) {
-	deps, _ := testDeps(t)
+	deps, _ := implTestDeps(t)
 	pub := &mockPublisher{}
 	deps.Publisher = pub
 
@@ -270,7 +270,7 @@ func TestApproveImpl_PublishesEvent(t *testing.T) {
 }
 
 func TestRejectImpl_PublishesEvent(t *testing.T) {
-	deps, _ := testDeps(t)
+	deps, _ := implTestDeps(t)
 	pub := &mockPublisher{}
 	deps.Publisher = pub
 
@@ -287,7 +287,7 @@ func TestRejectImpl_PublishesEvent(t *testing.T) {
 }
 
 func TestApproveImpl_NoPublisher(t *testing.T) {
-	deps, _ := testDeps(t)
+	deps, _ := implTestDeps(t)
 	// No publisher set
 	err := ApproveImpl(deps, "my-slug")
 	if err == nil {

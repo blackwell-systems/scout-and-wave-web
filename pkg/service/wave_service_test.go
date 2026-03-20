@@ -6,24 +6,24 @@ import (
 	"time"
 )
 
-// mockPublisher is a test double for EventPublisher that records published events.
-type mockPublisher struct {
+// waveTestPublisher is a test double for EventPublisher that records published events.
+type waveTestPublisher struct {
 	mu     sync.Mutex
 	events []Event
 }
 
-func (m *mockPublisher) Publish(channel string, event Event) {
+func (m *waveTestPublisher) Publish(channel string, event Event) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.events = append(m.events, event)
 }
 
-func (m *mockPublisher) Subscribe(channel string) (<-chan Event, func()) {
+func (m *waveTestPublisher) Subscribe(channel string) (<-chan Event, func()) {
 	ch := make(chan Event, 10)
 	return ch, func() { close(ch) }
 }
 
-func (m *mockPublisher) getEvents() []Event {
+func (m *waveTestPublisher) getEvents() []Event {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	cp := make([]Event, len(m.events))
@@ -38,7 +38,7 @@ func TestStartWave_AlreadyRunning(t *testing.T) {
 	activeWaves.Store(slug, struct{}{})
 	defer activeWaves.Delete(slug)
 
-	pub := &mockPublisher{}
+	pub := &waveTestPublisher{}
 	deps := Deps{
 		RepoPath:  "/tmp/nonexistent",
 		IMPLDir:   "/tmp/nonexistent/docs/IMPL",
@@ -65,7 +65,7 @@ func TestProceedGate_UnblocksChannel(t *testing.T) {
 	gateChannels.Store(slug, gateCh)
 	defer gateChannels.Delete(slug)
 
-	pub := &mockPublisher{}
+	pub := &waveTestPublisher{}
 	deps := Deps{
 		RepoPath:  "/tmp/nonexistent",
 		Publisher: pub,
@@ -93,7 +93,7 @@ func TestProceedGate_UnblocksChannel(t *testing.T) {
 func TestProceedGate_NoGatePending(t *testing.T) {
 	slug := "test-no-gate"
 
-	pub := &mockPublisher{}
+	pub := &waveTestPublisher{}
 	deps := Deps{
 		RepoPath:  "/tmp/nonexistent",
 		Publisher: pub,
@@ -111,7 +111,7 @@ func TestProceedGate_NoGatePending(t *testing.T) {
 func TestStartWave_PublishesRunStarted(t *testing.T) {
 	// We test makePublish directly since StartWave requires a real IMPL doc.
 	slug := "test-publish"
-	pub := &mockPublisher{}
+	pub := &waveTestPublisher{}
 	deps := Deps{
 		RepoPath:  "/tmp/nonexistent",
 		Publisher: pub,
@@ -136,7 +136,7 @@ func TestStartWave_PublishesRunStarted(t *testing.T) {
 }
 
 func TestStopWave_NotRunning(t *testing.T) {
-	pub := &mockPublisher{}
+	pub := &waveTestPublisher{}
 	deps := Deps{
 		RepoPath:  "/tmp/nonexistent",
 		Publisher: pub,
@@ -152,7 +152,7 @@ func TestStopWave_NotRunning(t *testing.T) {
 }
 
 func TestRerunAgent_InvalidWave(t *testing.T) {
-	pub := &mockPublisher{}
+	pub := &waveTestPublisher{}
 	deps := Deps{
 		RepoPath:  "/tmp/nonexistent",
 		Publisher: pub,
@@ -168,7 +168,7 @@ func TestRerunAgent_InvalidWave(t *testing.T) {
 }
 
 func TestFinalizeWave_InvalidWave(t *testing.T) {
-	pub := &mockPublisher{}
+	pub := &waveTestPublisher{}
 	deps := Deps{
 		RepoPath:  "/tmp/nonexistent",
 		Publisher: pub,
