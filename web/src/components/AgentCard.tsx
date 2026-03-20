@@ -94,7 +94,14 @@ export default function AgentCard({ agent }: AgentCardProps) {
             >
               {agent.agent}
             </div>
-            <div className="text-xs font-medium text-white/90">{statusLabels[agent.status] ?? agent.status}</div>
+            <div className="flex flex-col">
+              <div className="text-xs font-medium text-white/90">{statusLabels[agent.status] ?? agent.status}</div>
+              {agent.taskSummary && (
+                <div className="text-[10px] text-white/60 mt-0.5 leading-tight max-w-[180px] truncate">
+                  {agent.taskSummary}
+                </div>
+              )}
+            </div>
           </div>
           {agent.status === 'running' && (
             <div className="flex items-center gap-2">

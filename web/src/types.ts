@@ -193,6 +193,7 @@ export interface AgentStatus {
   output?: string
   startedAt?: number  // ms timestamp when agent_started fired
   toolCalls?: ToolCallEntry[]
+  taskSummary?: string  // first line/heading of the agent task field, populated by Go API
 }
 
 export interface WaveState {
