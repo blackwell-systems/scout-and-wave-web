@@ -181,6 +181,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
 
   // Critic review state — fetched from GET /api/impl/{slug}/critic-review
   const [criticReport, setCriticReport] = useState<CriticResult | null>(null)
+  const [criticRunning, setCriticRunning] = useState(false)
 
   const fetchCriticReport = useCallback(() => {
     fetch(`/api/impl/${encodeURIComponent(slug)}/critic-review`)
@@ -196,11 +197,19 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
     fetchCriticReport()
   }, [fetchCriticReport])
 
+  const runCriticReview = useCallback(() => {
+    setCriticRunning(true)
+    fetch(`/api/impl/${encodeURIComponent(slug)}/run-critic`, { method: 'POST' })
+      .catch(() => setCriticRunning(false))
+    // criticRunning resets to false when critic_review_complete SSE fires
+  }, [slug])
+
   // Listen for critic_review_complete SSE event and refresh
   const handleCriticReviewComplete = useCallback((e: MessageEvent) => {
     try {
       const data = JSON.parse(e.data)
       if (data?.slug === slug) {
+        setCriticRunning(false)
         fetchCriticReport()
       }
     } catch {
@@ -317,18 +326,17 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
             ) : (
               <div className="flex items-center gap-3">
                 <button
-                  className="flex items-center gap-2 text-sm font-medium px-4 h-9 border border-border bg-background text-foreground hover:bg-muted transition-colors rounded-md"
-                  onClick={() => {
-                    // Trigger is handled via the CLI (sawtools run-critic).
-                    // This button is a placeholder — SSE event critic_review_complete
-                    // will refresh the panel when the review completes.
-                  }}
-                  title="Run sawtools run-critic to generate a critic review. The panel will update automatically when complete."
+                  className="flex items-center gap-2 text-sm font-medium px-4 h-9 border border-border bg-background text-foreground hover:bg-muted transition-colors rounded-md disabled:opacity-50 disabled:cursor-not-allowed"
+                  onClick={runCriticReview}
+                  disabled={criticRunning}
+                  title="Verify all agent briefs against the actual codebase before execution."
                 >
-                  Run Critic Review
+                  {criticRunning ? 'Running…' : 'Run Critic Review'}
                 </button>
                 <span className="text-xs text-muted-foreground">
-                  No critic review yet. Run <code className="font-mono bg-muted px-1 rounded">sawtools run-critic</code> to verify agent briefs before execution.
+                  {criticRunning
+                    ? 'Checking agent briefs against codebase — panel will update when complete.'
+                    : 'No critic review yet. Verify agent briefs before approving wave execution.'}
                 </span>
               </div>
             )}

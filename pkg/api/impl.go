@@ -219,6 +219,15 @@ func (s *Server) handleApprove(w http.ResponseWriter, r *http.Request) {
 	slug := r.PathValue("slug")
 	s.broker.Publish(slug, SSEEvent{Event: "plan_approved", Data: map[string]string{"slug": slug}})
 	s.globalBroker.broadcast("impl_list_updated") // status change visible in sidebar
+
+	// Auto-trigger critic gate if threshold is met (E37).
+	// Runs async so the 202 response returns immediately.
+	if implPath, _ := s.findImplPath(slug); implPath != "" {
+		if manifest, err := protocol.Load(implPath); err == nil && criticThresholdMet(manifest) {
+			go s.runCriticAsync(slug, implPath)
+		}
+	}
+
 	w.WriteHeader(http.StatusAccepted)
 }
 
@@ -688,4 +697,5 @@ func allScaffoldsCommitted(scaffolds []protocol.ScaffoldFile) bool {
 // Called from server.go after the other impl routes are registered.
 func (s *Server) RegisterCriticRoutes() {
 	s.mux.HandleFunc("GET /api/impl/{slug}/critic-review", s.handleGetCriticReview)
+	s.mux.HandleFunc("POST /api/impl/{slug}/run-critic", s.handleRunCriticReview)
 }
