@@ -367,6 +367,11 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
             <p className="text-sm text-muted-foreground mb-4">
               {state.waves.length} {state.waves.length === 1 ? 'wave' : 'waves'}, {totalAgents} {totalAgents === 1 ? 'agent' : 'agents'} — all merged and verified
             </p>
+            {!onRescout && (
+              <p className="text-sm text-muted-foreground mb-2">
+                All waves merged and verified. Your changes are ready to review.
+              </p>
+            )}
             <div className="flex gap-2">
               {onRescout && (
                 <button
@@ -689,12 +694,22 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                           const nextWaveFullyPending = nextWave && !nextWave.complete && nextWave.agents.every(a => a.status === 'pending' || !a.status)
                           const isLastWave = wave.wave >= Math.max(...state.waves.map(w => w.wave))
                           return !isLastWave && nextWaveFullyPending && !hasGate && !state.waveGate && (
-                            <button
-                              onClick={() => void startWave(slug)}
-                              className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 hover:border-blue-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
-                            >
-                              Start Wave {wave.wave + 1}
-                            </button>
+                            <div className="mt-3 bg-green-500/10 border border-green-500/30 rounded-lg px-4 py-4 flex items-center justify-between gap-4">
+                              <div>
+                                <p className="text-sm font-semibold text-green-700 dark:text-green-300">
+                                  Wave {wave.wave} complete
+                                </p>
+                                <p className="text-xs text-green-600 dark:text-green-400 mt-0.5">
+                                  Wave {wave.wave + 1} is ready to run
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => void startWave(slug)}
+                                className="shrink-0 text-sm font-semibold px-5 py-2.5 rounded-lg bg-green-600 text-white hover:bg-green-700 active:scale-[0.98] transition-all shadow-sm"
+                              >
+                                Run Wave {wave.wave + 1} &rarr;
+                              </button>
+                            </div>
                           )
                         })()}
                       </div>
