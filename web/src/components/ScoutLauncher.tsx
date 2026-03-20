@@ -45,7 +45,7 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
   const [displayed, setDisplayed] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [completedSlug, setCompletedSlug] = useState<string | null>(null)
-  const [summaryData, setSummaryData] = useState<{ agents: number; waves: number; verdict: string } | null>(null)
+  const [summaryData, setSummaryData] = useState<{ agents: number; waves: number; verdict: string; fileCount: number; contractCount: number } | null>(null)
   const [msgIdx, setMsgIdx] = useState(0)
   const runIdRef = useRef<string | null>(null)
 
@@ -146,7 +146,10 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
               const agents = data.waves?.reduce((s: number, w: any) => s + (w.agents?.length ?? 0), 0) ?? 0
               const waves = data.waves?.length ?? 0
               const verdict = data.suitability?.verdict ?? ''
-              setSummaryData({ agents, waves, verdict })
+              const fileCount = Array.isArray(data.file_ownership) ? data.file_ownership.length : 0
+              const contractsText: string = data.interface_contracts_text ?? data.interface_contracts ?? ''
+              const contractCount = contractsText ? contractsText.split('\n').filter((l: string) => l.trim().length > 0).length : 0
+              setSummaryData({ agents, waves, verdict, fileCount, contractCount })
             })
             .catch(() => {})
         }
@@ -434,11 +437,19 @@ export default function ScoutLauncher({ onComplete, onScoutReady, repos, activeR
         {completedSlug !== null && (
           <div className="flex items-center justify-between bg-green-50 dark:bg-green-950 border border-green-200 dark:border-green-800 rounded-lg px-4 py-3">
             <div>
-              <span className="text-sm font-medium text-green-800 dark:text-green-400">Plan ready</span>
+              <span className="text-sm font-medium text-green-800 dark:text-green-400">Scout Analysis Complete &#10003;</span>
               {summaryData && (
-                <p className="text-xs text-green-700 dark:text-green-500 mt-0.5">
-                  {summaryData.agents} agent{summaryData.agents !== 1 ? 's' : ''}, {summaryData.waves} wave{summaryData.waves !== 1 ? 's' : ''}{summaryData.verdict ? ` — ${summaryData.verdict}` : ''}
-                </p>
+                <>
+                  <p className="text-xs text-green-700 dark:text-green-500 mt-0.5">
+                    Generated {summaryData.agents} agent{summaryData.agents !== 1 ? 's' : ''} across {summaryData.waves} wave{summaryData.waves !== 1 ? 's' : ''}.
+                    {summaryData.fileCount > 0 && <> {summaryData.fileCount} file{summaryData.fileCount !== 1 ? 's' : ''} involved</>}
+                    {summaryData.contractCount > 0 && <>, {summaryData.contractCount} interface contract{summaryData.contractCount !== 1 ? 's' : ''} defined</>}.
+                    {' '}Ready for review.
+                  </p>
+                  <p className="text-xs text-green-600/70 dark:text-green-600 mt-0.5">
+                    Next: Review wave structure and approve to launch agents.
+                  </p>
+                </>
               )}
             </div>
             <button
