@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from 'react'
 import { IMPLListEntry, RepoEntry, IMPLDocResponse } from '../types'
 import { fetchImpl } from '../api'
 import { Button } from './ui/button'
@@ -65,6 +65,7 @@ interface EntryRowProps {
   loading: boolean
   onSelect: (slug: string) => void
   onRequestDelete: (slug: string) => void
+  registerRef?: (slug: string, el: HTMLDivElement | null) => void
 }
 
 function HoverCard({ slug }: { slug: string; anchorRef?: React.RefObject<HTMLDivElement> }) {
@@ -115,12 +116,17 @@ function HoverCard({ slug }: { slug: string; anchorRef?: React.RefObject<HTMLDiv
   )
 }
 
-function EntryRow({ e, selectedSlug, loading, onSelect, onRequestDelete }: EntryRowProps): JSX.Element {
+function EntryRow({ e, selectedSlug, loading, onSelect, onRequestDelete, registerRef }: EntryRowProps): JSX.Element {
   const isSelected = e.slug === selectedSlug
   const isComplete = e.doc_status === 'complete'
   const [showCard, setShowCard] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const rowRef = useRef<HTMLDivElement>(null)
+
+  const setRef = useCallback((el: HTMLDivElement | null) => {
+    (rowRef as React.MutableRefObject<HTMLDivElement | null>).current = el
+    registerRef?.(e.slug, el)
+  }, [e.slug, registerRef])
 
   const handleMouseEnter = () => {
     timerRef.current = setTimeout(() => setShowCard(true), 400)
@@ -131,14 +137,14 @@ function EntryRow({ e, selectedSlug, loading, onSelect, onRequestDelete }: Entry
   }
 
   return (
-    <div className="group relative flex items-center" ref={rowRef} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+    <div className="group relative flex items-center" ref={setRef} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
       {showCard && <HoverCard slug={e.slug} anchorRef={rowRef} />}
       <Button
         variant="ghost"
         size="sm"
         className={cn(
-          'flex-1 justify-start font-mono text-xs pr-6 gap-1.5 flex-col items-start h-auto py-1.5 rounded-none bg-background/60',
-          isSelected && 'bg-primary/10 border-l-2 border-primary rounded-none',
+          'flex-1 justify-start font-mono text-xs pr-6 gap-1.5 flex-col items-start h-auto py-1.5 rounded-none bg-background/60 relative z-[1]',
+          isSelected && 'rounded-none',
           isComplete && !isSelected && 'opacity-40 text-muted-foreground line-through hover:opacity-80 hover:no-underline'
         )}
         disabled={loading}
@@ -189,6 +195,29 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
   const [pendingRemoveRepo, setPendingRemoveRepo] = useState<string | null>(null)
   const [collapsedRepos, setCollapsedRepos] = useState<Set<string>>(new Set())
   const [showCompletedRepos, setShowCompletedRepos] = useState<Set<string>>(new Set())
+
+  // Sliding highlight state
+  const listRef = useRef<HTMLDivElement>(null)
+  const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const [highlight, setHighlight] = useState<{ top: number; height: number } | null>(null)
+  const [animating, setAnimating] = useState(false)
+
+  const registerRef = useCallback((slug: string, el: HTMLDivElement | null) => {
+    if (el) rowRefs.current.set(slug, el)
+    else rowRefs.current.delete(slug)
+  }, [])
+
+  useLayoutEffect(() => {
+    if (!selectedSlug || !listRef.current) { setHighlight(null); return }
+    const row = rowRefs.current.get(selectedSlug)
+    if (!row) { setHighlight(null); return }
+    const listRect = listRef.current.getBoundingClientRect()
+    const rowRect = row.getBoundingClientRect()
+    const newTop = rowRect.top - listRect.top + listRef.current.scrollTop
+    const newHeight = rowRect.height
+    setAnimating(highlight !== null) // animate only if moving from a previous position
+    setHighlight({ top: newTop, height: newHeight })
+  }, [selectedSlug, entries, collapsedRepos, showCompletedRepos])
 
   // Group entries by repo
   const entriesByRepo = entries.reduce((acc, entry) => {
@@ -253,7 +282,18 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
           </div>
         </div>
       )}
-      <div className="flex flex-col gap-1 p-2">
+      <div className="flex flex-col gap-1 p-2 relative" ref={listRef}>
+        {/* Sliding selection highlight */}
+        {highlight && (
+          <div
+            className="absolute left-0 right-0 bg-primary/20 border-l-2 border-primary pointer-events-none z-0"
+            style={{
+              top: highlight.top,
+              height: highlight.height,
+              transition: animating ? 'top 200ms cubic-bezier(0.4, 0, 0.2, 1), height 150ms ease' : 'none',
+            }}
+          />
+        )}
         {entries.length === 0 ? (
           repos && repos.length === 0 ? (
             <div className="text-muted-foreground text-xs px-2">
@@ -317,6 +357,7 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
                           loading={loading}
                           onSelect={onSelect}
                           onRequestDelete={setPendingDelete}
+                          registerRef={registerRef}
                         />
                       ))}
                       {completedEntries.length > 0 && (
@@ -340,6 +381,7 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
                               loading={loading}
                               onSelect={onSelect}
                               onRequestDelete={setPendingDelete}
+                              registerRef={registerRef}
                             />
                           ))}
                         </div>
@@ -386,6 +428,7 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
                 loading={loading}
                 onSelect={onSelect}
                 onRequestDelete={setPendingDelete}
+                registerRef={registerRef}
               />
             ))}
             {Object.values(entriesByRepo).flat().filter((e) => e.doc_status === 'complete').length > 0 && (
@@ -409,6 +452,7 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
                     loading={loading}
                     onSelect={onSelect}
                     onRequestDelete={setPendingDelete}
+                    registerRef={registerRef}
                   />
                 ))}
               </div>

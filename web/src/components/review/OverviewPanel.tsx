@@ -1,6 +1,8 @@
 import { useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { IMPLDocResponse } from '../../types'
 import { Tooltip } from '../ui/tooltip'
+import MarkdownContent from './MarkdownContent'
 
 interface OverviewPanelProps {
   impl: IMPLDocResponse
@@ -34,7 +36,10 @@ export default function OverviewPanel({ impl }: OverviewPanelProps): JSX.Element
             </Tooltip>
           ) : (
             verdict
-          )}{rationale ? (showRationale ? ' ▾' : ' ▸') : ''}
+          )}
+          {rationale && (
+            <ChevronDown size={16} className={`inline-block ml-0.5 transition-transform duration-200 ${showRationale ? '' : '-rotate-90'}`} />
+          )}
         </button>
         <span>·</span>
         <Tooltip content="Number of files that will be created or modified. Each file is owned by exactly one agent (I1 invariant).">
@@ -50,9 +55,9 @@ export default function OverviewPanel({ impl }: OverviewPanelProps): JSX.Element
         </Tooltip>
       </div>
       {showRationale && rationale && (
-        <pre className="mt-3 p-3 text-xs leading-relaxed text-muted-foreground bg-muted/50 rounded-md border border-border overflow-x-auto whitespace-pre-wrap font-mono">
-          {rationale}
-        </pre>
+        <div className="mt-3 p-4 text-xs text-muted-foreground bg-muted/50 rounded-none border border-border overflow-x-auto">
+          <MarkdownContent compact={false}>{rationale}</MarkdownContent>
+        </div>
       )}
     </div>
   )
