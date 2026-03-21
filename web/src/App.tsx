@@ -81,6 +81,7 @@ export default function App() {
   const [showPalette, setShowPalette] = useState(false)
   const [showPrograms, setShowPrograms] = useState(true)
   const [selectedProgramSlug, setSelectedProgramSlug] = useState<string | null>(null)
+  const [createFromImplsOpen, setCreateFromImplsOpen] = useState(false)
 
   // Bump refresh tick when entries change (SSE-driven via context)
   useEffect(() => {
@@ -187,6 +188,11 @@ export default function App() {
     setLiveView(prev => prev === 'wave' ? null : 'wave')
   }, [])
 
+  const handleSelectAndViewWaves = useCallback(async (slug: string) => {
+    await handleSelect(slug)
+    setLiveView('wave')
+  }, [handleSelect])
+
   const handleReject = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -263,6 +269,7 @@ export default function App() {
       onSelectProgram={(programSlug) => {
         setSelectedProgramSlug(programSlug)
       }}
+      createFromImplsOpen={createFromImplsOpen}
     />
   ) : (
     <>
@@ -335,6 +342,11 @@ export default function App() {
               setSelectedSlug(null); setImpl(null); setLiveView(null)
             }}
             onNewProgramClick={() => setLiveView(v => v === 'planner' ? null : 'planner')}
+            onCreateFromImplsClick={() => {
+              setShowPrograms(true)
+              setSelectedSlug(null); setImpl(null); setLiveView(null)
+              setCreateFromImplsOpen(prev => !prev)
+            }}
             onSearchClick={() => setShowPalette(true)}
             onSettingsClick={settingsModal.toggle}
             showPrograms={showPrograms}
@@ -351,6 +363,7 @@ export default function App() {
             onSelectProgram={setSelectedProgramSlug}
             interruptedSessions={interruptedSessions}
             runningSlugs={runningSlugs}
+            onSelectInterrupted={(slug) => void handleSelectAndViewWaves(slug)}
             entries={entries}
             selectedSlug={selectedSlug}
             onSelect={handleSelect}

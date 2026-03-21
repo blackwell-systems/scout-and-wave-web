@@ -9,6 +9,8 @@ import type {
   ProgramStatus,
   TierStatus,
   ContractStatus,
+  ConflictReport,
+  GenerateProgramResult,
 } from './types/program'
 
 /**
@@ -64,4 +66,17 @@ export function subscribePlannerEvents(runId: string): EventSource {
 
 export async function cancelPlanner(runId: string): Promise<void> {
   return sawClient.program.cancelPlanner(runId)
+}
+
+export async function analyzeImpls(slugs: string[], repo?: string): Promise<ConflictReport> {
+  return sawClient.program.analyzeImpls(slugs, repo)
+}
+
+export async function createProgramFromImpls(
+  slugs: string[],
+  name?: string,
+  programSlug?: string,
+  repo?: string,
+): Promise<GenerateProgramResult> {
+  return sawClient.program.createFromImpls(slugs, name, programSlug, repo)
 }

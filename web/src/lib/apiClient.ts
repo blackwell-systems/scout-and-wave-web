@@ -39,6 +39,8 @@ import type {
   ProgramStatus,
   TierStatus,
   ContractStatus,
+  ConflictReport,
+  GenerateProgramResult,
 } from '../types/program'
 
 import type {
@@ -140,6 +142,8 @@ export interface SawClient {
     runPlanner(description: string, repo?: string): Promise<{ runId: string }>
     subscribePlannerEvents(runId: string): EventSource
     cancelPlanner(runId: string): Promise<void>
+    analyzeImpls(slugs: string[], repo?: string): Promise<ConflictReport>
+    createFromImpls(slugs: string[], name?: string, programSlug?: string, repo?: string): Promise<GenerateProgramResult>
   }
   notifications: {
     getPreferences(): Promise<any>
@@ -727,6 +731,26 @@ export function createHttpClient(): SawClient {
 
       async cancelPlanner(runId: string): Promise<void> {
         await fetch(`/api/planner/${enc(runId)}/cancel`, { method: 'POST' })
+      },
+
+      async analyzeImpls(slugs: string[], repo?: string): Promise<ConflictReport> {
+        const r = await fetch('/api/programs/analyze-impls', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slugs, repo_path: repo }),
+        })
+        await check(r)
+        return r.json() as Promise<ConflictReport>
+      },
+
+      async createFromImpls(slugs: string[], name?: string, programSlug?: string, repo?: string): Promise<GenerateProgramResult> {
+        const r = await fetch('/api/programs/create-from-impls', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ slugs, name, program_slug: programSlug, repo_path: repo }),
+        })
+        await check(r)
+        return r.json() as Promise<GenerateProgramResult>
       },
     },
 

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback } from 'react'
 import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import ProgressBar from './ProgressBar'
-import { fetchProgramStatus, executeTier, replanProgram, listProgramsFull } from '../programApi'
-import type { ProgramStatus, TierStatus, ImplTierStatus, ProgramDiscovery, ProgramListResponse } from '../types/program'
+import { fetchProgramStatus, executeTier, replanProgram, listProgramsFull, analyzeImpls, createProgramFromImpls } from '../programApi'
+import type { ProgramStatus, TierStatus, ImplTierStatus, ProgramDiscovery, ProgramListResponse, ConflictReport } from '../types/program'
 // PipelineEntry used by PipelineRow (imported transitively)
 // GlobalMetricsBar removed — using PipelineMetricsBar at bottom instead
 import OperationsPanel from './OperationsPanel'
@@ -11,6 +11,8 @@ import PipelineMetricsBar from './PipelineMetrics'
 import { useGlobalEvents } from '../hooks/useGlobalEvents'
 import { ChevronDown, List, GitBranch } from 'lucide-react'
 import ProgramDependencyGraph from './ProgramDependencyGraph'
+import CreateFromImplsPanel from './CreateFromImplsPanel'
+import DisjointAnalysisScreen from './DisjointAnalysisScreen'
 
 interface ProgramBoardProps {
   programSlug: string
@@ -176,14 +178,27 @@ function TierSection({
 export interface UnifiedProgramsViewProps {
   onSelectImpl: (slug: string) => void
   onSelectProgram: (programSlug: string) => void
+  createFromImplsOpen?: boolean
 }
 
-export function UnifiedProgramsView({ onSelectImpl, onSelectProgram }: UnifiedProgramsViewProps): JSX.Element {
+export function UnifiedProgramsView({ onSelectImpl, onSelectProgram, createFromImplsOpen }: UnifiedProgramsViewProps): JSX.Element {
   const [data, setData] = useState<ProgramListResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedProgram, setSelectedProgram] = useState<string | null>(null)
   const [showCompleted, setShowCompleted] = useState(false)
+
+  // Create-from-IMPLs flow state
+  const [createFromImplsMode, setCreateFromImplsMode] = useState<'hidden' | 'select' | 'analyze'>('hidden')
+  const [selectedImplSlugs, setSelectedImplSlugs] = useState<string[]>([])
+  const [conflictReport, setConflictReport] = useState<ConflictReport | null>(null)
+
+  // React to external trigger from App.tsx
+  useEffect(() => {
+    if (createFromImplsOpen) {
+      setCreateFromImplsMode('select')
+    }
+  }, [createFromImplsOpen])
 
   const loadData = useCallback(async () => {
     try {
@@ -267,6 +282,72 @@ export function UnifiedProgramsView({ onSelectImpl, onSelectProgram }: UnifiedPr
   // Split standalone into active vs completed
   const activeEntries = standalone.filter((e) => e.status !== 'complete')
   const completedEntries = standalone.filter((e) => e.status === 'complete')
+
+  // Create-from-IMPLs: selection panel
+  if (createFromImplsMode === 'select') {
+    return (
+      <div className="h-full flex flex-col bg-background">
+        <div className="flex flex-1 min-h-0">
+          <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-1 overflow-y-auto p-6">
+              <CreateFromImplsPanel
+                standalone={standalone}
+                onAnalyze={async (slugs) => {
+                  setSelectedImplSlugs(slugs)
+                  try {
+                    const report = await analyzeImpls(slugs)
+                    setConflictReport(report)
+                    setCreateFromImplsMode('analyze')
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : String(err))
+                  }
+                }}
+                onClose={() => setCreateFromImplsMode('hidden')}
+              />
+            </div>
+            {metrics && <PipelineMetricsBar metrics={metrics} />}
+          </div>
+          <OperationsPanel onSelectItem={onSelectImpl} />
+        </div>
+      </div>
+    )
+  }
+
+  // Create-from-IMPLs: analysis/confirm screen
+  if (createFromImplsMode === 'analyze' && conflictReport) {
+    return (
+      <div className="h-full flex flex-col bg-background">
+        <div className="flex flex-1 min-h-0">
+          <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-1 overflow-y-auto p-6">
+              <DisjointAnalysisScreen
+                slugs={selectedImplSlugs}
+                conflictReport={conflictReport}
+                onConfirm={async (name, programSlug) => {
+                  try {
+                    const result = await createProgramFromImpls(selectedImplSlugs, name, programSlug)
+                    setCreateFromImplsMode('hidden')
+                    setSelectedImplSlugs([])
+                    setConflictReport(null)
+                    await loadData()
+                    // Navigate to the newly created program
+                    if (result.manifest?.slug) {
+                      handleSelectProgram(result.manifest.slug)
+                    }
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : String(err))
+                  }
+                }}
+                onBack={() => setCreateFromImplsMode('select')}
+              />
+            </div>
+            {metrics && <PipelineMetricsBar metrics={metrics} />}
+          </div>
+          <OperationsPanel onSelectItem={onSelectImpl} />
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="h-full flex flex-col bg-background">
