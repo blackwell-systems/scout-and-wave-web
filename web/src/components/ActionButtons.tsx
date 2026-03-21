@@ -1,5 +1,5 @@
 import React from 'react'
-import { Play, Eye, Pencil, X, ShieldCheck, Loader2 } from 'lucide-react'
+import { Play, Eye, EyeOff, Pencil, X, ShieldCheck, Loader2 } from 'lucide-react'
 import { Tooltip } from './ui/tooltip'
 import type { CriticResult } from '../types'
 
@@ -9,6 +9,7 @@ interface ActionButtonsProps {
   onRequestChanges: () => void
   onViewWaves?: () => void
   hasWaveWork?: boolean
+  waveBoardExpanded?: boolean
   needsCritic?: boolean
   criticReport?: CriticResult | null
   criticRunning?: boolean
@@ -17,7 +18,7 @@ interface ActionButtonsProps {
 
 const base = "flex items-center justify-center gap-2 text-sm font-medium px-6 h-14 transition-all duration-150 border-t-2 hover:scale-[1.02] active:scale-[0.98]"
 
-export default React.memo(function ActionButtons({ onApprove, onReject, onRequestChanges, onViewWaves, hasWaveWork, needsCritic, criticReport, criticRunning, onRunCritic }: ActionButtonsProps): JSX.Element {
+export default React.memo(function ActionButtons({ onApprove, onReject, onRequestChanges, onViewWaves, hasWaveWork, waveBoardExpanded, needsCritic, criticReport, criticRunning, onRunCritic }: ActionButtonsProps): JSX.Element {
   const criticHasIssues = criticReport && criticReport.verdict !== 'PASS'
   const showCriticButton = needsCritic && !criticReport && !hasWaveWork
 
@@ -25,9 +26,9 @@ export default React.memo(function ActionButtons({ onApprove, onReject, onReques
     <div className="flex items-stretch">
       {hasWaveWork && onViewWaves && (
         <button onClick={onViewWaves} className={`${base} border-t-blue-500 text-blue-700 dark:text-blue-400 hover:bg-blue-500/10 active:bg-blue-500/20`}>
-          <Eye className="w-4 h-4" />
-          <Tooltip content="Live dashboard showing agent progress, logs, and completion status for the current wave execution." position="top">
-            <span>View WaveBoard</span>
+          {waveBoardExpanded ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          <Tooltip content={waveBoardExpanded ? "Collapse the wave execution dashboard" : "Live dashboard showing agent progress, logs, and completion status for the current wave execution."} position="top">
+            <span>{waveBoardExpanded ? 'Hide WaveBoard' : 'View WaveBoard'}</span>
           </Tooltip>
         </button>
       )}
