@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
 import { resetThemeCache } from '../lib/agentColors'
@@ -8,19 +8,23 @@ import { ProgramStatus, ImplTierStatus } from '../types/program'
 interface ProgramDependencyGraphProps {
   programSlug: string
   status?: ProgramStatus  // optional pre-fetched status to avoid double-fetch
+  onSelectImpl?: (implSlug: string) => void
+  waveProgress?: Record<string, string>
 }
 
 interface ImplNode {
   slug: string
   tier: number
   dependencies: string[]  // slugs of IMPLs this depends on
-  status: string  // 'pending' | 'executing' | 'complete' | 'blocked'
+  status: string  // 'pending' | 'executing' | 'complete' | 'blocked' | 'reviewed'
 }
 
-const NODE_W = 80
-const NODE_H = 56
-const TIER_GAP = 180
-const IMPL_GAP = 80
+const NODE_W = 140
+const NODE_H = 64
+const BASE_TIER_GAP = 200
+const BASE_IMPL_GAP = 84
+const MIN_TIER_GAP = 180
+const MIN_IMPL_GAP = 80
 const PAD_X = 120
 const PAD_Y = 50
 const LABEL_X = 60 // center of the left label column
@@ -80,7 +84,11 @@ function buildImplGraph(status: ProgramStatus): ImplNode[] {
   return nodes
 }
 
-function layoutNodes(nodes: ImplNode[]): { nodes: NodePos[]; width: number; height: number } {
+function layoutNodes(
+  nodes: ImplNode[],
+  tierGap: number,
+  implGap: number,
+): { nodes: NodePos[]; width: number; height: number } {
   const positions: NodePos[] = []
 
   // Group by tier
@@ -96,23 +104,23 @@ function layoutNodes(nodes: ImplNode[]): { nodes: NodePos[]; width: number; heig
   const maxImpls = Math.max(...Array.from(tierGroups.values()).map(g => g.length))
 
   const bandLeft = PAD_X - 12
-  const implAreaWidth = (maxImpls - 1) * IMPL_GAP + NODE_W
-  const width = bandLeft + implAreaWidth + PAD_X
+  const implAreaWidth = (maxImpls - 1) * implGap + NODE_W
+  const width = bandLeft + (tiers.length - 1) * tierGap + NODE_W + PAD_X + 16
   const bandRight = width - 4
   const bandCenter = (bandLeft + bandRight) / 2
 
   for (let ti = 0; ti < tiers.length; ti++) {
     const tier = tiers[ti]
     const impls = tierGroups.get(tier)!
-    const x = PAD_X + ti * TIER_GAP
+    const x = PAD_X + ti * tierGap
 
-    const totalHeight = (impls.length - 1) * IMPL_GAP + NODE_H
+    const totalHeight = (impls.length - 1) * implGap + NODE_H
     const startY = bandCenter - totalHeight / 2
 
     for (let ii = 0; ii < impls.length; ii++) {
       positions.push({
         x,
-        y: startY + ii * IMPL_GAP,
+        y: startY + ii * implGap,
         impl: impls[ii],
       })
     }
@@ -134,12 +142,30 @@ function getNodeFill(status: string): { bg: string; border: string; text: string
       return { bg: '#3b82f640', border: '#3b82f680', text: '#3b82f6' }
     case 'blocked':
       return { bg: '#ef444440', border: '#ef444480', text: '#ef4444' }
+    case 'reviewed':
+      return { bg: '#eab30840', border: '#eab30880', text: '#eab308' }
     default: // pending
       return { bg: '#6b728020', border: '#6b728060', text: '#6b7280' }
   }
 }
 
-export default function ProgramDependencyGraph({ programSlug, status }: ProgramDependencyGraphProps): JSX.Element {
+/**
+ * Truncate text to fit within a given pixel width.
+ * Approximate: monospace chars ~7.2px at fontSize 11.
+ */
+function truncateSlug(slug: string, maxWidth: number): string {
+  const charWidth = 7.2
+  const maxChars = Math.floor(maxWidth / charWidth)
+  if (slug.length <= maxChars) return slug
+  return slug.substring(0, maxChars - 1) + '\u2026'
+}
+
+export default function ProgramDependencyGraph({
+  programSlug,
+  status,
+  onSelectImpl,
+  waveProgress,
+}: ProgramDependencyGraphProps): JSX.Element {
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; impl: ImplNode } | null>(null)
@@ -147,8 +173,27 @@ export default function ProgramDependencyGraph({ programSlug, status }: ProgramD
   const [loading, setLoading] = useState(!status)
   const [error, setError] = useState<string>()
   const [, setThemeTick] = useState(0)
+  const [containerWidth, setContainerWidth] = useState(0)
+  const [hoveredSlug, setHoveredSlug] = useState<string | null>(null)
 
   const handleMouseLeave = useCallback(() => setTooltip(null), [])
+
+  // Responsive width via ResizeObserver
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setContainerWidth(entry.contentRect.width)
+      }
+    })
+    observer.observe(container)
+    // Set initial width
+    setContainerWidth(container.clientWidth)
+
+    return () => observer.disconnect()
+  }, [])
 
   // Fetch program status if not provided
   useEffect(() => {
@@ -188,6 +233,17 @@ export default function ProgramDependencyGraph({ programSlug, status }: ProgramD
     window.addEventListener('scroll', handler, true)
     return () => window.removeEventListener('scroll', handler, true)
   }, [])
+
+  // Compute dynamic gaps based on container width
+  const { tierGap, implGap } = useMemo(() => {
+    if (containerWidth <= 0) {
+      return { tierGap: BASE_TIER_GAP, implGap: BASE_IMPL_GAP }
+    }
+    // Scale tier gap based on available width, with floor at MIN_TIER_GAP
+    const tg = Math.max(MIN_TIER_GAP, Math.min(BASE_TIER_GAP, containerWidth / 5))
+    const ig = Math.max(MIN_IMPL_GAP, Math.min(BASE_IMPL_GAP, containerWidth / 8))
+    return { tierGap: tg, implGap: ig }
+  }, [containerWidth])
 
   if (loading) {
     return (
@@ -242,8 +298,11 @@ export default function ProgramDependencyGraph({ programSlug, status }: ProgramD
     )
   }
 
-  const { nodes, width, height } = layoutNodes(implNodes)
+  const { nodes, width, height } = layoutNodes(implNodes, tierGap, implGap)
   const nodeMap = new Map(nodes.map(n => [n.impl.slug, n]))
+
+  // Use container width for SVG if available, otherwise computed width
+  const svgWidth = containerWidth > 0 ? Math.max(width, containerWidth) : width
 
   // Build adjacency map for transitive reduction
   const adjMap = new Map<string, Set<string>>()
@@ -258,7 +317,7 @@ export default function ProgramDependencyGraph({ programSlug, status }: ProgramD
     adjMap.set(node.impl.slug, directDeps)
   }
 
-  // Transitive reduction: drop edge A→C if A can reach C through other nodes
+  // Transitive reduction: drop edge A->C if A can reach C through other nodes
   function isReachableWithout(from: string, target: string, excluded: string): boolean {
     const visited = new Set<string>()
     const stack = [from]
@@ -312,13 +371,14 @@ export default function ProgramDependencyGraph({ programSlug, status }: ProgramD
         <CardTitle>Program Dependency Graph</CardTitle>
       </CardHeader>
       <CardContent>
-        <div ref={containerRef} className="overflow-auto relative">
+        <div ref={containerRef} className="overflow-auto relative w-full">
           <svg
             ref={svgRef}
-            width={width}
+            width="100%"
             height={height}
-            viewBox={`0 0 ${width} ${height}`}
+            viewBox={`0 0 ${svgWidth} ${height}`}
             className="block"
+            style={{ minWidth: width }}
             onMouseLeave={handleMouseLeave}
           >
             <defs>
@@ -333,7 +393,7 @@ export default function ProgramDependencyGraph({ programSlug, status }: ProgramD
 
             {/* Tier column backgrounds */}
             {tiers.map((tier, ti) => {
-              const x = PAD_X + ti * TIER_GAP - 16
+              const x = PAD_X + ti * tierGap - 16
               const colW = NODE_W + 32
               const color = TIER_COLORS[ti % TIER_COLORS.length]
               return (
@@ -352,7 +412,7 @@ export default function ProgramDependencyGraph({ programSlug, status }: ProgramD
 
             {/* Tier labels — left side */}
             {tiers.map((tier, ti) => {
-              const x = PAD_X + ti * TIER_GAP + NODE_W / 2
+              const x = PAD_X + ti * tierGap + NODE_W / 2
               const color = TIER_COLORS[ti % TIER_COLORS.length]
               return (
                 <g key={`label-${tier}`}>
@@ -419,25 +479,42 @@ export default function ProgramDependencyGraph({ programSlug, status }: ProgramD
             {nodes.map(node => {
               const fill = getNodeFill(node.impl.status)
               const cx = node.x + NODE_W / 2
-              const cy = node.y + NODE_H / 2
+              const isHovered = hoveredSlug === node.impl.slug
+              const isClickable = !!onSelectImpl
 
-              // Abbreviated IMPL slug for display (e.g., "user-auth" -> "UA")
-              const slugParts = node.impl.slug.split('-')
-              const label = slugParts.length > 1
-                ? slugParts.map(p => p[0].toUpperCase()).join('')
-                : node.impl.slug.substring(0, 3).toUpperCase()
+              // Truncate slug to fit within node
+              const displaySlug = truncateSlug(node.impl.slug, NODE_W - 16)
+
+              // Get wave progress text from prop or node data
+              const progress = waveProgress?.[node.impl.slug]
+
+              // Status label for badge
+              const statusLabel = node.impl.status
 
               return (
                 <g
                   key={node.impl.slug}
-                  className="cursor-pointer"
+                  style={{
+                    cursor: isClickable ? 'pointer' : 'default',
+                    transition: 'transform 0.15s ease',
+                  }}
+                  transform={isHovered && isClickable ? `translate(${cx}, ${node.y + NODE_H / 2}) scale(1.05) translate(${-cx}, ${-(node.y + NODE_H / 2)})` : undefined}
                   onMouseEnter={(e) => {
+                    setHoveredSlug(node.impl.slug)
                     const rect = (e.currentTarget as SVGGElement).getBoundingClientRect()
                     setTooltip({
                       x: rect.left + rect.width / 2,
                       y: rect.top,
                       impl: node.impl,
                     })
+                  }}
+                  onMouseLeave={() => {
+                    setHoveredSlug(null)
+                  }}
+                  onClick={() => {
+                    if (onSelectImpl) {
+                      onSelectImpl(node.impl.slug)
+                    }
                   }}
                 >
                   <rect
@@ -447,57 +524,62 @@ export default function ProgramDependencyGraph({ programSlug, status }: ProgramD
                     height={NODE_H}
                     rx={8}
                     fill={fill.bg}
-                    stroke={fill.border}
-                    strokeWidth={2}
+                    stroke={isHovered && isClickable ? fill.text : fill.border}
+                    strokeWidth={isHovered && isClickable ? 2.5 : 2}
                   />
+                  {/* Slug text */}
                   <text
                     x={cx}
-                    y={cy + 1}
+                    y={node.y + 18}
                     textAnchor="middle"
                     dominantBaseline="central"
                     fill={fill.text}
-                    fontSize={12}
+                    fontSize={11}
                     fontWeight={700}
                     fontFamily="ui-monospace, monospace"
                   >
-                    {label}
+                    {displaySlug}
                   </text>
-                  {/* Status indicator badge */}
-                  {node.impl.status === 'complete' && (
-                    <g>
-                      <circle
-                        cx={node.x + NODE_W - 6}
-                        cy={node.y + NODE_H - 6}
-                        r={7}
-                        fill="#22c55e"
-                        opacity={0.9}
-                      />
-                      <path
-                        d="M-4,0 L-1,3 L4,-3"
-                        stroke="white"
-                        strokeWidth={1.5}
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        fill="none"
-                        transform={`translate(${node.x + NODE_W - 6}, ${node.y + NODE_H - 6})`}
-                      />
-                    </g>
-                  )}
-                  {node.impl.status === 'executing' && (
-                    <circle
-                      cx={node.x + NODE_W - 6}
-                      cy={node.y + NODE_H - 6}
-                      r={5}
-                      fill="#3b82f6"
+                  {/* Status badge */}
+                  <g>
+                    <rect
+                      x={cx - 28}
+                      y={node.y + 30}
+                      width={56}
+                      height={14}
+                      rx={4}
+                      fill={fill.border}
+                      opacity={0.5}
+                    />
+                    <text
+                      x={cx}
+                      y={node.y + 37}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fill={fill.text}
+                      fontSize={8}
+                      fontWeight={600}
+                      fontFamily="ui-monospace, monospace"
+                      style={{ textTransform: 'uppercase' }}
+                    >
+                      {statusLabel}
+                    </text>
+                  </g>
+                  {/* Wave progress for executing nodes */}
+                  {(node.impl.status === 'executing') && progress && (
+                    <text
+                      x={cx}
+                      y={node.y + 54}
+                      textAnchor="middle"
+                      dominantBaseline="central"
+                      fill={fill.text}
+                      fontSize={8}
+                      fontWeight={500}
+                      fontFamily="ui-monospace, monospace"
                       opacity={0.8}
                     >
-                      <animate
-                        attributeName="opacity"
-                        values="0.4;1;0.4"
-                        dur="1.5s"
-                        repeatCount="indefinite"
-                      />
-                    </circle>
+                      {progress}
+                    </text>
                   )}
                 </g>
               )
@@ -521,6 +603,11 @@ export default function ProgramDependencyGraph({ programSlug, status }: ProgramD
               <div className="text-xs opacity-80 mt-1">
                 Status: <span className="font-medium">{tooltip.impl.status}</span>
               </div>
+              {waveProgress?.[tooltip.impl.slug] && (
+                <div className="text-xs opacity-80 mt-1">
+                  Wave: <span className="font-medium">{waveProgress[tooltip.impl.slug]}</span>
+                </div>
+              )}
               {tooltip.impl.dependencies.length > 0 && (
                 <div className="text-xs opacity-70 mt-1">
                   Dependencies: {tooltip.impl.dependencies.length}
