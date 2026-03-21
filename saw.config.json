@@ -41,7 +41,8 @@
     }
   },
   "appearance": {
-    "theme": "light",
-    "color_theme_dark": "windows-10"
+    "theme": "dark",
+    "color_theme_dark": "windows-10",
+    "color_theme_light": "shapeshifter"
   }
 }

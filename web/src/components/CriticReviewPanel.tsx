@@ -174,6 +174,7 @@ export function CriticReviewPanel({ result, onApplyFix, onRerunCritic, criticRun
   const isPass = result.verdict === 'PASS'
   const agentEntries = Object.entries(result.agent_reviews).sort(([a], [b]) => a.localeCompare(b))
   const { errors, warnings } = countIssueBySeverity(result)
+  const [expanded, setExpanded] = useState(!isPass)
 
   // Derive wave number from agent reviews (best effort: take first agent's wave or default to 1)
   const getWaveForAgent = (_agentId: string): number => {
@@ -183,14 +184,15 @@ export function CriticReviewPanel({ result, onApplyFix, onRerunCritic, criticRun
   }
 
   return (
-    <div className="rounded-lg border border-border bg-card flex flex-col gap-4 overflow-hidden">
-      {/* Overall verdict banner */}
-      <div
-        className={`flex items-center gap-3 px-4 py-3 ${
+    <div className="rounded-none border border-border bg-card flex flex-col overflow-hidden">
+      {/* Overall verdict banner — clickable to expand/collapse */}
+      <button
+        onClick={() => setExpanded(prev => !prev)}
+        className={`flex items-center gap-3 px-4 py-3 w-full text-left transition-colors ${
           isPass
-            ? 'bg-green-100 dark:bg-green-900/50 border-b border-green-200 dark:border-green-800'
-            : 'bg-red-100 dark:bg-red-900/50 border-b border-red-200 dark:border-red-800'
-        }`}
+            ? 'bg-green-100 dark:bg-green-900/50 hover:bg-green-200/60 dark:hover:bg-green-900/70'
+            : 'bg-red-100 dark:bg-red-900/50 hover:bg-red-200/60 dark:hover:bg-red-900/70'
+        }${expanded ? (isPass ? ' border-b border-green-200 dark:border-green-800' : ' border-b border-red-200 dark:border-red-800') : ''}`}
       >
         <span
           className={`flex items-center justify-center w-7 h-7 rounded-full text-base font-bold ${
@@ -235,11 +237,16 @@ export function CriticReviewPanel({ result, onApplyFix, onRerunCritic, criticRun
         >
           {result.verdict}
         </span>
-      </div>
+        <span className={`text-xs transition-transform duration-200 ${expanded ? '' : '-rotate-90'} ${isPass ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+          &#x25BC;
+        </span>
+      </button>
 
+      {/* Collapsible body */}
+      {expanded && <>
       {/* Summary text */}
       {result.summary && (
-        <p className="px-4 text-xs text-muted-foreground leading-relaxed">{result.summary}</p>
+        <p className="px-4 pt-4 text-xs text-muted-foreground leading-relaxed">{result.summary}</p>
       )}
 
       {/* Per-agent accordion */}
@@ -363,9 +370,9 @@ export function CriticReviewPanel({ result, onApplyFix, onRerunCritic, criticRun
         </p>
         {onRerunCritic && (
           <button
-            onClick={onRerunCritic}
+            onClick={(e) => { e.stopPropagation(); onRerunCritic() }}
             disabled={criticRunning}
-            className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded border border-border bg-background text-foreground hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-none border border-border bg-background text-foreground hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {criticRunning && (
               <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
@@ -374,6 +381,7 @@ export function CriticReviewPanel({ result, onApplyFix, onRerunCritic, criticRun
           </button>
         )}
       </div>
+      </>}
     </div>
   )
 }
