@@ -1,0 +1,556 @@
+# IMPL: visual-polish-v1
+title: "Visual Polish v1 - Animations, Micro-interactions, and UX Refinements"
+feature_slug: "visual-polish-v1"
+verdict: "SUITABLE"
+test_command: "cd web && npx vitest run"
+lint_command: "cd web && npx tsc --noEmit"
+state: "SCOUT_PENDING"
+
+# Suitability Assessment
+# ----------------------
+# Verdict: SUITABLE
+#
+# 1. File decomposition: YES - Work decomposes cleanly into 5 agents across
+#    disjoint component files. No two agents share a file. The changes target
+#    CSS/animation utilities, individual component groups, and layout components
+#    that are architecturally separate.
+#
+# 2. Investigation-first: NO - All enhancement targets are visible in the
+#    current codebase. No unknown bugs or race conditions to diagnose.
+#
+# 3. Interface discoverability: YES - Agents share only Tailwind utility classes
+#    and CSS custom properties/keyframes, which can be fully specified upfront.
+#    No runtime interface contracts needed between agents.
+#
+# 4. Pre-implementation status check:
+#    Total items: 5 workstreams
+#    Already implemented (DONE): 0
+#    Partially implemented (PARTIAL): 1 (basic animations exist in index.css)
+#    Not implemented (TO-DO): 4
+#    Agent A adjusted to "extend existing animation system" rather than "create from scratch"
+#
+# 5. Parallelization value: HIGH - Each agent touches 2-4 files independently.
+#    TypeScript build + Vite check takes ~15s. All 5 agents can run in a single
+#    wave since they own completely disjoint files.
+#
+# Estimated times:
+# - Scout phase: ~8 min
+# - Agent execution: ~12 min (5 agents x 10 min avg, all parallel in 1 wave)
+# - Merge & verification: ~4 min
+# Total SAW time: ~24 min
+#
+# Sequential baseline: ~50 min (5 agents x 10 min sequential)
+# Time savings: ~26 min (~52% faster)
+# Recommendation: Clear speedup - proceed with parallel execution.
+
+quality_gates:
+  level: "standard"
+  gates:
+    - type: "typecheck"
+      command: "cd web && npx tsc --noEmit"
+      required: true
+    - type: "build"
+      command: "cd web && npx vite build"
+      required: true
+    - type: "test"
+      command: "cd web && npx vitest run"
+      required: false
+      description: "Run existing component tests to check for regressions"
+
+scaffolds: []
+
+interface_contracts:
+  - name: "CSS Animation Keyframes and Utility Classes"
+    description: |
+      Agent A defines new CSS keyframes and utility classes in index.css.
+      Other agents reference these class names in their components.
+      This is a convention contract, not a code interface.
+    definition: |
+      /* New keyframes added by Agent A to index.css */
+      @keyframes fade-in-up { from { opacity:0; transform:translateY(8px) } to { opacity:1; transform:translateY(0) } }
+      @keyframes fade-in-down { from { opacity:0; transform:translateY(-8px) } to { opacity:1; transform:translateY(0) } }
+      @keyframes fade-in-scale { from { opacity:0; transform:scale(0.95) } to { opacity:1; transform:scale(1) } }
+      @keyframes shimmer { from { background-position: -200% 0 } to { background-position: 200% 0 } }
+      @keyframes slide-in-right { from { transform:translateX(100%); opacity:0 } to { transform:translateX(0); opacity:1 } }
+      @keyframes slide-in-left { from { transform:translateX(-100%); opacity:0 } to { transform:translateX(0); opacity:1 } }
+      @keyframes progress-stripe { from { background-position: 1rem 0 } to { background-position: 0 0 } }
+      @keyframes count-pulse { 0%,100% { transform:scale(1) } 50% { transform:scale(1.15) } }
+
+      /* Utility classes */
+      .animate-fade-in-up { animation: fade-in-up 200ms ease-out both }
+      .animate-fade-in-down { animation: fade-in-down 200ms ease-out both }
+      .animate-fade-in-scale { animation: fade-in-scale 200ms ease-out both }
+      .animate-shimmer { animation: shimmer 2s linear infinite; background-size: 200% 100% }
+      .animate-slide-in-right { animation: slide-in-right 250ms ease-out both }
+      .animate-slide-in-left { animation: slide-in-left 250ms ease-out both }
+      .animate-progress-stripe { animation: progress-stripe 1s linear infinite }
+      .animate-count-pulse { animation: count-pulse 300ms ease-out }
+
+      /* Stagger delay utilities */
+      .stagger-1 { animation-delay: 50ms }
+      .stagger-2 { animation-delay: 100ms }
+      .stagger-3 { animation-delay: 150ms }
+      .stagger-4 { animation-delay: 200ms }
+      .stagger-5 { animation-delay: 250ms }
+    location: "web/src/index.css"
+
+  - name: "Tailwind Animation Extensions"
+    description: |
+      Agent A adds animation and keyframes entries to the Tailwind config
+      so animations are available as Tailwind classes throughout the app.
+    definition: |
+      // Added to theme.extend in tailwind.config.js:
+      animation: {
+        'fade-in-up': 'fade-in-up 200ms ease-out both',
+        'fade-in-scale': 'fade-in-scale 200ms ease-out both',
+        'shimmer': 'shimmer 2s linear infinite',
+        'slide-in-right': 'slide-in-right 250ms ease-out both',
+        'slide-in-left': 'slide-in-left 250ms ease-out both',
+        'progress-stripe': 'progress-stripe 1s linear infinite',
+      },
+      keyframes: {
+        'fade-in-up': { from: { opacity: '0', transform: 'translateY(8px)' }, to: { opacity: '1', transform: 'translateY(0)' } },
+        'fade-in-scale': { from: { opacity: '0', transform: 'scale(0.95)' }, to: { opacity: '1', transform: 'scale(1)' } },
+        'shimmer': { from: { 'background-position': '-200% 0' }, to: { 'background-position': '200% 0' } },
+        'slide-in-right': { from: { transform: 'translateX(100%)', opacity: '0' }, to: { transform: 'translateX(0)', opacity: '1' } },
+        'slide-in-left': { from: { transform: 'translateX(-100%)', opacity: '0' }, to: { transform: 'translateX(0)', opacity: '1' } },
+        'progress-stripe': { from: { 'background-position': '1rem 0' }, to: { 'background-position': '0 0' } },
+      }
+    location: "web/tailwind.config.js"
+
+file_ownership:
+  - file: "web/src/index.css"
+    agent: "A"
+    wave: 1
+    action: "modify"
+  - file: "web/tailwind.config.js"
+    agent: "A"
+    wave: 1
+    action: "modify"
+  - file: "web/src/components/ProgressBar.tsx"
+    agent: "B"
+    wave: 1
+    action: "modify"
+  - file: "web/src/components/StageTimeline.tsx"
+    agent: "B"
+    wave: 1
+    action: "modify"
+  - file: "web/src/components/review/OverviewPanel.tsx"
+    agent: "B"
+    wave: 1
+    action: "modify"
+  - file: "web/src/components/SuitabilityBadge.tsx"
+    agent: "B"
+    wave: 1
+    action: "modify"
+  - file: "web/src/components/AgentCard.tsx"
+    agent: "C"
+    wave: 1
+    action: "modify"
+  - file: "web/src/components/CommandPalette.tsx"
+    agent: "D"
+    wave: 1
+    action: "modify"
+  - file: "web/src/components/ImplList.tsx"
+    agent: "D"
+    wave: 1
+    action: "modify"
+  - file: "web/src/components/ResumeBanner.tsx"
+    agent: "D"
+    wave: 1
+    action: "modify"
+  - file: "web/src/components/WaveBoard.tsx"
+    agent: "E"
+    wave: 1
+    action: "modify"
+  - file: "web/src/components/review/WaveStructurePanel.tsx"
+    agent: "E"
+    wave: 1
+    action: "modify"
+
+waves:
+  - number: 1
+    agents:
+      - id: "A"
+        task: |
+          ## What to Implement
+          Extend the animation and styling foundation in index.css and tailwind.config.js.
+          The app already has some CSS animations (panel-in, exec-node-pulse, exec-node-shake,
+          exec-node-complete, exec-jewel-fill, exec-check-in, exec-edge transitions). You will
+          ADD new general-purpose animations alongside them, not replace them.
+
+          ## Specific Changes
+
+          ### web/src/index.css
+          Add the following AFTER the existing `/* Check mark fade-in */` section at the bottom:
+
+          1. **Transition utility animations:**
+             - `fade-in-up`: opacity 0->1, translateY(8px)->0, 200ms ease-out
+             - `fade-in-down`: opacity 0->1, translateY(-8px)->0, 200ms ease-out
+             - `fade-in-scale`: opacity 0->1, scale(0.95)->1, 200ms ease-out
+             - `slide-in-right`: translateX(100%)->0 + opacity, 250ms ease-out
+             - `slide-in-left`: translateX(-100%)->0 + opacity, 250ms ease-out
+
+          2. **Loading/progress animations:**
+             - `shimmer`: background-position sweep for skeleton loading, 2s linear infinite
+             - `progress-stripe`: diagonal stripe animation for progress bars, 1s linear infinite
+             - `count-pulse`: scale(1)->1.15->1, 300ms ease-out, for number changes
+
+          3. **Stagger delay utility classes:**
+             - `.stagger-1` through `.stagger-5` with 50ms increments (50ms, 100ms, 150ms, 200ms, 250ms)
+
+          4. **Enhanced skeleton loading:**
+             - Replace the existing `animate-pulse` skeleton pattern with a shimmer gradient:
+             ```css
+             .skeleton-shimmer {
+               background: linear-gradient(90deg,
+                 hsl(var(--muted)) 25%,
+                 hsl(var(--muted-foreground) / 0.08) 50%,
+                 hsl(var(--muted)) 75%);
+               background-size: 200% 100%;
+               animation: shimmer 2s linear infinite;
+             }
+             ```
+
+          5. **Focus ring utility** (accessibility):
+             ```css
+             .focus-ring {
+               outline: 2px solid hsl(var(--ring));
+               outline-offset: 2px;
+             }
+             *:focus-visible { @apply focus-ring; }
+             ```
+
+          ### web/tailwind.config.js
+          Add `animation` and `keyframes` entries to `theme.extend` matching the keyframes
+          defined in index.css. This makes them available as Tailwind classes like
+          `animate-fade-in-up`, `animate-shimmer`, etc.
+
+          Also add a `transitionTimingFunction` extension:
+          ```js
+          transitionTimingFunction: {
+            'bounce-out': 'cubic-bezier(0.34, 1.56, 0.64, 1)',
+          }
+          ```
+
+          ## Tests to Write
+          No tests needed for CSS-only changes. TypeScript compilation validates syntax.
+
+          ## Verification Gate
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && npx vite build
+          ```
+
+          ## Constraints
+          - Do NOT modify or remove any existing keyframes or classes in index.css
+          - All new animations must respect `prefers-reduced-motion` via a media query:
+            `@media (prefers-reduced-motion: reduce) { .animate-* { animation: none !important } }`
+          - Use CSS custom properties (hsl vars) for all colors, never hardcoded hex
+          - Keep animation durations under 300ms for micro-interactions
+        files:
+          - "web/src/index.css"
+          - "web/tailwind.config.js"
+        dependencies: []
+
+      - id: "B"
+        task: |
+          ## What to Implement
+          Enhance status indicators, progress visualization, and overview panel polish.
+          These components currently have minimal styling; add visual depth and feedback.
+
+          ## Specific Changes
+
+          ### web/src/components/ProgressBar.tsx
+          The current progress bar is a simple blue fill with no visual interest.
+
+          1. Add an animated striped pattern to the fill when progress is active (not 100%):
+             - Use a CSS gradient with diagonal stripes + the `animate-progress-stripe` class
+             - When complete (100%), remove stripes, add a brief green flash transition
+          2. Add a subtle glow/shadow to the fill bar matching the fill color
+          3. Add smooth width transitions (already has `transition-all duration-500`, keep it)
+          4. Show the percentage text inside the bar when it's wide enough (>30%),
+             outside when narrow
+          5. Add color transitions: blue while in progress, green at 100%
+
+          ### web/src/components/StageTimeline.tsx
+          The pipeline stage indicators are flat and static.
+
+          1. Replace the simple colored dots with more expressive indicators:
+             - Running: pulsing ring animation (not just `animate-pulse` on a dot)
+             - Complete: green checkmark with a brief scale-in animation
+             - Failed: red X with a brief shake animation
+             - Pending: subtle breathing opacity animation
+          2. Add connecting lines between stages that fill/color as stages complete
+          3. Add staggered fade-in animation when the timeline first renders
+          4. Add a subtle elapsed time display next to running stages
+
+          ### web/src/components/review/OverviewPanel.tsx
+          The overview panel is a single line of text with no visual hierarchy.
+
+          1. Convert the stats into visual stat cards/chips:
+             - Each stat (files, agents, waves) gets its own mini card with an icon
+             - Use lucide-react icons: FileText for files, Users for agents, Layers for waves
+          2. Add the suitability verdict as a prominent colored badge (not just colored text)
+          3. Add a subtle border-left accent bar in the verdict color
+          4. Add hover tooltips on stat cards showing more detail
+
+          ### web/src/components/SuitabilityBadge.tsx
+          Read the existing file first. Enhance the badge with:
+          1. A subtle background gradient based on the verdict
+          2. An icon (CheckCircle for SUITABLE, XCircle for NOT SUITABLE, AlertTriangle for CAVEATS)
+          3. A brief scale-in animation when it first renders
+
+          ## Interfaces to Call
+          - Import `FileText`, `Users`, `Layers`, `CheckCircle`, `XCircle`, `AlertTriangle` from `lucide-react`
+          - Use existing Tailwind theme colors (hsl vars) for all styling
+
+          ## Tests to Write
+          1. Verify ProgressBar renders correctly at 0%, 50%, and 100%
+          2. Verify StageTimeline renders stage entries with correct status classes
+
+          ## Verification Gate
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && npx vite build
+          ```
+
+          ## Constraints
+          - Do NOT change component prop interfaces (maintain backward compatibility)
+          - All animations should use CSS classes, not inline JS animation
+          - Use existing theme CSS variables for all colors
+          - ProgressBar must remain functional without JavaScript animation (CSS-only fill)
+        files:
+          - "web/src/components/ProgressBar.tsx"
+          - "web/src/components/StageTimeline.tsx"
+          - "web/src/components/review/OverviewPanel.tsx"
+          - "web/src/components/SuitabilityBadge.tsx"
+        dependencies: []
+
+      - id: "C"
+        task: |
+          ## What to Implement
+          Polish the AgentCard component with micro-interactions and hover effects.
+
+          ## Specific Changes
+
+          ### web/src/components/AgentCard.tsx
+          The card already has glowing borders per status. Enhance further:
+
+          1. Add a subtle gradient background that shifts based on status:
+             - Running: dark with a faint blue radial gradient in top-left
+             - Complete: dark with a faint green tint
+             - Failed: dark with a faint red tint
+             - Pending: neutral dark
+          2. Add a hover lift effect: on hover, translateY(-2px) + enhanced shadow
+          3. Improve the status indicator in the header:
+             - Running: add a spinning ring icon (not just bouncing dots)
+             - Complete: show a checkmark icon that scales in
+             - Failed: show an X icon with brief shake
+          4. Add a smooth expand/collapse transition for the output section
+          5. Add file count badge in the header (e.g., "3 files" pill)
+
+          ## Interfaces to Call
+          - Import icons from `lucide-react`: Check, Loader2, X
+          - Use `getAgentColor` from `../lib/agentColors` (already imported in AgentCard)
+
+          ## Tests to Write
+          No new tests needed - these are visual-only changes to existing components.
+
+          ## Verification Gate
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && npx vite build
+          ```
+
+          ## Constraints
+          - Do NOT change any component prop interfaces
+          - Do NOT change any onClick handlers or functional behavior
+          - Keep all existing CSS animation classes (exec-node-running, etc.)
+          - Hover effects must be subtle (max 2px translate, max 1.05 scale)
+        files:
+          - "web/src/components/AgentCard.tsx"
+        dependencies: []
+
+      - id: "D"
+        task: |
+          ## What to Implement
+          Improve navigation components: CommandPalette, ImplList sidebar, and ResumeBanner.
+          Focus on smoother transitions, better visual hierarchy, and keyboard UX.
+
+          ## Specific Changes
+
+          ### web/src/components/CommandPalette.tsx
+          The palette works well but lacks visual polish.
+
+          1. Add a backdrop blur overlay (bg-black/50 backdrop-blur-sm) instead of transparent
+          2. Add a scale+fade entrance animation for the palette card
+          3. Enhance the active result row:
+             - Add a left accent bar (3px) in primary color
+             - Add a subtle slide animation when active index changes
+          4. Add result type icons: different icons for active vs complete plans
+          5. Add a subtle shimmer loading state if results take time to filter
+          6. Improve the footer keyboard hints with better styled kbd elements
+
+          ### web/src/components/ImplList.tsx
+          The sidebar list is functional but visually flat.
+
+          1. Enhance the EntryRow component:
+             - Add a smooth slide-in animation for the hover card (currently just appears)
+             - Replace the plain green dot with a status-aware indicator:
+               - Active: pulsing green dot (already has this, keep it)
+               - Complete: static checkmark icon with muted styling
+             - Add a hover background transition that's smoother (150ms ease)
+          2. Improve the repo section headers:
+             - Add a subtle left border accent in a repo-specific color
+             - Better collapse/expand animation (height transition, not instant)
+          3. Improve the "Completed" section toggle:
+             - Add a count badge with the `animate-count-pulse` class when count changes
+             - Better visual separation from active entries
+          4. Enhance the delete button:
+             - Fade in from right on hover (already opacity transition, make it slide too)
+             - Add a brief red flash on the row when delete is triggered
+
+          ### web/src/components/ResumeBanner.tsx
+          Read the existing file. Enhance with:
+          1. A slide-down entrance animation when interrupted sessions are detected
+          2. A pulsing attention indicator (amber dot or icon)
+          3. Better visual hierarchy between the message and the action
+
+          ## Interfaces to Call
+          - Import icons from `lucide-react` as needed (Check, Circle, AlertCircle)
+          - Use existing `cn()` utility from `@/lib/utils` (already imported in ImplList)
+
+          ## Tests to Write
+          1. CommandPalette: verify keyboard navigation still works (ArrowDown, ArrowUp, Enter, Escape)
+          2. ImplList: verify entries render with correct selected state
+
+          ## Verification Gate
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && npx vite build
+          ```
+
+          ## Constraints
+          - Do NOT change any component prop interfaces
+          - Do NOT change filtering/selection logic in CommandPalette
+          - Do NOT change the repo grouping logic in ImplList
+          - The HoverCard fetch behavior must not change (400ms delay)
+          - Delete confirmation modal behavior must not change
+        files:
+          - "web/src/components/CommandPalette.tsx"
+          - "web/src/components/ImplList.tsx"
+          - "web/src/components/ResumeBanner.tsx"
+        dependencies: []
+
+      - id: "E"
+        task: |
+          ## What to Implement
+          Enhance the WaveBoard live execution view and the WaveStructurePanel review diagram.
+          These are the most visually rich components and benefit from animation polish.
+
+          ## Specific Changes
+
+          ### web/src/components/WaveBoard.tsx
+          The board shows live execution. Enhance the visual experience:
+
+          1. Improve the wave section cards:
+             - Add a subtle left border accent that changes color as the wave progresses:
+               blue when running, green when complete, red when failed
+             - Add a staggered entrance animation for agent cards within each wave
+          2. Enhance the empty state:
+             - Add a pulsing connection animation (dots connecting) while waiting
+             - Better "Connecting..." state with a spinner
+          3. Improve the merge/test status sections:
+             - Add progress indicator animations for "Merging..." and "Running tests..."
+             - Add confetti-style particles on "Tests passed" (subtle, CSS-only)
+          4. Enhance the ScaffoldCard:
+             - Add a typing/streaming effect indicator for the output
+             - Better visual connection to the wave flow
+          5. Add smooth scroll behavior when new waves appear:
+             - Auto-scroll to the latest active wave section
+          6. Improve the "Run complete" banner:
+             - Add a celebratory gradient animation
+             - Brief scale-in + glow effect
+
+          ### web/src/components/review/WaveStructurePanel.tsx
+          The Jewel-based timeline is already visually rich. Polish further:
+
+          1. Enhance the vertical rail:
+             - Add a gradient that transitions from filled color to unfilled
+             - The rail should "fill" progressively as execution advances
+          2. Add hover interactions on agent boxes:
+             - On hover: slight scale up + tooltip showing agent task summary
+             - Show dependency arrows on hover (which agents this depends on)
+          3. Improve the merge node display:
+             - Add a pulsing ring when merge is in progress
+             - Add a checkmark overlay when merge is complete
+          4. Add a smooth transition when execution state changes:
+             - Agent boxes should smoothly transition between border colors
+             - Jewels should have a brief glow when they first fill
+          5. Add count labels that update with animation when wave progress changes
+
+          ## Interfaces to Call
+          - Use `useWaveEvents` hook return type (already imported in WaveBoard)
+          - Use `ExecutionSyncState` type (already imported in WaveStructurePanel)
+          - Import `useRef`, `useEffect` from react for scroll behavior
+          - Use existing `getAgentColor`, `getAgentColorWithOpacity` from `../../lib/agentColors`
+
+          ## Tests to Write
+          No new tests - visual-only changes. Existing WaveStructurePanel tests verify render behavior.
+
+          ## Verification Gate
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && npx vite build
+          ```
+
+          ## Constraints
+          - Do NOT change the Jewel SVG component interface or the timeline node data model
+          - Do NOT change any SSE subscription or event handling logic
+          - Do NOT change the useWaveEvents or useExecutionSync hook calls
+          - Keep all existing exec-node-* CSS animation classes working
+          - Auto-scroll must not fight user manual scrolling (detect user scroll intent)
+          - All hover effects must degrade gracefully on touch devices
+        files:
+          - "web/src/components/WaveBoard.tsx"
+          - "web/src/components/review/WaveStructurePanel.tsx"
+        dependencies: []
+
+pre_mortem:
+  overall_risk: "low"
+  rows:
+    - scenario: "Animation classes referenced by agents B-E before Agent A defines them"
+      likelihood: "low"
+      impact: "low"
+      mitigation: |
+        All agents are in wave 1 (parallel). Tailwind classes that don't exist are silently
+        ignored - no build failures. Agents can use inline keyframe styles as fallback.
+        Post-merge, Agent A's CSS will activate all class-based animations.
+    - scenario: "CSS specificity conflicts between agent changes"
+      likelihood: "low"
+      impact: "low"
+      mitigation: |
+        Each agent owns disjoint files. CSS conflicts would only occur via global
+        selectors in index.css (Agent A only). Other agents use component-scoped
+        Tailwind classes. Post-merge build verification catches any issues.
+    - scenario: "TypeScript compilation failures from lucide-react icon imports"
+      likelihood: "low"
+      impact: "medium"
+      mitigation: |
+        lucide-react v0.577.0 is already installed and used extensively.
+        Agents should verify icon names exist in the package before using them.
+    - scenario: "Animation jank on lower-powered devices"
+      likelihood: "medium"
+      impact: "low"
+      mitigation: |
+        Agent A adds prefers-reduced-motion media query to disable all animations.
+        All animations use CSS transforms/opacity only (GPU-composited properties).
+        No layout-triggering properties (width, height, margin) are animated.
+
+known_issues:
+  - title: "Hardcoded gray colors in WaveBoard and StageTimeline"
+    description: |
+      Several components use hardcoded Tailwind gray shades (bg-gray-50, text-gray-600)
+      instead of theme CSS variables (bg-muted, text-muted-foreground). This means they
+      don't fully follow the active Base16 theme. Agents E and B should migrate these
+      to theme-aware classes where practical, but full migration is out of scope.
+    status: "Pre-existing, partial fix in this work"
+    workaround: "Components still render correctly, just with slightly off-theme grays"
+
+completion_reports: {}
