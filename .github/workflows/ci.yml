@@ -2,10 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     tags: ["v*"]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
   test:
@@ -19,6 +19,17 @@ jobs:
         with:
           repository: blackwell-systems/scout-and-wave-go
           path: .engine
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Build frontend
+        working-directory: web
+        run: npm ci && npm run build
 
       - uses: actions/setup-go@v5
         with:
@@ -42,4 +53,3 @@ jobs:
 
       - name: Coverage report
         run: go tool cover -func=coverage.out
-
