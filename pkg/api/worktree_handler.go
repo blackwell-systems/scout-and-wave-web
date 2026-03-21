@@ -7,9 +7,9 @@ import (
 	"net/http"
 	"os/exec"
 	"regexp"
-	"strconv"
 	"strings"
-	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // waveAgentBranchRe matches SAW-managed branches in both legacy format
@@ -258,9 +258,23 @@ func parseWorktreePorcelain(data []byte, mergedBranches map[string]bool) []Workt
 
 // enrichWorktreeEntries populates HasUnsaved, LastCommitAge, and stale status
 // for each worktree entry by running git commands against their paths.
+// Stale detection uses IMPL-aware logic via protocol.DetectStaleWorktrees
+// instead of the previous 24-hour time-based heuristic.
 func enrichWorktreeEntries(entries []WorktreeEntry) {
-	now := time.Now().Unix()
-	staleThreshold := int64(24 * 60 * 60) // 24 hours in seconds
+	// Build a set of stale branch names using IMPL-aware detection.
+	// We need a repo path from the first entry to call DetectStaleWorktrees.
+	staleBranches := make(map[string]bool)
+	if len(entries) > 0 {
+		// Derive the repo path from the first worktree's parent git dir
+		repoPath := detectRepoPathFromWorktree(entries[0].Path)
+		if repoPath != "" {
+			if stale, err := protocol.DetectStaleWorktrees(repoPath); err == nil {
+				for _, s := range stale {
+					staleBranches[s.BranchName] = true
+				}
+			}
+		}
+	}
 
 	for i := range entries {
 		path := entries[i].Path
@@ -277,18 +291,24 @@ func enrichWorktreeEntries(entries []WorktreeEntry) {
 			entries[i].LastCommitAge = strings.TrimSpace(string(ageOut))
 		}
 
-		// Stale detection: unmerged AND last commit > 24 hours old
-		if entries[i].Status == "unmerged" {
-			tsCmd := exec.Command("git", "-C", path, "log", "-1", "--format=%ct")
-			if tsOut, err := tsCmd.Output(); err == nil {
-				if ts, err := strconv.ParseInt(strings.TrimSpace(string(tsOut)), 10, 64); err == nil {
-					if now-ts > staleThreshold {
-						entries[i].Status = "stale"
-					}
-				}
-			}
+		// IMPL-aware stale detection: mark as stale if branch is in the stale set
+		if staleBranches[entries[i].Branch] {
+			entries[i].Status = "stale"
 		}
 	}
+}
+
+// detectRepoPathFromWorktree derives the main repository path from a worktree path
+// by asking git for the top-level directory of the main worktree.
+func detectRepoPathFromWorktree(worktreePath string) string {
+	cmd := exec.Command("git", "-C", worktreePath, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	// git-common-dir returns e.g. /path/to/repo/.git — strip the /.git suffix
+	gitDir := strings.TrimSpace(string(out))
+	return strings.TrimSuffix(gitDir, "/.git")
 }
 
 // getMergedBranches returns a set of branch names merged into main.
@@ -310,11 +330,27 @@ func getMergedBranches(repoPath string) map[string]bool {
 	return merged
 }
 
-// detectStaleBranches returns the names of SAW-managed branches that exist
-// locally but are not merged into main. It reuses parseWorktreePorcelain and
-// getMergedBranches so the logic stays consistent with handleListWorktrees.
+// detectStaleBranches returns the names of SAW-managed branches that are stale,
+// using IMPL-aware detection via protocol.DetectStaleWorktrees. Falls back to
+// the legacy heuristic (merged-status check) if the protocol function fails.
 // Called by wave_runner.go before each run to emit an advisory SSE event.
 func detectStaleBranches(repoPath string) []string {
+	stale, err := protocol.DetectStaleWorktrees(repoPath)
+	if err != nil {
+		// Fall back to existing behavior
+		return detectStaleBranchesLegacy(repoPath)
+	}
+	var branches []string
+	for _, s := range stale {
+		branches = append(branches, s.BranchName)
+	}
+	return branches
+}
+
+// detectStaleBranchesLegacy is the original detectStaleBranches implementation
+// that uses merged-status heuristics. Retained as a fallback when IMPL-aware
+// detection is unavailable.
+func detectStaleBranchesLegacy(repoPath string) []string {
 	cmd := exec.Command("git", "worktree", "list", "--porcelain")
 	cmd.Dir = repoPath
 	out, err := cmd.Output()

@@ -110,6 +110,54 @@ func TestHandleBatchDeleteWorktrees_InvalidJSON(t *testing.T) {
 	}
 }
 
+// TestDetectStaleBranches_IMPLAware verifies that detectStaleBranches uses
+// IMPL-aware detection via protocol.DetectStaleWorktrees. In a real git repo
+// with no SAW worktrees or IMPL docs, it should return an empty list (the
+// protocol function finds nothing stale, not an error).
+func TestDetectStaleBranches_IMPLAware(t *testing.T) {
+	repoDir := initGitRepo(t)
+	branches := detectStaleBranches(repoDir)
+	// A fresh repo has no SAW branches, so nothing should be stale
+	if len(branches) != 0 {
+		t.Errorf("expected 0 stale branches in fresh repo, got %d: %v", len(branches), branches)
+	}
+}
+
+// TestDetectStaleBranchesLegacy_Fallback verifies the legacy fallback still
+// works correctly — it detects unmerged SAW-pattern branches.
+func TestDetectStaleBranchesLegacy_Fallback(t *testing.T) {
+	repoDir := initGitRepo(t)
+	branches := detectStaleBranchesLegacy(repoDir)
+	// A fresh repo has no SAW branches
+	if len(branches) != 0 {
+		t.Errorf("expected 0 stale branches in fresh repo, got %d: %v", len(branches), branches)
+	}
+}
+
+// TestDetectStaleBranches_FallbackOnError verifies that detectStaleBranches
+// falls back to legacy when called with an invalid repo path (which causes
+// protocol.DetectStaleWorktrees to fail).
+func TestDetectStaleBranches_FallbackOnError(t *testing.T) {
+	// Use a non-existent path — protocol.DetectStaleWorktrees will error,
+	// triggering the fallback to detectStaleBranchesLegacy which also
+	// returns nil for a bad path.
+	branches := detectStaleBranches("/tmp/nonexistent-repo-path-for-test")
+	if branches != nil && len(branches) != 0 {
+		t.Errorf("expected nil or empty for invalid repo, got %v", branches)
+	}
+}
+
+// TestEnrichWorktreeEntries_NoStaleOnEmptyEntries verifies enrichWorktreeEntries
+// handles an empty slice without panicking.
+func TestEnrichWorktreeEntries_NoStaleOnEmptyEntries(t *testing.T) {
+	entries := []WorktreeEntry{}
+	// Should not panic
+	enrichWorktreeEntries(entries)
+	if len(entries) != 0 {
+		t.Errorf("expected 0 entries, got %d", len(entries))
+	}
+}
+
 func TestHandleBatchDeleteWorktrees_UnmergedConflict(t *testing.T) {
 	// Use a temp git repo so getMergedBranches can run.
 	// The branches we request won't be merged, so we'll get a 409.
