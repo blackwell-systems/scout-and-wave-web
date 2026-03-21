@@ -54,6 +54,48 @@ import type {
 // DiskAgentStatus, DiskWaveStatus, and BrowseResult are defined below
 // alongside the SawClient interface.
 
+// ─── Interview / Validation / Import types ───────────────────────────────────
+
+export interface IntegrationGap {
+  type: string
+  file?: string
+  symbol?: string
+  reason: string
+  severity: string
+}
+
+export interface WiringGap {
+  symbol: string
+  defined_in: string
+  must_be_called_from: string
+  reason: string
+}
+
+export interface ValidateIntegrationResponse {
+  valid: boolean
+  wave: number
+  gaps: IntegrationGap[]
+}
+
+export interface ValidateWiringResponse {
+  valid: boolean
+  gaps: WiringGap[]
+}
+
+export interface ImportIMPLsRequest {
+  program_slug: string
+  impl_paths?: string[]
+  tier_map?: Record<string, number>
+  discover?: boolean
+  repo_dir?: string
+}
+
+export interface ImportIMPLsResponse {
+  program_path: string
+  imported: string[]
+  skipped: string[]
+}
+
 // ─── SawClient interface ────────────────────────────────────────────────────
 
 export interface SawClient {
@@ -83,6 +125,14 @@ export interface SawClient {
     amend(slug: string, body: object): Promise<any>
     manifest(slug: string): Promise<any>
     validateManifest(slug: string): Promise<{ valid: boolean; errors: any[] }>
+    validateIntegration(slug: string, wave: number): Promise<ValidateIntegrationResponse>
+    validateWiring(slug: string): Promise<ValidateWiringResponse>
+    importImpls(req: ImportIMPLsRequest): Promise<ImportIMPLsResponse>
+  }
+  interview: {
+    start(description: string, opts?: { maxQuestions?: number; projectPath?: string }): Promise<{ runId: string }>
+    subscribeEvents(runId: string): EventSource
+    answer(runId: string, answer: string): Promise<void>
   }
   wave: {
     start(slug: string): Promise<void>
@@ -370,6 +420,59 @@ export function createHttpClient(): SawClient {
         const r = await fetch(`/api/manifest/${enc(slug)}/validate`, { method: 'POST' })
         if (!r.ok) throw new Error(`Failed to validate manifest: ${r.statusText}`)
         return r.json()
+      },
+
+      async validateIntegration(slug: string, wave: number): Promise<ValidateIntegrationResponse> {
+        const r = await fetch(`/api/impl/${enc(slug)}/validate-integration?wave=${wave}`)
+        if (!r.ok) throw new Error(await r.text())
+        return r.json() as Promise<ValidateIntegrationResponse>
+      },
+
+      async validateWiring(slug: string): Promise<ValidateWiringResponse> {
+        const r = await fetch(`/api/impl/${enc(slug)}/validate-wiring`)
+        if (!r.ok) throw new Error(await r.text())
+        return r.json() as Promise<ValidateWiringResponse>
+      },
+
+      async importImpls(req: ImportIMPLsRequest): Promise<ImportIMPLsResponse> {
+        const r = await fetch('/api/impl/import', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req),
+        })
+        if (!r.ok) throw new Error(await r.text())
+        return r.json() as Promise<ImportIMPLsResponse>
+      },
+    },
+
+    // ── interview namespace ───────────────────────────────────────────────
+    interview: {
+      async start(description: string, opts?: { maxQuestions?: number; projectPath?: string }): Promise<{ runId: string }> {
+        const r = await fetch('/api/interview/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            description,
+            ...(opts?.maxQuestions !== undefined ? { max_questions: opts.maxQuestions } : {}),
+            ...(opts?.projectPath !== undefined ? { project_path: opts.projectPath } : {}),
+          }),
+        })
+        if (!r.ok) throw new Error(await r.text())
+        const data = await r.json() as { run_id: string }
+        return { runId: data.run_id }
+      },
+
+      subscribeEvents(runId: string): EventSource {
+        return new EventSource(`/api/interview/${enc(runId)}/events`)
+      },
+
+      async answer(runId: string, answer: string): Promise<void> {
+        const r = await fetch(`/api/interview/${enc(runId)}/answer`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ answer }),
+        })
+        if (!r.ok) throw new Error(await r.text())
       },
     },
 
