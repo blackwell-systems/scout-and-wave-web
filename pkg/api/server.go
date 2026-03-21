@@ -41,6 +41,7 @@ type Server struct {
 	mergingRuns      sync.Map        // slug -> struct{}; tracks in-progress merge operations
 	testingRuns      sync.Map        // slug -> struct{}; tracks in-progress test runs
 	scaffoldRuns     sync.Map        // runID -> context.CancelFunc; tracks in-progress scaffold reruns
+	interviewRuns    sync.Map        // runID -> context.CancelFunc; tracks in-progress interview runs
 	stages           *stageManager    // per-slug stage state persistence
 	pipelineTracker  *pipelineTracker // per-slug pipeline step state persistence
 	progressTracker  *ProgressTracker // tracks per-agent progress
@@ -248,6 +249,20 @@ func New(cfg Config) *Server {
 	s.mux.HandleFunc("POST /api/daemon/stop", s.handleDaemonStop)
 	s.mux.HandleFunc("GET /api/daemon/status", s.handleDaemonStatus)
 	s.mux.HandleFunc("GET /api/daemon/events", s.handleDaemonEvents)
+
+	// Interview layer — launch interview agent to refine feature descriptions
+	s.mux.HandleFunc("POST /api/interview/start", s.handleInterviewStart)
+	s.mux.HandleFunc("GET /api/interview/{runID}/events", s.handleInterviewEvents)
+	s.mux.HandleFunc("POST /api/interview/{runID}/answer", s.handleInterviewAnswer)
+	s.mux.HandleFunc("POST /api/interview/{runID}/cancel", s.handleInterviewCancel)
+
+	// Validation routes — integration gap and wiring gap checks
+	s.mux.HandleFunc("GET /api/impl/{slug}/validate-integration", s.handleValidateIntegration)
+	s.mux.HandleFunc("GET /api/impl/{slug}/validate-wiring", s.handleValidateWiring)
+
+	// Import route — bulk IMPL import into a program
+	s.mux.HandleFunc("POST /api/impl/import", s.handleImportIMPLs)
+
 	sub, err := build.StaticFS()
 	if err != nil {
 		panic("saw: failed to get static FS: " + err.Error())
