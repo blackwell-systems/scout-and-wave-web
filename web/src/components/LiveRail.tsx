@@ -78,7 +78,7 @@ export default function LiveRail({ slug, liveView, onScoutComplete, onScoutReady
       {/* Idle state */}
       {liveView === null && (
         <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
-          No active execution.
+          Select an action to begin.
         </div>
       )}
     </div>

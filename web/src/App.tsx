@@ -5,6 +5,8 @@ import { IMPLDocResponse } from './types'
 import ReviewScreen from './components/ReviewScreen'
 import { LiveView } from './components/LiveRail'
 import LiveRail from './components/LiveRail'
+import WaveBoardComponent from './components/WaveBoard'
+import { X, Waves } from 'lucide-react'
 import SettingsScreen from './components/SettingsScreen'
 import CommandPalette from './components/CommandPalette'
 import { useResizableDivider } from './hooks/useResizableDivider'
@@ -76,6 +78,7 @@ export default function App() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [rejected, setRejected] = useState(false)
+  const [waveBoardCollapsed, setWaveBoardCollapsed] = useState(true)
 
   const [sseRefreshTick, setSseRefreshTick] = useState(0)
   const [showPalette, setShowPalette] = useState(false)
@@ -86,6 +89,11 @@ export default function App() {
   useEffect(() => {
     setSseRefreshTick(t => t + 1)
   }, [entries])
+
+  // Reset collapsed state when liveView activates
+  useEffect(() => {
+    if (liveView !== null) setWaveBoardCollapsed(true)
+  }, [liveView])
 
   const handleReposChange = useCallback((updated: typeof repos): void => {
     setRepos(updated)
@@ -184,8 +192,14 @@ export default function App() {
   }, [selectedSlug])
 
   const handleViewWaves = useCallback(() => {
-    setLiveView(prev => prev === 'wave' ? null : 'wave')
-  }, [])
+    if (waveBoardCollapsed && selectedSlug && impl) {
+      setWaveBoardCollapsed(false)
+    } else if (!waveBoardCollapsed && liveView === null) {
+      setWaveBoardCollapsed(true)
+    } else {
+      setLiveView(prev => prev === 'wave' ? null : 'wave')
+    }
+  }, [waveBoardCollapsed, selectedSlug, impl, liveView])
 
   const handleSelectAndViewWaves = useCallback(async (slug: string) => {
     await handleSelect(slug)
@@ -285,7 +299,7 @@ export default function App() {
       )}
       {rejected && <p className="text-orange-600 text-sm p-4">Plan rejected.</p>}
       {!loading && impl !== null && selectedSlug !== null && (
-        <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onViewWaves={handleViewWaves} onRefreshImpl={handleRefreshImpl} repos={repos} chatModel={models.chat} refreshTick={sseRefreshTick} />
+        <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onViewWaves={handleViewWaves} onRefreshImpl={handleRefreshImpl} repos={repos} chatModel={models.chat} refreshTick={sseRefreshTick} waveBoardExpanded={!waveBoardCollapsed && liveView === null} />
       )}
       {!loading && impl === null && !error && (
         repos.length === 0 ? (
@@ -306,7 +320,7 @@ export default function App() {
     </>
   )
 
-  // Right panel (LiveRail)
+  // Right panel (LiveRail or persistent WaveBoard)
   const rightPanel = liveView !== null ? (
     <LiveRail
       slug={selectedSlug}
@@ -327,6 +341,28 @@ export default function App() {
       activeRepo={activeRepo}
       onRepoSwitch={handleRepoSwitch}
     />
+  ) : (selectedSlug && impl && !waveBoardCollapsed) ? (
+    <div className="h-full flex flex-col bg-background">
+      <div className="flex items-center justify-between px-3 py-2 border-b shrink-0">
+        <span className="text-xs font-medium text-muted-foreground">Wave Execution</span>
+        <button
+          onClick={() => setWaveBoardCollapsed(true)}
+          className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+          title="Collapse panel"
+        >
+          <X size={14} />
+        </button>
+      </div>
+      <div className="flex-1 overflow-y-auto min-h-0">
+        <WaveBoardComponent slug={selectedSlug} compact={true} repos={repos} onRescout={() => setLiveView('scout')} />
+      </div>
+    </div>
+  ) : undefined
+
+  const rightPanelCollapsedContent = (selectedSlug && impl && liveView === null) ? (
+    <div className="flex flex-col items-center py-3 gap-2 text-muted-foreground">
+      <Waves size={20} />
+    </div>
   ) : undefined
 
   return (
@@ -372,6 +408,9 @@ export default function App() {
         rightPanel={rightPanel}
         rightPanelWidth={rightWidthPx}
         onRightPanelResize={setRightWidthPx}
+        rightPanelCollapsed={waveBoardCollapsed && liveView === null && selectedSlug !== null && impl !== null}
+        onToggleRightPanel={() => setWaveBoardCollapsed(v => !v)}
+        rightPanelCollapsedContent={rightPanelCollapsedContent}
         sidebarCollapsed={sidebarCollapsed}
         onToggleSidebar={() => setSidebarCollapsed(c => !c)}
         sidebarWidth={leftWidthPx}

@@ -27,6 +27,7 @@ interface ReviewScreenProps {
   repos?: import('../types').RepoEntry[]
   chatModel?: string
   refreshTick?: number
+  waveBoardExpanded?: boolean
 }
 
 type PanelKey = 'reactions' | 'pre-mortem' | 'wiring' | 'stub-report' | 'file-ownership' | 'wave-structure' | 'agent-prompts' | 'interface-contracts' | 'scaffolds' | 'dependency-graph' | 'known-issues' | 'post-merge-checklist' | 'quality-gates' | 'worktrees' | 'context-viewer' | 'validation' | 'amend'
@@ -70,7 +71,7 @@ const panels: Array<{ key: PanelKey; label: string; essential?: boolean }> = [
 ]
 
 export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
-  const { slug, impl, onApprove, onReject, onViewWaves, onRefreshImpl, repos, chatModel = 'claude-sonnet-4-6', refreshTick } = props
+  const { slug, impl, onApprove, onReject, onViewWaves, onRefreshImpl, repos, chatModel = 'claude-sonnet-4-6', refreshTick, waveBoardExpanded } = props
   const isNotSuitable = impl.suitability.verdict === 'NOT SUITABLE'
 
   const executionState = useExecutionSync(slug)
@@ -389,7 +390,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
       {/* Sticky footer — inside scroll container so it respects center column width */}
       {!isNotSuitable && (
         <div className="sticky bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur-sm flex items-stretch justify-center">
-          <ActionButtons onApprove={handleApproveClick} onReject={onReject} onRequestChanges={() => setShowRevise(true)} onViewWaves={onViewWaves} hasWaveWork={hasWaveWork} needsCritic={needsCritic} criticReport={criticReport} criticRunning={criticRunning} onRunCritic={handleRunCritic} />
+          <ActionButtons onApprove={handleApproveClick} onReject={onReject} onRequestChanges={() => setShowRevise(true)} onViewWaves={onViewWaves} hasWaveWork={hasWaveWork} needsCritic={needsCritic} criticReport={criticReport} criticRunning={criticRunning} onRunCritic={handleRunCritic} waveBoardExpanded={waveBoardExpanded} />
           <button
             onClick={() => togglePanel('validation')}
             className={`flex items-center justify-center text-sm font-medium px-6 h-14 transition-all duration-150 border-t-2 ${
