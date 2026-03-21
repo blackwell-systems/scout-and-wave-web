@@ -1,0 +1,396 @@
+completion_date: "2026-03-21"
+title: Make WaveBoard a persistent collapsed right panel on ReviewScreen
+feature_slug: persistent-waveboard-panel
+verdict: SUITABLE_WITH_CAVEATS
+suitability_assessment: |
+    1. File decomposition: 5 files change (AppLayout.tsx, App.tsx, ActionButtons.tsx,
+       LiveRail.tsx, ReviewScreen.tsx). Disjoint ownership achievable with 3 agents across 2 waves.
+    2. Investigation-first: No investigation needed. The collapse pattern already exists in
+       OperationsPanel.tsx (40px collapsed strip with icon buttons). WaveBoard already supports
+       compact={true} mode.
+    3. Interface discoverability: Yes. The cross-agent interface is a small set of React props
+       on AppLayout (rightPanelCollapsed, onToggleRightPanel, rightPanelCollapsedContent).
+    4. Pre-implementation status: All changes are TODO. No prior attempts found.
+    5. Parallelization value: Small feature (5 files, 3 agents). Build/test cycle is moderate
+       (tsc + vitest ~15s). The coordination value is moderate — Wave 1 agents are independent
+       and Wave 2 wires everything together. SAW overhead is justified by the clean separation
+       between layout changes and state wiring.
+
+    Caveat: App.tsx is large (~407 lines) and manages significant state. Agent C (Wave 2) must
+    be careful to make targeted additions without disrupting existing liveView logic.
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~8 min (3 agents, Wave 1 parallel ~4 min, Wave 2 ~4 min)
+    - Merge & verification: ~3 min
+    Total SAW time: ~16 min
+    Sequential baseline: ~15 min (3 agents x 5 min avg)
+    Time savings: ~marginal (-1 min)
+    Recommendation: Coordination value — clean separation of layout vs wiring concerns.
+test_command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./... && cd web && node_modules/.bin/vitest run
+lint_command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./...
+file_ownership:
+    - file: web/src/components/layout/AppLayout.tsx
+      agent: A
+      wave: 1
+      action: modify
+    - file: web/src/components/ActionButtons.tsx
+      agent: B
+      wave: 1
+      action: modify
+    - file: web/src/App.tsx
+      agent: C
+      wave: 2
+      action: modify
+    - file: web/src/components/LiveRail.tsx
+      agent: C
+      wave: 2
+      action: modify
+    - file: web/src/components/ReviewScreen.tsx
+      agent: C
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: AppLayout collapsed right panel props
+      description: |
+        New optional props on AppLayout to support a collapsed right panel strip.
+        When rightPanelCollapsed is true and rightPanelCollapsedContent is provided,
+        AppLayout renders a 40px-wide strip instead of the full right panel.
+        Clicking the strip calls onToggleRightPanel.
+      definition: |
+        // Added to AppLayoutProps interface in AppLayout.tsx:
+        rightPanelCollapsed?: boolean
+        onToggleRightPanel?: () => void
+        rightPanelCollapsedContent?: React.ReactNode
+      location: web/src/components/layout/AppLayout.tsx
+    - name: ActionButtons waveBoardExpanded prop
+      description: |
+        The onViewWaves prop on ActionButtons changes semantics from "toggle
+        visibility" to "toggle expand/collapse". The prop name stays the same
+        for backward compatibility but the handler in App.tsx changes behavior.
+        ActionButtons receives a new optional prop to control button label/icon.
+      definition: |
+        // ActionButtons receives a new optional prop:
+        waveBoardExpanded?: boolean
+        // No signature change to onViewWaves?: () => void
+      location: web/src/components/ActionButtons.tsx
+    - name: ReviewScreen waveBoardExpanded prop threading
+      description: |
+        ReviewScreen receives waveBoardExpanded from App.tsx and threads it
+        to ActionButtons in the sticky footer.
+      definition: |
+        // Added to ReviewScreenProps:
+        waveBoardExpanded?: boolean
+      location: web/src/components/ReviewScreen.tsx
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## What to implement
+
+            Modify `AppLayout.tsx` to support a collapsed right panel mode, matching the
+            OperationsPanel collapse pattern in `web/src/components/OperationsPanel.tsx`.
+
+            ### New props to add to AppLayoutProps:
+
+            ```typescript
+            rightPanelCollapsed?: boolean
+            onToggleRightPanel?: () => void
+            rightPanelCollapsedContent?: React.ReactNode
+            ```
+
+            ### Behavior:
+
+            1. When `rightPanelCollapsed` is true AND `rightPanelCollapsedContent` is provided:
+               - Render a 40px-wide strip instead of the full right panel
+               - The strip should have `border-l border-border` styling
+               - The strip renders `rightPanelCollapsedContent` (the caller provides the icon)
+               - Clicking anywhere on the strip calls `onToggleRightPanel`
+               - Use `transition-[width] duration-200 ease-in-out` for smooth animation (same as sidebar)
+               - Do NOT render the resize divider when collapsed
+
+            2. When `rightPanelCollapsed` is false AND `rightPanel` is provided:
+               - Existing behavior: render the full rightPanel with resize divider (unchanged)
+
+            3. When `rightPanel` is null/undefined AND no collapsed content:
+               - Existing behavior: no right panel at all (unchanged)
+
+            ### Reference: OperationsPanel collapse pattern (lines 27-31):
+            ```tsx
+            <div
+              className="shrink-0 border-l border-border flex flex-col overflow-hidden transition-[width] duration-200 ease-in-out"
+              style={{ width: collapsed ? 40 : 320 }}
+            >
+            ```
+
+            Match this exact pattern for the right panel collapse strip.
+
+            ### Files
+            - `web/src/components/layout/AppLayout.tsx` — modify
+
+            ### Interfaces
+            - Add `rightPanelCollapsed`, `onToggleRightPanel`, `rightPanelCollapsedContent` to AppLayoutProps
+            - All three are optional to maintain backward compatibility
+
+            ### Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+            ```
+
+            ### Constraints
+            - Do NOT break existing right panel behavior (when rightPanel is provided and not collapsed)
+            - Do NOT break the resize divider drag behavior
+            - The collapsed strip must be exactly 40px wide to match the sidebar collapse width
+            - Use cursor-pointer on the collapsed strip
+          files:
+            - web/src/components/layout/AppLayout.tsx
+        - id: B
+          task: |
+            ## What to implement
+
+            Modify `ActionButtons.tsx` to support showing expand/collapse state for the
+            WaveBoard button instead of just "View WaveBoard".
+
+            ### Changes:
+
+            1. Add a new optional prop `waveBoardExpanded?: boolean` to `ActionButtonsProps`.
+
+            2. When `hasWaveWork` is true and `onViewWaves` is provided:
+               - If `waveBoardExpanded` is true: show "Hide WaveBoard" with an EyeOff icon
+               - If `waveBoardExpanded` is false or undefined: show "View WaveBoard" with Eye icon (current behavior)
+
+            3. Import `EyeOff` from lucide-react alongside the existing `Eye` import.
+
+            ### Files
+            - `web/src/components/ActionButtons.tsx` — modify
+
+            ### Interfaces
+            - Add `waveBoardExpanded?: boolean` to ActionButtonsProps
+            - Import `EyeOff` from lucide-react
+
+            ### Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+            ```
+
+            ### Constraints
+            - Do NOT change the onViewWaves callback signature
+            - Keep the React.memo wrapper
+            - Keep the Tooltip on the button
+            - Update tooltip text: when expanded, say "Collapse the wave execution dashboard"
+          files:
+            - web/src/components/ActionButtons.tsx
+      base_commit: 04cc41163770c907e5573e59dbec84fd34c9db25
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## What to implement
+
+            Wire up the persistent collapsed WaveBoard panel in `App.tsx`, thread the
+            `waveBoardExpanded` prop through `ReviewScreen.tsx`, and make a minor text
+            update to `LiveRail.tsx`. This connects Agent A's AppLayout changes with
+            Agent B's ActionButtons changes.
+
+            ### App.tsx changes:
+
+            1. Add new imports at the top:
+               ```tsx
+               import WaveBoardComponent from './components/WaveBoard'
+               import { X, Waves } from 'lucide-react'
+               ```
+               Note: Import WaveBoard as `WaveBoardComponent` to avoid naming conflict
+               with any local variables. Or use whatever non-conflicting name works.
+
+            2. Add new state: `const [waveBoardCollapsed, setWaveBoardCollapsed] = useState(true)`
+               This tracks whether the right panel WaveBoard strip is collapsed (true) or expanded (false).
+
+            3. Add an effect to reset collapsed state when liveView activates:
+               ```tsx
+               useEffect(() => {
+                 if (liveView !== null) setWaveBoardCollapsed(true)
+               }, [liveView])
+               ```
+
+            4. Modify the `rightPanel` logic (around line 310):
+
+               **Current logic:**
+               ```tsx
+               const rightPanel = liveView !== null ? ( <LiveRail ... /> ) : undefined
+               ```
+
+               **New logic:**
+               ```tsx
+               const rightPanel = liveView !== null ? (
+                 <LiveRail ... />  // unchanged — keep all existing props
+               ) : (selectedSlug && impl && !waveBoardCollapsed) ? (
+                 <div className="h-full flex flex-col bg-background">
+                   <div className="flex items-center justify-between px-3 py-2 border-b shrink-0">
+                     <span className="text-xs font-medium text-muted-foreground">Wave Execution</span>
+                     <button
+                       onClick={() => setWaveBoardCollapsed(true)}
+                       className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                       title="Collapse panel"
+                     >
+                       <X size={14} />
+                     </button>
+                   </div>
+                   <div className="flex-1 overflow-y-auto min-h-0">
+                     <WaveBoardComponent slug={selectedSlug} compact={true} repos={repos} onRescout={() => setLiveView('scout')} />
+                   </div>
+                 </div>
+               ) : undefined
+               ```
+
+            5. Add collapsed content for the right panel strip using the `Waves` icon from lucide-react:
+               ```tsx
+               const rightPanelCollapsedContent = (selectedSlug && impl && liveView === null) ? (
+                 <div className="flex flex-col items-center py-3 gap-2 text-muted-foreground">
+                   <Waves size={20} />
+                 </div>
+               ) : undefined
+               ```
+
+            6. Pass new props to AppLayout (add alongside existing props):
+               ```tsx
+               rightPanelCollapsed={waveBoardCollapsed && liveView === null && selectedSlug !== null && impl !== null}
+               onToggleRightPanel={() => setWaveBoardCollapsed(v => !v)}
+               rightPanelCollapsedContent={rightPanelCollapsedContent}
+               ```
+
+            7. Modify `handleViewWaves` (around line 186):
+               **Current:**
+               ```tsx
+               const handleViewWaves = useCallback(() => {
+                 setLiveView(prev => prev === 'wave' ? null : 'wave')
+               }, [])
+               ```
+               **New:**
+               ```tsx
+               const handleViewWaves = useCallback(() => {
+                 if (waveBoardCollapsed && selectedSlug && impl) {
+                   setWaveBoardCollapsed(false)
+                 } else if (!waveBoardCollapsed && liveView === null) {
+                   setWaveBoardCollapsed(true)
+                 } else {
+                   setLiveView(prev => prev === 'wave' ? null : 'wave')
+                 }
+               }, [waveBoardCollapsed, selectedSlug, impl, liveView])
+               ```
+
+            8. In the ReviewScreen render call (around line 288), add the new prop:
+               ```tsx
+               <ReviewScreen ... waveBoardExpanded={!waveBoardCollapsed && liveView === null} />
+               ```
+
+            ### ReviewScreen.tsx changes:
+
+            Thread the `waveBoardExpanded` prop to ActionButtons.
+
+            1. Add `waveBoardExpanded?: boolean` to the `ReviewScreenProps` interface (around line 20).
+
+            2. Destructure `waveBoardExpanded` from props in the component function (around line 73).
+
+            3. Pass it to ActionButtons in the sticky footer (around line 392):
+               ```tsx
+               <ActionButtons ... waveBoardExpanded={waveBoardExpanded} />
+               ```
+
+            ### LiveRail.tsx changes:
+
+            Update the idle state message (lines 79-83) since it will rarely be seen:
+            ```tsx
+            {liveView === null && (
+              <div className="flex-1 flex items-center justify-center text-muted-foreground text-sm">
+                Select an action to begin.
+              </div>
+            )}
+            ```
+
+            ### Files
+            - `web/src/App.tsx` — modify (main wiring)
+            - `web/src/components/ReviewScreen.tsx` — modify (prop threading only)
+            - `web/src/components/LiveRail.tsx` — modify (idle text update only)
+
+            ### Interfaces consumed
+            - AppLayout: `rightPanelCollapsed`, `onToggleRightPanel`, `rightPanelCollapsedContent` (from Agent A)
+            - ActionButtons: `waveBoardExpanded` (from Agent B)
+
+            ### Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && node_modules/.bin/vitest run
+            ```
+
+            ### Constraints
+            - Do NOT break existing liveView behavior (scout, wave, planner views must still work)
+            - Do NOT break the handleApprove flow that sets liveView to 'wave'
+            - Do NOT break the handleSelectAndViewWaves flow
+            - The collapsed strip should only appear when an IMPL is selected (selectedSlug && impl)
+            - When liveView is active, the LiveRail takes over — no collapsed strip
+            - Use the `Waves` icon from lucide-react for the collapsed strip (not inline SVG)
+            - ReviewScreen changes are minimal — only add the prop and thread it through
+          files:
+            - web/src/App.tsx
+            - web/src/components/ReviewScreen.tsx
+            - web/src/components/LiveRail.tsx
+          dependencies:
+            - A
+            - B
+      base_commit: 193ae6cba2c8d9ec5258bf5e5bcb18977c8c0819
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+          required: true
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/persistent-waveboard-panel/wave1-agent-A
+        commit: 4e8d007
+        files_changed:
+            - web/src/components/layout/AppLayout.tsx
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/persistent-waveboard-panel/wave1-agent-B
+        commit: 2fa644e
+        files_changed:
+            - web/src/components/ActionButtons.tsx
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/persistent-waveboard-panel/wave2-agent-C
+        commit: c8ef299
+        files_changed:
+            - web/src/App.tsx
+            - web/src/components/ReviewScreen.tsx
+            - web/src/components/LiveRail.tsx
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: App.tsx is large and Agent C's changes span multiple sections
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Agent C's task provides exact line references and before/after code snippets.
+            The changes are additive (new state, new props) rather than restructuring.
+        - scenario: WaveBoard import naming conflict in App.tsx
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent C's task explicitly notes importing as WaveBoardComponent to avoid
+            any variable name collision. The component default export is flexible.
+        - scenario: Collapsed strip interferes with existing right panel resize behavior
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Agent A's task explicitly states: do not render resize divider when collapsed.
+            The transition between collapsed and expanded uses CSS width transition,
+            same pattern as the working sidebar collapse.
+state: "COMPLETE"

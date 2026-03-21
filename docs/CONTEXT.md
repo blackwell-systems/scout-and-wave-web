@@ -65,3 +65,5 @@ lint_command: go vet ./...
   - IMPL doc: docs/IMPL/complete/IMPL-program-dep-graph.yaml
 - **create-program-from-impls-gui**: completed 2026-03-21, 2 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-create-program-from-impls-gui.yaml
+- **persistent-waveboard-panel**: completed 2026-03-21, 2 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-persistent-waveboard-panel.yaml
