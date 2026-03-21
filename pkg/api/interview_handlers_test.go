@@ -149,7 +149,7 @@ func TestHandleInterviewAnswer_SendsAnswerToLoop(t *testing.T) {
 	s := newTestServerForInterview(t)
 
 	// Manually create a run with an answer channel.
-	ctx, cancel := context.WithCancel(context.Background())
+	_, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	run := &interviewRun{
