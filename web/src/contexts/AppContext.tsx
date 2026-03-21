@@ -4,6 +4,7 @@ import { listPrograms } from '../programApi'
 import { useGlobalEvents } from '../hooks/useGlobalEvents'
 import type { IMPLListEntry, RepoEntry, InterruptedSession } from '../types'
 import type { ProgramDiscovery } from '../types/program'
+import { type ModelRole, defaultModels } from '../types/models'
 
 export interface AppContextValue {
   repos: RepoEntry[]
@@ -13,26 +14,13 @@ export interface AppContextValue {
   setRepos: (repos: RepoEntry[]) => void
   entries: IMPLListEntry[]
   refreshEntries: () => Promise<void>
-  models: {
-    scout: string; critic: string; scaffold: string; wave: string
-    integration: string; chat: string; planner: string
-  }
-  saveModel: (field: string, value: string) => Promise<void>
+  models: Record<ModelRole, string>
+  saveModel: (field: ModelRole | 'all', value: string) => Promise<void>
   sseConnected: boolean
   programs: ProgramDiscovery[]
   refreshPrograms: () => Promise<void>
   interruptedSessions: InterruptedSession[]
   runningSlugs: Set<string>
-}
-
-const defaultModels = {
-  scout: 'claude-sonnet-4-6',
-  critic: 'claude-sonnet-4-6',
-  scaffold: 'claude-sonnet-4-6',
-  wave: 'claude-sonnet-4-6',
-  integration: 'claude-sonnet-4-6',
-  chat: 'claude-sonnet-4-6',
-  planner: 'claude-sonnet-4-6',
 }
 
 const defaultValue: AppContextValue = {
@@ -67,13 +55,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   const [sseConnected, setSseConnected] = useState(false)
   const [programs, setPrograms] = useState<ProgramDiscovery[]>([])
 
-  const [scoutModel, setScoutModel] = useState<string>(defaultModels.scout)
-  const [criticModel, setCriticModel] = useState<string>(defaultModels.critic)
-  const [scaffoldModel, setScaffoldModel] = useState<string>(defaultModels.scaffold)
-  const [waveModel, setWaveModel] = useState<string>(defaultModels.wave)
-  const [integrationModel, setIntegrationModel] = useState<string>(defaultModels.integration)
-  const [chatModel, setChatModel] = useState<string>(defaultModels.chat)
-  const [plannerModel, setPlannerModel] = useState<string>(defaultModels.planner)
+  const [models, setModels] = useState<Record<ModelRole, string>>({ ...defaultModels })
 
   const [interruptedSessions, setInterruptedSessions] = useState<InterruptedSession[]>([])
   const [runningSlugs, setRunningSlugs] = useState<Set<string>>(new Set())
@@ -142,13 +124,16 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
       } else if (config.repo?.path) {
         setRepos([{ name: 'repo', path: config.repo.path }])
       }
-      setScoutModel(config.agent?.scout_model || defaultModels.scout)
-      setCriticModel(config.agent?.critic_model || defaultModels.critic)
-      setScaffoldModel(config.agent?.scaffold_model || defaultModels.scaffold)
-      setWaveModel(config.agent?.wave_model || defaultModels.wave)
-      setIntegrationModel(config.agent?.integration_model || defaultModels.integration)
-      setChatModel(config.agent?.chat_model || defaultModels.chat)
-      setPlannerModel(config.agent?.planner_model || defaultModels.planner)
+      const agentConfig = config.agent ?? {}
+      setModels({
+        scout: agentConfig.scout_model || defaultModels.scout,
+        critic: agentConfig.critic_model || defaultModels.critic,
+        scaffold: agentConfig.scaffold_model || defaultModels.scaffold,
+        wave: agentConfig.wave_model || defaultModels.wave,
+        integration: agentConfig.integration_model || defaultModels.integration,
+        chat: agentConfig.chat_model || defaultModels.chat,
+        planner: agentConfig.planner_model || defaultModels.planner,
+      })
     }).catch(() => {})
   }, [])
 
@@ -169,34 +154,23 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     setPrograms(updated)
   }, [])
 
-  const handleSaveModel = useCallback(async (field: string, value: string) => {
+  const handleSaveModel = useCallback(async (field: ModelRole | 'all', value: string) => {
     try {
       const cfg = await getConfig()
-      const updated = {
-        ...cfg,
-        agent: {
-          ...cfg.agent,
-          ...(field === 'scout' && { scout_model: value }),
-          ...(field === 'critic' && { critic_model: value }),
-          ...(field === 'scaffold' && { scaffold_model: value }),
-          ...(field === 'wave' && { wave_model: value }),
-          ...(field === 'integration' && { integration_model: value }),
-          ...(field === 'chat' && { chat_model: value }),
-          ...(field === 'planner' && { planner_model: value }),
-          ...(field === 'all' && {
-            scout_model: value, critic_model: value, scaffold_model: value, wave_model: value,
-            integration_model: value, chat_model: value, planner_model: value,
-          }),
-        },
+      const roleToConfigKey: Record<ModelRole, string> = {
+        scout: 'scout_model', critic: 'critic_model', scaffold: 'scaffold_model',
+        wave: 'wave_model', integration: 'integration_model', chat: 'chat_model',
+        planner: 'planner_model',
       }
-      await saveConfig(updated)
-      if (field === 'scout' || field === 'all') setScoutModel(value)
-      if (field === 'critic' || field === 'all') setCriticModel(value)
-      if (field === 'scaffold' || field === 'all') setScaffoldModel(value)
-      if (field === 'wave' || field === 'all') setWaveModel(value)
-      if (field === 'integration' || field === 'all') setIntegrationModel(value)
-      if (field === 'chat' || field === 'all') setChatModel(value)
-      if (field === 'planner' || field === 'all') setPlannerModel(value)
+      const agentUpdate = field === 'all'
+        ? Object.fromEntries(Object.values(roleToConfigKey).map(k => [k, value]))
+        : { [roleToConfigKey[field]]: value }
+      await saveConfig({ ...cfg, agent: { ...cfg.agent, ...agentUpdate } })
+      if (field === 'all') {
+        setModels(Object.fromEntries(Object.keys(defaultModels).map(k => [k, value])) as Record<ModelRole, string>)
+      } else {
+        setModels(prev => ({ ...prev, [field]: value }))
+      }
     } catch { /* ignore */ }
   }, [])
 
@@ -208,15 +182,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     setRepos,
     entries,
     refreshEntries,
-    models: {
-      scout: scoutModel,
-      critic: criticModel,
-      scaffold: scaffoldModel,
-      wave: waveModel,
-      integration: integrationModel,
-      chat: chatModel,
-      planner: plannerModel,
-    },
+    models,
     saveModel: handleSaveModel,
     sseConnected,
     programs,

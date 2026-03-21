@@ -9,6 +9,7 @@ vi.mock('../api', () => ({
     repos: [{ name: 'test-repo', path: '/tmp/test' }],
     agent: {
       scout_model: 'claude-sonnet-4-6',
+      critic_model: 'claude-sonnet-4-6',
       scaffold_model: 'claude-sonnet-4-6',
       wave_model: 'claude-sonnet-4-6',
       integration_model: 'claude-sonnet-4-6',
