@@ -10,6 +10,10 @@ interface CriticState {
   criticReport: CriticResult | null
   /** Whether critic is currently running */
   criticRunning: boolean
+  /** Accumulated live output from critic agent */
+  criticOutput: string
+  /** Error message if critic review failed */
+  criticError: string | null
   /** Trigger critic review */
   runCritic: () => void
 }
@@ -17,6 +21,8 @@ interface CriticState {
 export function useCriticState(slug: string, impl: IMPLDocResponse | null): CriticState {
   const [criticReport, setCriticReport] = useState<CriticResult | null>(null)
   const [criticRunning, setCriticRunning] = useState(false)
+  const [criticOutput, setCriticOutput] = useState('')
+  const [criticError, setCriticError] = useState<string | null>(null)
 
   const needsCritic = useMemo(() => {
     if (!impl) return false
@@ -53,7 +59,42 @@ export function useCriticState(slug: string, impl: IMPLDocResponse | null): Crit
     } catch { /* ignore */ }
   }, [slug, fetchCritic])
 
-  useGlobalEvents({ critic_review_complete: handleCriticComplete })
+  const handleCriticStarted = useCallback((e: MessageEvent) => {
+    try {
+      const data = JSON.parse(e.data)
+      if (data?.slug === slug) {
+        setCriticRunning(true)
+        setCriticOutput('')
+        setCriticError(null)
+      }
+    } catch { /* ignore */ }
+  }, [slug])
 
-  return { needsCritic, criticReport, criticRunning, runCritic }
+  const handleCriticOutput = useCallback((e: MessageEvent) => {
+    try {
+      const data = JSON.parse(e.data)
+      if (data?.slug === slug) {
+        setCriticOutput(prev => prev + (data.chunk ?? ''))
+      }
+    } catch { /* ignore */ }
+  }, [slug])
+
+  const handleCriticFailed = useCallback((e: MessageEvent) => {
+    try {
+      const data = JSON.parse(e.data)
+      if (data?.slug === slug) {
+        setCriticRunning(false)
+        setCriticError(data.error ?? 'Critic review failed')
+      }
+    } catch { /* ignore */ }
+  }, [slug])
+
+  useGlobalEvents({
+    critic_review_complete: handleCriticComplete,
+    critic_review_started: handleCriticStarted,
+    critic_output: handleCriticOutput,
+    critic_review_failed: handleCriticFailed,
+  })
+
+  return { needsCritic, criticReport, criticRunning, criticOutput, criticError, runCritic }
 }
