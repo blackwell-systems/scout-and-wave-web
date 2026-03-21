@@ -4,8 +4,10 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os/exec"
+	"regexp"
 	"strings"
 	"time"
 
@@ -284,6 +286,225 @@ func (s *Server) handleFixCritic(w http.ResponseWriter, r *http.Request) {
 	} else {
 		w.Write([]byte("null")) //nolint:errcheck
 	}
+}
+
+// AutoFixCriticRequest is the JSON request body for POST /api/impl/{slug}/auto-fix-critic.
+type AutoFixCriticRequest struct {
+	DryRun bool `json:"dry_run,omitempty"` // if true, return planned fixes without applying
+}
+
+// AutoFixCriticResponse is the JSON response from the auto-fix-critic endpoint.
+type AutoFixCriticResponse struct {
+	FixesApplied []AppliedFix           `json:"fixes_applied"`
+	FixesFailed  []FailedFix            `json:"fixes_failed"`
+	NewResult    *protocol.CriticResult `json:"new_result,omitempty"` // nil if dry_run
+	AllResolved  bool                   `json:"all_resolved"`
+}
+
+// AppliedFix describes a single fix that was successfully applied.
+type AppliedFix struct {
+	Check       string `json:"check"`       // e.g. "file_existence"
+	AgentID     string `json:"agent_id"`
+	Description string `json:"description"` // human-readable summary
+}
+
+// FailedFix describes a single fix that could not be applied.
+type FailedFix struct {
+	Check   string `json:"check"`
+	AgentID string `json:"agent_id"`
+	Reason  string `json:"reason"` // why auto-fix failed
+}
+
+// autoFixCriticTimeout is the maximum duration for the critic re-run during auto-fix.
+var autoFixCriticTimeout = 3 * time.Minute
+
+// validateCommandFunc creates the exec.Cmd for sawtools validate --fix.
+// Overridable in tests.
+var validateCommandFunc = func(implPath string) *exec.Cmd {
+	return exec.Command("sawtools", "validate", "--fix", implPath) //nolint:gosec
+}
+
+// symbolAccuracyPattern matches "expected X, found Y" in critic issue descriptions.
+var symbolAccuracyPattern = regexp.MustCompile(`expected\s+(\S+),\s+found\s+(\S+)`)
+
+// RegisterAutoFixRoutes registers the auto-fix-critic endpoint on the server mux.
+// This will be wired into the main route registration during integration.
+func (s *Server) RegisterAutoFixRoutes() {
+	s.mux.HandleFunc("POST /api/impl/{slug}/auto-fix-critic", s.handleAutoFixCritic)
+}
+
+// handleAutoFixCritic serves POST /api/impl/{slug}/auto-fix-critic.
+// Reads the existing critic report, determines which errors are auto-fixable,
+// applies fixes, re-validates, re-runs critic, and returns results.
+func (s *Server) handleAutoFixCritic(w http.ResponseWriter, r *http.Request) {
+	slug := r.PathValue("slug")
+
+	implPath, _ := s.findImplPath(slug)
+	if implPath == "" {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(map[string]string{"error": "IMPL doc not found"})
+		return
+	}
+
+	var req AutoFixCriticRequest
+	if r.Body != nil && r.ContentLength > 0 {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid JSON body: " + err.Error()})
+			return
+		}
+	}
+
+	manifest, err := protocol.Load(implPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to load IMPL manifest"})
+		return
+	}
+
+	criticReport := protocol.GetCriticReview(manifest)
+	if criticReport == nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(map[string]string{"error": "no critic report exists for this IMPL"})
+		return
+	}
+
+	s.globalBroker.broadcastJSON("critic_autofix_started", map[string]string{"slug": slug})
+
+	var applied []AppliedFix
+	var failed []FailedFix
+
+	// Classify and apply fixes for each agent's issues
+	for agentID, agentReview := range criticReport.AgentReviews {
+		for _, issue := range agentReview.Issues {
+			switch {
+			case (issue.Check == "file_existence" || issue.Check == "side_effect_completeness") &&
+				issue.Severity == protocol.CriticSeverityError && issue.File != "":
+				// Auto-fix: add file ownership
+				if !req.DryRun {
+					manifest.FileOwnership = append(manifest.FileOwnership, protocol.FileOwnership{
+						File:   issue.File,
+						Agent:  agentID,
+						Wave:   findAgentWave(manifest, agentID),
+						Action: "modify",
+					})
+				}
+				applied = append(applied, AppliedFix{
+					Check:       issue.Check,
+					AgentID:     agentID,
+					Description: fmt.Sprintf("added file ownership for %s to agent %s", issue.File, agentID),
+				})
+
+			case issue.Check == "symbol_accuracy":
+				matches := symbolAccuracyPattern.FindStringSubmatch(issue.Description)
+				if len(matches) == 3 {
+					oldSym := matches[1]
+					newSym := matches[2]
+					if !req.DryRun {
+						for i, ic := range manifest.InterfaceContracts {
+							manifest.InterfaceContracts[i].Definition = strings.ReplaceAll(ic.Definition, oldSym, newSym)
+						}
+					}
+					applied = append(applied, AppliedFix{
+						Check:       issue.Check,
+						AgentID:     agentID,
+						Description: fmt.Sprintf("updated contract symbol %s -> %s", oldSym, newSym),
+					})
+				} else {
+					failed = append(failed, FailedFix{
+						Check:   issue.Check,
+						AgentID: agentID,
+						Reason:  "no auto-fix available",
+					})
+				}
+
+			default:
+				failed = append(failed, FailedFix{
+					Check:   issue.Check,
+					AgentID: agentID,
+					Reason:  "no auto-fix available",
+				})
+			}
+		}
+	}
+
+	resp := AutoFixCriticResponse{
+		FixesApplied: applied,
+		FixesFailed:  failed,
+	}
+	// Ensure slices are non-nil for JSON serialization
+	if resp.FixesApplied == nil {
+		resp.FixesApplied = []AppliedFix{}
+	}
+	if resp.FixesFailed == nil {
+		resp.FixesFailed = []FailedFix{}
+	}
+
+	if req.DryRun {
+		resp.AllResolved = len(failed) == 0 && len(applied) > 0
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		s.globalBroker.broadcastJSON("critic_autofix_complete", map[string]interface{}{
+			"slug": slug, "dry_run": true, "all_resolved": resp.AllResolved,
+		})
+		return
+	}
+
+	// Save manifest with applied fixes
+	if err := protocol.Save(manifest, implPath); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to save manifest: " + err.Error()})
+		return
+	}
+
+	// Re-validate with sawtools validate --fix
+	_ = validateCommandFunc(implPath).Run()
+
+	// Re-run critic synchronously with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), autoFixCriticTimeout)
+	defer cancel()
+	cmd := criticCommandFunc(ctx, implPath)
+	_ = cmd.Run()
+
+	// Reload manifest to get updated critic result
+	manifest, err = protocol.Load(implPath)
+	if err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"error": "failed to reload manifest after fix"})
+		return
+	}
+
+	resp.NewResult = protocol.GetCriticReview(manifest)
+	if resp.NewResult != nil {
+		resp.AllResolved = resp.NewResult.Verdict == protocol.CriticVerdictPass
+	} else {
+		resp.AllResolved = len(failed) == 0 && len(applied) > 0
+	}
+
+	s.globalBroker.broadcastJSON("critic_autofix_complete", map[string]interface{}{
+		"slug": slug, "dry_run": false, "all_resolved": resp.AllResolved,
+	})
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// findAgentWave returns the wave number for a given agent ID, defaulting to 1.
+func findAgentWave(manifest *protocol.IMPLManifest, agentID string) int {
+	for _, wave := range manifest.Waves {
+		for _, agent := range wave.Agents {
+			if agent.ID == agentID {
+				return wave.Number
+			}
+		}
+	}
+	return 1
 }
 
 // criticThresholdMet returns true when an IMPL warrants automatic critic gating:
