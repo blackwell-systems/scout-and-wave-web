@@ -1,0 +1,359 @@
+completion_date: "2026-03-21"
+title: Refactor model role state management to eliminate per-role sprawl
+feature_slug: model-role-consolidation
+verdict: SUITABLE
+suitability_assessment: |
+    1. File decomposition: 4 files will change across 3 distinct areas (context/state,
+       layout/header, types, settings). Two agents can own disjoint files.
+
+    2. Investigation-first items: None. The problem and solution are fully specified.
+       No unknown root causes or reproduction needed.
+
+    3. Interface discoverability: Yes. The ModelRole type and Record<ModelRole, string>
+       pattern are the cross-agent interface. Both can be defined before implementation.
+
+    4. Pre-implementation status: The sprawl pattern is confirmed in AppContext.tsx
+       (7 individual useState hooks, lines 70-76; per-field config loading, lines 145-151;
+       per-field save handler, lines 179-199; manual models record assembly, lines 211-219).
+       ModelRole is already locally defined in AppHeader.tsx (line 7) but not exported or
+       shared. No prior implementation attempt exists.
+
+    5. Parallelization value: 2 agents, each touching 2 files, with a TypeScript build
+       cycle (tsc + vite build ~15s). The main value is coordination rather than raw speed
+       savings, since Wave 1 Agent A (shared types + context refactor) must complete before
+       Wave 2 Agent B (consumers). However, the IMPL doc provides clear interface contracts
+       and a structured plan.
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~8 min (2 agents, ~4 min avg, sequential waves)
+    - Merge and verification: ~3 min
+    Total SAW time: ~16 min
+
+    Sequential baseline: ~12 min (2 tasks x 6 min avg)
+    Time savings: -4 min (overhead exceeds parallelization for 2 sequential waves)
+
+    Recommendation: SUITABLE. While time savings are marginal due to sequential waves,
+    the IMPL doc provides clear interface contracts ensuring the ModelRole type is
+    defined once and consumed correctly across all files. Coordination value justifies SAW.
+test_command: cd web && npx vitest run
+lint_command: cd web && npx tsc --noEmit
+file_ownership:
+    - file: web/src/contexts/AppContext.tsx
+      agent: A
+      wave: 1
+      action: modify
+    - file: web/src/contexts/AppContext.test.tsx
+      agent: A
+      wave: 1
+      action: modify
+    - file: web/src/components/layout/AppHeader.tsx
+      agent: B
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+    - file: web/src/types.ts
+      agent: B
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+interface_contracts:
+    - name: ModelRole
+      description: |
+        Union type defining all valid model role identifiers. Single source of truth
+        for what roles exist. Adding a new role means adding it here and to defaultModels.
+      definition: |
+        export type ModelRole = 'scout' | 'critic' | 'scaffold' | 'wave' | 'integration' | 'chat' | 'planner'
+      location: web/src/types/models.ts
+    - name: defaultModels
+      description: |
+        Default model values for all roles. Used as initial state in AppContext
+        and as fallback values. Adding a new role requires adding an entry here.
+      definition: |
+        export const defaultModels: Record<ModelRole, string>
+      location: web/src/types/models.ts
+    - name: MODEL_ROLES
+      description: |
+        Ordered array of all model roles for iteration in UI components (AppHeader).
+        Replaces the local ROLES constant in AppHeader.tsx.
+      definition: |
+        export const MODEL_ROLES: ModelRole[]
+      location: web/src/types/models.ts
+    - name: AppContextValue.models
+      description: |
+        The models field in AppContextValue changes from a manually listed object
+        to Record<ModelRole, string>. This is the state shape consumed by all components.
+      definition: |
+        models: Record<ModelRole, string>
+      location: web/src/contexts/AppContext.tsx
+    - name: AppContextValue.saveModel
+      description: |
+        The saveModel function signature changes to accept ModelRole | 'all' instead
+        of a plain string, providing type safety for callers.
+      definition: |
+        saveModel: (field: ModelRole | 'all', value: string) => Promise<void>
+      location: web/src/contexts/AppContext.tsx
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Objective
+            Refactor AppContext.tsx to replace 7 individual useState hooks for model roles
+            with a single `Record<ModelRole, string>` state. Import ModelRole and defaultModels
+            from the scaffold file at `../types/models`.
+
+            ## Files to modify
+            - `web/src/contexts/AppContext.tsx`
+            - `web/src/contexts/AppContext.test.tsx`
+
+            ## What to implement
+
+            ### AppContext.tsx changes:
+
+            1. **Remove** the 7 individual useState declarations (lines 70-76):
+               ```
+               const [scoutModel, setScoutModel] = ...
+               const [criticModel, setCriticModel] = ...
+               // etc.
+               ```
+               **Replace with:**
+               ```typescript
+               import { ModelRole, defaultModels } from '../types/models'
+               const [models, setModels] = useState<Record<ModelRole, string>>({ ...defaultModels })
+               ```
+
+            2. **Remove** the local `defaultModels` constant (lines 28-36). It now comes
+               from the import.
+
+            3. **Refactor config loader** (lines 139-152). Replace the 7 individual
+               `setXxxModel()` calls with a single spread:
+               ```typescript
+               const agentConfig = config.agent ?? {}
+               setModels({
+                 scout: agentConfig.scout_model || defaultModels.scout,
+                 critic: agentConfig.critic_model || defaultModels.critic,
+                 scaffold: agentConfig.scaffold_model || defaultModels.scaffold,
+                 wave: agentConfig.wave_model || defaultModels.wave,
+                 integration: agentConfig.integration_model || defaultModels.integration,
+                 chat: agentConfig.chat_model || defaultModels.chat,
+                 planner: agentConfig.planner_model || defaultModels.planner,
+               })
+               ```
+
+            4. **Refactor handleSaveModel** (lines 172-201). Replace the per-field
+               conditionals with:
+               ```typescript
+               const handleSaveModel = useCallback(async (field: ModelRole | 'all', value: string) => {
+                 try {
+                   const cfg = await getConfig()
+                   const roleToConfigKey: Record<ModelRole, string> = {
+                     scout: 'scout_model', critic: 'critic_model', scaffold: 'scaffold_model',
+                     wave: 'wave_model', integration: 'integration_model', chat: 'chat_model',
+                     planner: 'planner_model',
+                   }
+                   const agentUpdate = field === 'all'
+                     ? Object.fromEntries(Object.values(roleToConfigKey).map(k => [k, value]))
+                     : { [roleToConfigKey[field]]: value }
+                   await saveConfig({ ...cfg, agent: { ...cfg.agent, ...agentUpdate } })
+                   if (field === 'all') {
+                     setModels(Object.fromEntries(Object.keys(defaultModels).map(k => [k, value])) as Record<ModelRole, string>)
+                   } else {
+                     setModels(prev => ({ ...prev, [field]: value }))
+                   }
+                 } catch { /* ignore */ }
+               }, [])
+               ```
+
+            5. **Simplify the value assembly** (lines 203-226). The `models` field in the
+               context value is now just the state variable directly:
+               ```typescript
+               const value: AppContextValue = {
+                 // ...other fields...
+                 models,   // was: { scout: scoutModel, critic: criticModel, ... }
+                 saveModel: handleSaveModel,
+                 // ...
+               }
+               ```
+
+            6. **Update AppContextValue interface**: Change `models` type to
+               `Record<ModelRole, string>` (import ModelRole). Change `saveModel` param
+               type to `(field: ModelRole | 'all', value: string) => Promise<void>`.
+
+            7. **Update defaultValue**: Use `{ ...defaultModels }` for the models field
+               (already similar, but ensure it uses the imported defaultModels).
+
+            ### AppContext.test.tsx changes:
+
+            Update the mock config to match (no structural changes needed since the test
+            reads `ctx.models.scout` which still works with Record<ModelRole, string>).
+            Add `critic_model` to the mock config agent object if not present.
+
+            ## Interface contracts
+            - `ModelRole` type imported from `../types/models`
+            - `defaultModels` record imported from `../types/models`
+            - `AppContextValue.models` becomes `Record<ModelRole, string>`
+            - `AppContextValue.saveModel` becomes `(field: ModelRole | 'all', value: string) => Promise<void>`
+
+            ## Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && npx vitest run src/contexts/AppContext.test.tsx
+            ```
+
+            ## Constraints
+            - Do NOT modify any files outside your ownership (AppContext.tsx, AppContext.test.tsx)
+            - The refactored code must produce identical runtime behavior
+            - Import ModelRole and defaultModels from `../types/models` (scaffold file)
+            - Do not re-export ModelRole from AppContext; consumers import from types/models
+          files:
+            - web/src/contexts/AppContext.tsx
+            - web/src/contexts/AppContext.test.tsx
+    - number: 2
+      agents:
+        - id: B
+          task: |
+            ## Objective
+            Update AppHeader.tsx and types.ts to import ModelRole from the shared
+            types/models.ts module instead of defining it locally, and update the
+            SAWConfig agent type to use a computed type from ModelRole.
+
+            ## Files to modify
+            - `web/src/components/layout/AppHeader.tsx`
+            - `web/src/types.ts`
+
+            ## What to implement
+
+            ### AppHeader.tsx changes:
+
+            1. **Remove** the local `type ModelRole` declaration (line 7).
+            2. **Add import**: `import { ModelRole, MODEL_ROLES } from '../../types/models'`
+            3. **Remove** the local `ROLES` constant (line 32). Replace usage with
+               imported `MODEL_ROLES`.
+            4. **Keep** `ROLE_COLORS` as-is (it's UI-specific to AppHeader). Its type
+               annotation `Record<ModelRole, string>` will now reference the imported type.
+            5. Verify all other ModelRole references in the file compile correctly with
+               the imported type.
+
+            ### types.ts changes:
+
+            1. **Add import**: `import type { ModelRole } from './types/models'`
+            2. **Update** the `SAWConfig.agent` type to use a mapped type:
+               ```typescript
+               agent: { [K in ModelRole as `${K}_model`]: string } & { review_model?: string }
+               ```
+               Or if that's too complex for readability, keep the explicit listing but
+               add a comment referencing ModelRole as the source of truth. The key requirement
+               is that the type stays compatible with the existing shape (scout_model, critic_model,
+               etc. as optional strings except scout_model and wave_model which are required).
+
+               **Pragmatic approach**: Since the existing SAWConfig.agent has mixed optionality
+               (scout_model required, critic_model optional, etc.) and includes review_model
+               which is NOT a ModelRole, keep the explicit field listing but add a comment:
+               ```typescript
+               // Fields correspond to ModelRole values from ./types/models (plus review_model)
+               agent: { scout_model: string; critic_model?: string; wave_model: string; chat_model?: string; scaffold_model?: string; integration_model?: string; planner_model?: string; review_model?: string }
+               ```
+               This maintains backward compatibility while documenting the relationship.
+
+            ## Interface contracts
+            - `ModelRole` imported from `../../types/models` (in AppHeader) or `./types/models` (in types.ts)
+            - `MODEL_ROLES` imported from `../../types/models` (replaces local ROLES constant)
+            - `ROLE_COLORS` stays local to AppHeader (UI-specific)
+
+            ## Verification gate
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && npx vitest run
+            ```
+
+            ## Constraints
+            - Do NOT modify any files outside your ownership (AppHeader.tsx, types.ts)
+            - The ModelRole type MUST come from the shared import, not be redefined locally
+            - ROLE_COLORS stays in AppHeader.tsx (it's display-specific, not shared state)
+            - Existing runtime behavior must be identical
+            - Do NOT change the SAWConfig.agent field optionality pattern (some fields are
+              required, others optional) -- only add the documenting comment
+          files:
+            - web/src/components/layout/AppHeader.tsx
+            - web/src/types.ts
+          dependencies:
+            - A
+quality_gates:
+    level: standard
+    gates:
+        - type: typecheck
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+          required: true
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx vitest run
+          required: true
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx vite build
+          required: true
+post_merge_checklist:
+    groups:
+        - title: Build verification
+          items:
+            - description: Run full TypeScript check and test suite
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && npx vitest run
+            - description: Rebuild Go binary with embedded frontend assets
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build && cd .. && go build -o saw ./cmd/saw
+        - title: Manual verification
+          items:
+            - description: Verify model picker UI works (each role button opens picker, changes persist across reload)
+scaffolds:
+    - file: web/src/types/models.ts
+      contents: |
+        export type ModelRole = 'scout' | 'critic' | 'scaffold' | 'wave' | 'integration' | 'chat' | 'planner'
+
+        export const MODEL_ROLES: ModelRole[] = ['planner', 'scout', 'critic', 'scaffold', 'wave', 'integration', 'chat']
+
+        export const defaultModels: Record<ModelRole, string> = {
+          scout: 'claude-sonnet-4-6',
+          critic: 'claude-sonnet-4-6',
+          scaffold: 'claude-sonnet-4-6',
+          wave: 'claude-sonnet-4-6',
+          integration: 'claude-sonnet-4-6',
+          chat: 'claude-sonnet-4-6',
+          planner: 'claude-sonnet-4-6',
+        }
+      import_path: ../types/models
+      status: committed (8e62039)
+completion_reports:
+    A:
+        status: complete
+        branch: main
+        commit: bb19917
+        files_changed:
+            - web/src/contexts/AppContext.tsx
+            - web/src/contexts/AppContext.test.tsx
+        verification: PASS
+    B:
+        status: complete
+        branch: main
+        commit: 226644d
+        files_changed:
+            - web/src/components/layout/AppHeader.tsx
+            - web/src/types.ts
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: Scaffold file not created before Wave 1 starts
+          likelihood: low
+          impact: high
+          mitigation: Scaffold agent creates web/src/types/models.ts in Wave 0 before any agent runs
+        - scenario: SAWConfig.agent type becomes incompatible with Go backend
+          likelihood: low
+          impact: medium
+          mitigation: Agent B instructed to keep explicit field listing, only add comment. No structural type change.
+        - scenario: SettingsScreen.tsx breaks because it reads config.agent fields directly
+          likelihood: low
+          impact: low
+          mitigation: SettingsScreen reads from config object (Go API response), not from AppContext models. The config.agent shape is unchanged. No modification needed.
+        - scenario: App.tsx saveModel callback type mismatch after AppContext changes
+          likelihood: medium
+          impact: low
+          mitigation: App.tsx line 223 already passes field as a union type. The narrower ModelRole | 'all' type is compatible. TypeScript check in verification gate will catch any mismatch.
+state: REVIEWED

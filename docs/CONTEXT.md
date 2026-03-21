@@ -69,3 +69,5 @@ lint_command: go vet ./...
   - IMPL doc: docs/IMPL/complete/IMPL-persistent-waveboard-panel.yaml
 - **centralize-status-helpers**: completed 2026-03-21, 2 waves, 4 agents
   - IMPL doc: docs/IMPL/complete/IMPL-centralize-status-helpers.yaml
+- **model-role-consolidation**: completed 2026-03-21, 2 waves, 2 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-model-role-consolidation.yaml
