@@ -55,3 +55,25 @@ export interface ProgramListResponse {
   metrics: PipelineMetrics
   standalone: PipelineEntry[]
 }
+
+// --- Create-from-IMPLs types ---
+
+export interface IMPLFileConflict {
+  file: string
+  impls: string[]
+  repos?: string[]
+}
+
+export interface ConflictReport {
+  conflicts: IMPLFileConflict[]
+  disjoint_sets: string[][]
+  tier_suggestion: Record<string, number>
+}
+
+export interface GenerateProgramResult {
+  manifest_path: string
+  conflict_report: ConflictReport
+  tier_assignments: Record<string, number>
+  manifest: any
+  validation_errors?: any[]
+}
