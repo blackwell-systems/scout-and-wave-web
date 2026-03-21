@@ -1,0 +1,626 @@
+completion_date: "2026-03-21"
+title: Create Program from Existing IMPLs - Web GUI
+feature_slug: create-program-from-impls-gui
+verdict: SUITABLE
+suitability_assessment: |
+    1. File decomposition: 8 files across backend (Go handlers, service layer) and
+       frontend (React components, API client, types). Clear separation between
+       backend handlers, service logic, frontend components, and API wiring.
+       Minimum 3 agents with disjoint ownership.
+
+    2. Investigation-first items: None. The Go engine functions (CheckIMPLConflicts,
+       GenerateProgramFromIMPLs) already exist in scout-and-wave-go pkg/protocol/.
+       The web app imports this module. This is pure integration + UI work.
+
+    3. Interface discoverability: Yes. The Go SDK types (ConflictReport,
+       GenerateProgramResult, GenerateProgramOpts) are already defined.
+       HTTP request/response shapes can be fully specified before implementation.
+
+    4. Pre-implementation status: All TODO. No existing code for the analyze-impls
+       or create-from-impls endpoints. The "New Program" button currently only
+       launches the Planner - no dropdown exists yet.
+
+    5. Parallelization value: Build/test cycle is ~30s (Go build + Go test + npm
+       build + vitest). 3 agents across 2 waves, each touching 2-3 files.
+       Backend and frontend are fully independent in Wave 1.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~12 min (3 agents, 2 waves, ~5 min avg per agent)
+    - Merge and verification: ~4 min
+    Total SAW time: ~24 min
+
+    Sequential baseline: ~30 min (3 agents x 10 min avg sequential)
+    Time savings: ~6 min (20% faster)
+
+    Recommendation: Clear speedup. Backend and frontend are fully parallel in
+    Wave 1, with a small integration wave to wire the new components into
+    App.tsx and AppHeader.tsx.
+test_command: go test ./... && cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run
+lint_command: go vet ./...
+file_ownership:
+    - file: pkg/api/program_handler.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/service/program_service.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/api/server.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: web/src/types/program.ts
+      agent: B
+      wave: 1
+      action: modify
+    - file: web/src/components/CreateFromImplsPanel.tsx
+      agent: B
+      wave: 1
+      action: new
+    - file: web/src/components/DisjointAnalysisScreen.tsx
+      agent: B
+      wave: 1
+      action: new
+    - file: web/src/lib/apiClient.ts
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: web/src/programApi.ts
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - A
+        - B
+    - file: web/src/components/ProgramBoard.tsx
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: web/src/components/layout/AppHeader.tsx
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+    - file: web/src/App.tsx
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+interface_contracts:
+    - name: POST /api/programs/analyze-impls
+      description: |
+        Accepts a list of IMPL slugs, runs CheckIMPLConflicts, returns the
+        conflict report with disjoint sets and tier suggestions.
+      definition: |
+        // Request
+        type AnalyzeImplsRequest struct {
+          Slugs    []string `json:"slugs"`
+          RepoPath string   `json:"repo_path,omitempty"` // optional, defaults to first configured repo
+        }
+        // Response: protocol.ConflictReport JSON
+        // { conflicts: [], disjoint_sets: [][], tier_suggestion: {} }
+      location: pkg/api/program_handler.go
+    - name: POST /api/programs/create-from-impls
+      description: |
+        Accepts IMPL slugs and optional name/slug, calls GenerateProgramFromIMPLs,
+        writes the PROGRAM manifest to disk, returns the result.
+      definition: |
+        // Request
+        type CreateFromImplsRequest struct {
+          Slugs       []string `json:"slugs"`
+          Name        string   `json:"name,omitempty"`
+          ProgramSlug string   `json:"program_slug,omitempty"`
+          RepoPath    string   `json:"repo_path,omitempty"`
+        }
+        // Response: protocol.GenerateProgramResult JSON
+        // { manifest_path, conflict_report, tier_assignments, manifest, validation_errors }
+      location: pkg/api/program_handler.go
+    - name: AnalyzeImplConflicts service function
+      description: |
+        Service layer function that wraps protocol.CheckIMPLConflicts with
+        multi-repo resolution logic.
+      definition: |
+        func AnalyzeImplConflicts(deps Deps, slugs []string, repoPath string) (*protocol.ConflictReport, error)
+      location: pkg/service/program_service.go
+    - name: CreateProgramFromIMPLs service function
+      description: |
+        Service layer function that wraps protocol.GenerateProgramFromIMPLs with
+        multi-repo resolution and config reading.
+      definition: |
+        func CreateProgramFromIMPLs(deps Deps, slugs []string, name string, programSlug string, repoPath string) (*protocol.GenerateProgramResult, error)
+      location: pkg/service/program_service.go
+    - name: analyzeImpls and createProgramFromImpls API functions
+      description: |
+        Frontend API functions added to the program namespace of SawClient
+        and exported from programApi.ts.
+      definition: |
+        // In SawClient.program:
+        analyzeImpls(slugs: string[], repo?: string): Promise<ConflictReport>
+        createFromImpls(slugs: string[], name?: string, programSlug?: string, repo?: string): Promise<GenerateProgramResult>
+      location: web/src/lib/apiClient.ts
+    - name: ConflictReport and GenerateProgramResult TypeScript types
+      description: |
+        TypeScript interfaces mirroring Go SDK types for the frontend.
+      definition: |
+        export interface IMPLFileConflict {
+          file: string
+          impls: string[]
+          repos?: string[]
+        }
+        export interface ConflictReport {
+          conflicts: IMPLFileConflict[]
+          disjoint_sets: string[][]
+          tier_suggestion: Record<string, number>
+        }
+        export interface GenerateProgramResult {
+          manifest_path: string
+          conflict_report: ConflictReport
+          tier_assignments: Record<string, number>
+          manifest: any
+          validation_errors?: any[]
+        }
+      location: web/src/types/program.ts
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Backend: Analyze + Create endpoints
+
+            **What to implement:**
+
+            Add two new HTTP handler functions and two service-layer functions to support
+            creating programs from existing IMPL docs.
+
+            **1. Service layer (pkg/service/program_service.go):**
+
+            Add two functions:
+
+            ```go
+            // AnalyzeImplConflicts wraps protocol.CheckIMPLConflicts with multi-repo support.
+            func AnalyzeImplConflicts(deps Deps, slugs []string, repoPath string) (*protocol.ConflictReport, error) {
+              // If repoPath is empty, use first configured repo from GetConfiguredRepos(deps)
+              // Call protocol.CheckIMPLConflicts(slugs, repoPath)
+              // Return the ConflictReport
+            }
+
+            // CreateProgramFromIMPLs wraps protocol.GenerateProgramFromIMPLs.
+            func CreateProgramFromIMPLs(deps Deps, slugs []string, name string, programSlug string, repoPath string) (*protocol.GenerateProgramResult, error) {
+              // If repoPath is empty, use first configured repo
+              // Build GenerateProgramOpts{ImplSlugs: slugs, RepoPath: repoPath, ProgramSlug: programSlug, Title: name}
+              // Call protocol.GenerateProgramFromIMPLs(opts)
+              // Return the result
+            }
+            ```
+
+            **2. HTTP handlers (pkg/api/program_handler.go):**
+
+            Add two handler functions to the existing file:
+
+            ```go
+            // handleAnalyzeImpls handles POST /api/programs/analyze-impls
+            func (s *Server) handleAnalyzeImpls(w http.ResponseWriter, r *http.Request) {
+              // Decode JSON body: { slugs: []string, repo_path?: string }
+              // Validate: len(slugs) >= 2
+              // Call service.AnalyzeImplConflicts(s.makeDeps(), slugs, repoPath)
+              // Return JSON ConflictReport
+            }
+
+            // handleCreateFromImpls handles POST /api/programs/create-from-impls
+            func (s *Server) handleCreateFromImpls(w http.ResponseWriter, r *http.Request) {
+              // Decode JSON body: { slugs: []string, name?: string, program_slug?: string, repo_path?: string }
+              // Validate: len(slugs) >= 1
+              // Call service.CreateProgramFromIMPLs(...)
+              // Broadcast "program_list_updated" via s.globalBroker
+              // Return JSON GenerateProgramResult
+            }
+            ```
+
+            **3. Route registration (pkg/api/server.go):**
+
+            Add two routes in the New() function, in the Programs section (after line ~231):
+            ```go
+            s.mux.HandleFunc("POST /api/programs/analyze-impls", s.handleAnalyzeImpls)
+            s.mux.HandleFunc("POST /api/programs/create-from-impls", s.handleCreateFromImpls)
+            ```
+
+            **Tests:**
+
+            Add tests in pkg/api/program_handler_test.go (or create if needed) and
+            pkg/service/program_service_test.go:
+            - Test handleAnalyzeImpls returns 400 for <2 slugs
+            - Test handleAnalyzeImpls returns valid ConflictReport for valid slugs
+            - Test handleCreateFromImpls creates a PROGRAM manifest file
+            - Test service.AnalyzeImplConflicts delegates to protocol.CheckIMPLConflicts
+            - Test service.CreateProgramFromIMPLs delegates to protocol.GenerateProgramFromIMPLs
+
+            **Verification gate:**
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./... && go vet ./... && go test ./pkg/api/ ./pkg/service/
+            ```
+
+            **Constraints:**
+            - Do NOT modify any frontend files
+            - Use the existing service.Deps injection pattern
+            - Use s.makeDeps() in handlers (pattern used by all existing handlers)
+            - Use s.globalBroker.broadcast("program_list_updated") after creating a program
+            - The protocol.CheckIMPLConflicts and protocol.GenerateProgramFromIMPLs functions
+              already exist in the imported scout-and-wave-go module - just call them
+          files:
+            - pkg/api/program_handler.go
+            - pkg/service/program_service.go
+            - pkg/api/server.go
+        - id: B
+          task: |
+            ## Frontend: Components + Types for Create-from-IMPLs flow
+
+            **What to implement:**
+
+            Create two new React components and add TypeScript types for the
+            create-program-from-IMPLs flow. These components will be wired into
+            the app by Agent C in Wave 2.
+
+            **1. TypeScript types (web/src/types/program.ts):**
+
+            Add these interfaces to the existing file (after the existing types):
+
+            ```typescript
+            export interface IMPLFileConflict {
+              file: string
+              impls: string[]
+              repos?: string[]
+            }
+
+            export interface ConflictReport {
+              conflicts: IMPLFileConflict[]
+              disjoint_sets: string[][]
+              tier_suggestion: Record<string, number>
+            }
+
+            export interface GenerateProgramResult {
+              manifest_path: string
+              conflict_report: ConflictReport
+              tier_assignments: Record<string, number>
+              manifest: any
+              validation_errors?: any[]
+            }
+            ```
+
+            **2. CreateFromImplsPanel (web/src/components/CreateFromImplsPanel.tsx):**
+
+            A panel/popover component that shows a checklist of standalone IMPLs.
+
+            Props:
+            ```typescript
+            interface CreateFromImplsPanelProps {
+              standalone: PipelineEntry[]  // from ProgramListResponse.standalone
+              onAnalyze: (slugs: string[]) => void
+              onClose: () => void
+            }
+            ```
+
+            Behavior:
+            - Shows a list of standalone IMPLs (those not in a program) with checkboxes
+            - Each item shows: slug, status badge (reuse getImplStatusBadge pattern from
+              ProgramBoard or use simple colored dots), repo name
+            - "Analyze" button at bottom, disabled until >=2 items selected
+            - Shows count of selected items: "N selected"
+            - Filter/search input at top for filtering by slug name
+            - Styled as a popover panel or inline panel (not a full-page view)
+            - Use the project's existing UI patterns: bg-card, border-border, text-foreground,
+              rounded-lg, etc.
+
+            **3. DisjointAnalysisScreen (web/src/components/DisjointAnalysisScreen.tsx):**
+
+            A full-view component showing the analysis results and confirm button.
+
+            Props:
+            ```typescript
+            interface DisjointAnalysisScreenProps {
+              slugs: string[]
+              conflictReport: ConflictReport
+              onConfirm: (name?: string, programSlug?: string) => void
+              onBack: () => void
+            }
+            ```
+
+            Behavior:
+            - Section 1: Conflict Report
+              - If no conflicts: green banner "All IMPLs are disjoint - safe to run in parallel"
+              - If conflicts: red/amber warning listing each conflict (file + which IMPLs overlap)
+            - Section 2: Proposed Tier Structure
+              - Visual display of tier assignments from conflictReport.tier_suggestion
+              - Group IMPLs by tier number, show as horizontal rows (Tier 1: [slug1, slug2], Tier 2: [slug3])
+              - Use existing card styling from ProgramBoard
+            - Section 3: Dependency Graph Preview
+              - Import and render ProgramDependencyGraph component
+              - Build a mock ProgramStatus from the tier_suggestion to drive it:
+                tier_statuses derived from tier_suggestion grouping, each impl_status
+                with slug and status "pending"
+              - This section is optional/best-effort - if ProgramDependencyGraph requires
+                a real programSlug for fetching, skip this and show a text-based tier diagram instead
+            - Section 4: Confirm
+              - Optional text input for program name (placeholder: auto-generated name)
+              - Optional text input for program slug (placeholder: auto-generated slug)
+              - "Create Program" button
+              - "Back" button to return to IMPL selection
+
+            **Verification gate:**
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/tsc --noEmit
+            ```
+
+            **Constraints:**
+            - Do NOT modify App.tsx, AppHeader.tsx, ProgramBoard.tsx, apiClient.ts, or programApi.ts
+            - Import types from '../types/program' (the file you are also modifying)
+            - Import PipelineEntry from '../types/autonomy'
+            - Do NOT add API call functions - those are added by Agent C in Wave 2
+            - Components should accept data/callbacks as props, not call APIs directly
+            - Follow existing component patterns: use lucide-react for icons, shadcn/ui Card components
+          files:
+            - web/src/types/program.ts
+            - web/src/components/CreateFromImplsPanel.tsx
+            - web/src/components/DisjointAnalysisScreen.tsx
+      base_commit: 19a800c08140db4abd2204054eb2c54d0e4f12d3
+    - number: 2
+      type: integration
+      agents:
+        - id: C
+          task: |
+            ## Integration: Wire new components into app + API client
+
+            **What to implement:**
+
+            Wire the new backend endpoints and frontend components into the existing
+            app. This agent connects Wave 1's backend (Agent A) and frontend (Agent B)
+            work together.
+
+            **1. API client (web/src/lib/apiClient.ts):**
+
+            Add two methods to the `program` namespace in the SawClient interface
+            (after `cancelPlanner`):
+
+            ```typescript
+            // In SawClient interface, program namespace:
+            analyzeImpls(slugs: string[], repo?: string): Promise<ConflictReport>
+            createFromImpls(slugs: string[], name?: string, programSlug?: string, repo?: string): Promise<GenerateProgramResult>
+            ```
+
+            And implement them in createHttpClient():
+            ```typescript
+            async analyzeImpls(slugs: string[], repo?: string): Promise<ConflictReport> {
+              const r = await fetch('/api/programs/analyze-impls', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ slugs, repo_path: repo }),
+              })
+              await check(r)
+              return r.json() as Promise<ConflictReport>
+            },
+
+            async createFromImpls(slugs: string[], name?: string, programSlug?: string, repo?: string): Promise<GenerateProgramResult> {
+              const r = await fetch('/api/programs/create-from-impls', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ slugs, name, program_slug: programSlug, repo_path: repo }),
+              })
+              await check(r)
+              return r.json() as Promise<GenerateProgramResult>
+            },
+            ```
+
+            Import ConflictReport and GenerateProgramResult from '../types/program'.
+
+            **2. programApi.ts (web/src/programApi.ts):**
+
+            Add thin wrapper exports at the end of the file:
+            ```typescript
+            export async function analyzeImpls(slugs: string[], repo?: string): Promise<ConflictReport> {
+              return sawClient.program.analyzeImpls(slugs, repo)
+            }
+
+            export async function createProgramFromImpls(
+              slugs: string[],
+              name?: string,
+              programSlug?: string,
+              repo?: string,
+            ): Promise<GenerateProgramResult> {
+              return sawClient.program.createFromImpls(slugs, name, programSlug, repo)
+            }
+            ```
+
+            Import ConflictReport and GenerateProgramResult from './types/program'.
+
+            **3. AppHeader.tsx (web/src/components/layout/AppHeader.tsx):**
+
+            Change the "New Program" button to a dropdown with two options:
+            - "From Scratch" -> calls existing onNewProgramClick
+            - "From Existing IMPLs" -> calls new onCreateFromImplsClick prop
+
+            Add new prop: `onCreateFromImplsClick: () => void`
+
+            Implementation: Use a simple popover pattern (similar to the model picker
+            already in AppHeader). When clicking "New Program", show a small dropdown
+            with the two options instead of immediately calling onNewProgramClick.
+
+            **4. ProgramBoard.tsx - UnifiedProgramsView modifications:**
+
+            In the UnifiedProgramsView component, add state management for the
+            create-from-IMPLs flow:
+
+            - Add state: `createFromImplsMode: 'hidden' | 'select' | 'analyze'`
+            - Add state: `selectedImplSlugs: string[]`
+            - Add state: `conflictReport: ConflictReport | null`
+
+            When `createFromImplsMode === 'select'`:
+              - Render CreateFromImplsPanel with standalone IMPLs from data.standalone
+              - onAnalyze callback: call analyzeImpls API, store result, switch to 'analyze' mode
+
+            When `createFromImplsMode === 'analyze'`:
+              - Render DisjointAnalysisScreen with slugs and conflictReport
+              - onConfirm callback: call createProgramFromImpls API, then refresh programs
+                and navigate to the new program's detail view
+              - onBack: return to 'select' mode
+
+            Export a function or callback so App.tsx can trigger it.
+
+            **5. App.tsx modifications:**
+
+            Add handler for the new "From Existing IMPLs" flow:
+            - Pass onCreateFromImplsClick to AppHeader
+            - The handler should set showPrograms=true and signal UnifiedProgramsView
+              to enter create-from-impls mode
+
+            The simplest approach: add a state variable `createFromImplsOpen: boolean`
+            and pass it as a prop to UnifiedProgramsView, which uses it to initialize
+            its createFromImplsMode state.
+
+            **Verification gate:**
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/tsc --noEmit
+            ```
+
+            **Constraints:**
+            - The new backend endpoints from Agent A MUST be available (Wave 1 merged)
+            - The new components from Agent B MUST be available (Wave 1 merged)
+            - Do NOT modify the Go backend files
+            - Keep the existing "New Program" Planner flow working (the "From Scratch" option)
+            - After creating a program, broadcast a refresh and navigate to the new program
+          files:
+            - web/src/lib/apiClient.ts
+            - web/src/programApi.ts
+            - web/src/components/ProgramBoard.tsx
+            - web/src/components/layout/AppHeader.tsx
+            - web/src/App.tsx
+          dependencies:
+            - A
+            - B
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./...
+          required: true
+        - type: lint
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./...
+          required: true
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./pkg/api/ ./pkg/service/
+          required: true
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/tsc --noEmit
+          required: true
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run
+          required: false
+post_merge_checklist:
+    groups:
+        - title: Build and Deploy
+          items:
+            - description: Rebuild frontend assets
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build
+            - description: Rebuild Go binary with embedded assets
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go build -o saw ./cmd/saw
+            - description: Restart the server
+              command: pkill -f 'saw serve'; cd /Users/dayna.blackwell/code/scout-and-wave-web && ./saw serve &>/tmp/saw-serve.log &
+        - title: Endpoint Verification
+          items:
+            - description: Verify analyze-impls endpoint responds
+              command: 'curl -s -o /dev/null -w ''%{http_code}'' -X POST localhost:7432/api/programs/analyze-impls -H ''Content-Type: application/json'' -d ''{"slugs":["test1","test2"]}'''
+            - description: Verify create-from-impls endpoint responds
+              command: 'curl -s -o /dev/null -w ''%{http_code}'' -X POST localhost:7432/api/programs/create-from-impls -H ''Content-Type: application/json'' -d ''{"slugs":["test1"]}'''
+        - title: Manual UI Verification
+          items:
+            - description: Click New Program button - verify dropdown shows 'From Scratch' and 'From Existing IMPLs' options
+            - description: Click 'From Existing IMPLs' - verify checklist panel shows standalone IMPLs
+            - description: Select 2+ IMPLs and click Analyze - verify conflict report and tier structure display
+            - description: Confirm program creation - verify redirect to ProgramBoard detail view
+completion_reports:
+    A:
+        status: complete
+        branch: saw/create-program-from-impls-gui/wave1-agent-A
+        commit: 0b29401
+        files_changed:
+            - pkg/api/program_handler.go
+            - pkg/service/program_service.go
+            - pkg/api/server.go
+            - pkg/api/program_handler_test.go
+            - pkg/service/program_service_test.go
+        tests_added:
+            - TestAnalyzeImplConflicts_DefaultsToFirstRepo
+            - TestAnalyzeImplConflicts_DetectsConflict
+            - TestCreateProgramFromIMPLs_WritesManifest
+            - TestCreateProgramFromIMPLs_NoRepoPath
+            - TestHandleAnalyzeImpls_TooFewSlugs
+            - TestHandleAnalyzeImpls_ValidReport
+            - TestHandleCreateFromImpls_TooFewSlugs
+            - TestHandleCreateFromImpls_CreatesManifest
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/create-program-from-impls-gui/wave1-agent-B
+        commit: 7ab0b6d
+        files_changed:
+            - web/src/types/program.ts
+        files_created:
+            - web/src/components/CreateFromImplsPanel.tsx
+            - web/src/components/DisjointAnalysisScreen.tsx
+        verification: PASS
+    C:
+        status: complete
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: ProgramDependencyGraph requires a real programSlug to fetch data
+          likelihood: medium
+          impact: low
+          mitigation: |
+            DisjointAnalysisScreen can build a mock ProgramStatus from the
+            ConflictReport tier_suggestion. If ProgramDependencyGraph requires
+            server-side data, fall back to a text-based tier diagram instead.
+        - scenario: Go module version mismatch - GenerateProgramFromIMPLs signature changed
+          likelihood: low
+          impact: medium
+          mitigation: |
+            Check go.sum for the exact version of scout-and-wave-go imported.
+            The function signatures are stable (confirmed in current codebase).
+        - scenario: Agent C integration wave touches 5 files - risk of scope creep
+          likelihood: medium
+          impact: medium
+          mitigation: |
+            Agent C's changes are mostly mechanical wiring (add API methods, add
+            props, add state). The creative work is in Wave 1. If C's scope is
+            too large, the AppHeader dropdown and App.tsx wiring could be split
+            into a separate agent, but 5 files of wiring is within normal range.
+        - scenario: Standalone IMPLs list is empty for users with all IMPLs in programs
+          likelihood: low
+          impact: low
+          mitigation: |
+            CreateFromImplsPanel should show an empty state message directing
+            the user to create standalone IMPLs first. The Analyze button is
+            already disabled for <2 selections.
+critic_report:
+    verdict: PASS
+    agent_reviews:
+        A:
+            agent_id: A
+            verdict: PASS
+        B:
+            agent_id: B
+            verdict: PASS
+        C:
+            agent_id: C
+            verdict: PASS
+    summary: 'All three agent briefs verified against the codebase. Agent A: Go SDK symbols (CheckIMPLConflicts, GenerateProgramFromIMPLs, ConflictReport, GenerateProgramResult, GenerateProgramOpts) confirmed in scout-and-wave-go/pkg/protocol/. Service Deps type, makeDeps(), GetConfiguredRepos(), globalBroker.broadcast() patterns all confirmed. Route registration pattern via s.mux.HandleFunc matches existing server.go. Agent B: PipelineEntry type confirmed in types/autonomy.ts. Target file web/src/types/program.ts exists for modification. New component files do not exist (correct for action:new). ProgramDependencyGraph component exists and accepts optional ProgramStatus prop. Agent C: All 5 target files exist. SawClient interface program namespace confirmed with cancelPlanner as last method. AppHeader already has onNewProgramClick prop. UnifiedProgramsView props interface exists in ProgramBoard.tsx. Model picker popover pattern exists in AppHeader for reference. No symbol mismatches, no missing packages, no pattern inaccuracies found.'
+    reviewed_at: "2026-03-21T17:37:56Z"
+    issue_count: 0
+state: WAVE_PENDING

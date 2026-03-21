@@ -63,3 +63,5 @@ lint_command: go vet ./...
   - IMPL doc: docs/IMPL/complete/IMPL-unified-impl-navigation.yaml
 - **program-dep-graph**: completed 2026-03-21, 2 waves, 3 agents
   - IMPL doc: docs/IMPL/complete/IMPL-program-dep-graph.yaml
+- **create-program-from-impls-gui**: completed 2026-03-21, 2 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-create-program-from-impls-gui.yaml
