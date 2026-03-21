@@ -1,5 +1,5 @@
-import { useState, useCallback } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { useState, useCallback, useEffect } from 'react'
+import { ChevronDown, ShieldCheck, Loader2 } from 'lucide-react'
 import { useWaveEvents } from '../hooks/useWaveEvents'
 import { useFileActivity } from '../hooks/useFileActivity'
 import AgentCard from './AgentCard'
@@ -7,9 +7,10 @@ import ProgressBar from './ProgressBar'
 import ImplEditor from './ImplEditor'
 import StageTimeline from './StageTimeline'
 import FileOwnershipTable from './FileOwnershipTable'
-import { AgentStatus, RepoEntry, FileOwnershipEntry } from '../types'
-import { mergeWave, runWaveTests, rerunAgent, batchDeleteWorktrees, startWave, retryFinalize, fixBuild } from '../api'
+import { AgentStatus, RepoEntry, FileOwnershipEntry, IMPLDocResponse } from '../types'
+import { mergeWave, runWaveTests, rerunAgent, batchDeleteWorktrees, startWave, retryFinalize, fixBuild, fetchImpl } from '../api'
 import { sawClient } from '../lib/apiClient'
+import { useCriticState } from '../hooks/useCriticState'
 import ScaffoldCard from './wave/ScaffoldCard'
 import { WaveCompletionPanel } from './wave/WaveCompletionPanel'
 import { WaveRecoveryPanel } from './wave/WaveRecoveryPanel'
@@ -70,6 +71,11 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
   const state = useWaveEvents(slug)
   const liveStatus = useFileActivity(state)
+
+  // Fetch IMPL data for critic threshold detection
+  const [impl, setImpl] = useState<IMPLDocResponse | null>(null)
+  useEffect(() => { fetchImpl(slug).then(setImpl).catch(() => {}) }, [slug])
+  const { needsCritic, criticReport, criticRunning, runCritic } = useCriticState(slug, impl)
 
   // Merge optimistic overrides on top of SSE-driven agent state.
   // Disk-confirmed merged waves are authoritative — override stale SSE failure state.
@@ -260,7 +266,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
         {/* Stale branch warning banner */}
         {state.staleBranches && !staleDismissed && (
-          <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 text-amber-800 text-sm dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400">
+          <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-none px-4 py-3 text-amber-800 text-sm dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400">
             <span>
               {state.staleBranches.count} stale branch{state.staleBranches.count !== 1 ? 'es' : ''} detected from previous runs.
             </span>
@@ -272,7 +278,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                     setStaleDismissed(true)
                   } catch { /* ignore */ }
                 }}
-                className="text-xs font-medium px-3 py-1 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+                className="text-xs font-medium px-3 py-1 rounded-none bg-amber-600 text-white hover:bg-amber-700 transition-colors"
               >
                 Clean Up
               </button>
@@ -292,7 +298,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
         {/* Post-approval explanatory banner */}
         {!bannerDismissed && totalAgents > 0 && completeAgents === 0 && !state.runComplete && !state.runFailed && (
-          <div className="mx-4 mb-3 flex items-start gap-3 bg-blue-950/40 border border-blue-800/60 rounded-lg px-4 py-3">
+          <div className="mx-4 mb-3 flex items-start gap-3 bg-blue-950/40 border border-blue-800/60 rounded-none px-4 py-3">
             <span className="text-blue-400 mt-0.5 shrink-0 text-sm">&#x2139;</span>
             <div className="flex-1 text-xs text-blue-300">
               {totalAgents} agent{totalAgents !== 1 ? 's' : ''} are running in parallel git
@@ -337,7 +343,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
         {/* Empty state — no waves loaded yet */}
         {state.waves.length === 0 && state.scaffoldStatus === 'idle' && !state.runFailed && (
-          <div className="bg-card border border-border rounded-lg p-8 text-center">
+          <div className="bg-card border border-border rounded-none p-8 text-center">
             <p className="text-muted-foreground text-sm mb-2">
               {state.connected ? 'Waiting for wave execution to start...' : 'Connecting to wave execution stream...'}
             </p>
@@ -351,12 +357,32 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
 
         {/* Start execution — show when waves are loaded but none have started */}
         {state.waves.length > 0 && state.waves.every(w => w.agents.every(a => a.status === 'pending' || !a.status)) && !state.runFailed && state.scaffoldStatus !== 'running' && (
-          <button
-            onClick={() => void startWave(slug)}
-            className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 hover:border-blue-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
-          >
-            Start Execution
-          </button>
+          needsCritic && !criticReport ? (
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 px-4 py-3 bg-violet-500/10 border border-violet-500/30 rounded-none text-sm text-violet-400">
+                <ShieldCheck size={16} />
+                <span>Critic review needed before execution (E37: {impl && impl.waves.find(w => w.number === 1)?.agents.length || 0} wave-1 agents)</span>
+              </div>
+              <button
+                onClick={runCritic}
+                disabled={criticRunning}
+                className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-violet-500/15 text-violet-400 border border-violet-500/30 hover:bg-violet-500/25 hover:border-violet-500/50 active:scale-[0.98] transition-all backdrop-blur-sm disabled:opacity-50"
+              >
+                {criticRunning ? (
+                  <span className="flex items-center justify-center gap-2"><Loader2 size={14} className="animate-spin" /> Reviewing Briefs...</span>
+                ) : (
+                  'Review Briefs'
+                )}
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => void startWave(slug)}
+              className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 hover:border-blue-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
+            >
+              Start Execution
+            </button>
+          )
         )}
 
         {/* Wave rows */}
@@ -367,7 +393,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
           const hasGate = state.waveGate?.wave === wave.wave
           return (
             <div key={wave.wave}>
-              <div className="bg-card border border-border rounded-lg shadow-sm overflow-hidden">
+              <div className="bg-card border border-border rounded-none shadow-sm overflow-hidden">
                 <button
                   onClick={() => toggleWaveCollapse(wave.wave)}
                   className="w-full flex items-center justify-between px-4 py-3 hover:bg-muted/30 transition-colors"
@@ -477,7 +503,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
           if (fileEntries.length === 0) return null
 
           return (
-            <div className="bg-card border border-border rounded-lg p-4 shadow-sm">
+            <div className="bg-card border border-border rounded-none p-4 shadow-sm">
               <button
                 onClick={() => setFileActivityExpanded(prev => !prev)}
                 className="flex items-center justify-between w-full text-left mb-3"

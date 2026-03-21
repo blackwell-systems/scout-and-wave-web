@@ -86,9 +86,12 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     try { return JSON.parse(e.data)?.slug ?? null } catch { return null }
   }, [])
 
+  // SSE lifecycle
+  const handleSseOpen = useCallback(() => setSseConnected(true), [])
+  const handleSseError = useCallback(() => setSseConnected(false), [])
+
   // SSE subscription: keep IMPL list in sync with external changes
   const handleImplListUpdated = useCallback(() => {
-    setSseConnected(true)
     listImpls().then(setEntries).catch(() => {})
     refreshInterrupted()
   }, [refreshInterrupted])
@@ -115,6 +118,8 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   }, [extractSlug, refreshInterrupted])
 
   useGlobalEvents({
+    __open: handleSseOpen as any,
+    __error: handleSseError as any,
     impl_list_updated: handleImplListUpdated,
     wave_started: handleWaveStarted,
     wave_complete: handleWaveComplete,

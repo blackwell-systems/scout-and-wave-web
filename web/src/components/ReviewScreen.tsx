@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
-import { IMPLDocResponse, CriticResult } from '../types'
+import { IMPLDocResponse } from '../types'
+import { useCriticState } from '../hooks/useCriticState'
 import { listWorktrees, batchDeleteWorktrees, fetchDiskWaveStatus, DiskWaveStatus } from '../api'
 import { useExecutionSync, ExecutionSyncState, AgentExecStatus } from '../hooks/useExecutionSync'
 import { useGlobalEvents } from '../hooks/useGlobalEvents'
-import { sawClient } from '../lib/apiClient'
 import ActionButtons from './ActionButtons'
 import { CriticReviewPanel } from './CriticReviewPanel'
 import RevisePanel from './RevisePanel'
@@ -180,14 +180,8 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
     }
   }, [executionState, diskStatus, hasWaveWork])
 
-  // Critic review — display only, auto-fetched
-  const [criticReport, setCriticReport] = useState<CriticResult | null>(null)
-  const fetchCritic = useCallback(() => {
-    sawClient.impl.criticReview(slug)
-      .then(data => setCriticReport(data))
-      .catch(() => setCriticReport(null))
-  }, [slug])
-  useEffect(() => { fetchCritic() }, [fetchCritic])
+  // Critic gate — shared hook handles fetch, run, SSE, threshold detection
+  const { needsCritic, criticReport, criticRunning, runCritic: handleRunCritic } = useCriticState(slug, impl)
 
   const handleImplUpdated = useCallback((e: MessageEvent) => {
     try {
@@ -196,14 +190,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
     } catch { /* ignore malformed events */ }
   }, [slug, onRefreshImpl])
 
-  const handleCriticComplete = useCallback((e: MessageEvent) => {
-    try {
-      const data = JSON.parse(e.data)
-      if (data?.slug === slug) fetchCritic()
-    } catch { /* ignore */ }
-  }, [slug, fetchCritic])
-
-  useGlobalEvents({ impl_updated: handleImplUpdated, critic_review_complete: handleCriticComplete })
+  useGlobalEvents({ impl_updated: handleImplUpdated })
 
   // Worktree presence detection
   const [worktreeCount, setWorktreeCount] = useState(0)
@@ -371,7 +358,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
       {/* Sticky footer — inside scroll container so it respects center column width */}
       {!isNotSuitable && (
         <div className="sticky bottom-0 z-40 border-t border-border bg-background/95 backdrop-blur-sm flex items-stretch justify-center">
-          <ActionButtons onApprove={handleApproveClick} onReject={onReject} onRequestChanges={() => setShowRevise(true)} onViewWaves={onViewWaves} hasWaveWork={hasWaveWork} />
+          <ActionButtons onApprove={handleApproveClick} onReject={onReject} onRequestChanges={() => setShowRevise(true)} onViewWaves={onViewWaves} hasWaveWork={hasWaveWork} needsCritic={needsCritic} criticReport={criticReport} criticRunning={criticRunning} onRunCritic={handleRunCritic} />
           <button
             onClick={() => togglePanel('validation')}
             className={`flex items-center justify-center text-sm font-medium px-6 h-14 transition-all duration-150 border-t-2 ${

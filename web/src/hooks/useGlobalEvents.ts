@@ -19,6 +19,8 @@ import { useEffect } from 'react'
 let singletonEs: EventSource | null = null
 let refCount = 0
 const handlerMap = new Map<string, Set<(event: MessageEvent) => void>>()
+const openHandlers = new Set<() => void>()
+const errorHandlers = new Set<() => void>()
 
 export type GlobalEventHandlers = Partial<Record<string, (event: MessageEvent) => void>>
 
@@ -27,12 +29,21 @@ export function useGlobalEvents(handlers: GlobalEventHandlers): void {
     refCount++
     if (!singletonEs) {
       singletonEs = new EventSource('/api/events')
+      singletonEs.onopen = () => {
+        openHandlers.forEach(h => h())
+      }
       singletonEs.onerror = () => {
-        // EventSource will auto-reconnect; no per-consumer error propagation here.
+        errorHandlers.forEach(h => h())
       }
     }
 
-    const entries = Object.entries(handlers).filter(([, h]) => h != null) as [string, (e: MessageEvent) => void][]
+    // Register __open / __error lifecycle callbacks
+    const onOpen = handlers.__open as unknown as (() => void) | undefined
+    const onError = handlers.__error as unknown as (() => void) | undefined
+    if (onOpen) { openHandlers.add(onOpen); if (singletonEs?.readyState === EventSource.OPEN) onOpen() }
+    if (onError) errorHandlers.add(onError)
+
+    const entries = Object.entries(handlers).filter(([k, h]) => h != null && k !== '__open' && k !== '__error') as [string, (e: MessageEvent) => void][]
 
     for (const [eventType, handler] of entries) {
       if (!handlerMap.has(eventType)) {
@@ -46,6 +57,8 @@ export function useGlobalEvents(handlers: GlobalEventHandlers): void {
     }
 
     return () => {
+      if (onOpen) openHandlers.delete(onOpen)
+      if (onError) errorHandlers.delete(onError)
       for (const [eventType, handler] of entries) {
         handlerMap.get(eventType)?.delete(handler)
       }
@@ -54,6 +67,8 @@ export function useGlobalEvents(handlers: GlobalEventHandlers): void {
         singletonEs.close()
         singletonEs = null
         handlerMap.clear()
+        openHandlers.clear()
+        errorHandlers.clear()
       }
     }
   }, []) // mount-only; handlers registered by stable identity
