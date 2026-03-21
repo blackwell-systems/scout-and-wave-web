@@ -3,10 +3,14 @@ import { Card, CardHeader, CardTitle, CardContent } from './ui/card'
 import ProgressBar from './ProgressBar'
 import { fetchProgramStatus, executeTier, replanProgram, listProgramsFull } from '../programApi'
 import type { ProgramStatus, TierStatus, ImplTierStatus, ProgramDiscovery, ProgramListResponse } from '../types/program'
-import type { PipelineEntry } from '../types/autonomy'
-import GlobalMetricsBar from './GlobalMetricsBar'
+// PipelineEntry used by PipelineRow (imported transitively)
+// GlobalMetricsBar removed — using PipelineMetricsBar at bottom instead
 import OperationsPanel from './OperationsPanel'
+import PipelineRow from './PipelineRow'
+import PipelineMetricsBar from './PipelineMetrics'
 import { useGlobalEvents } from '../hooks/useGlobalEvents'
+import { ChevronDown, List, GitBranch } from 'lucide-react'
+import ProgramDependencyGraph from './ProgramDependencyGraph'
 
 interface ProgramBoardProps {
   programSlug: string
@@ -179,6 +183,7 @@ export function UnifiedProgramsView({ onSelectImpl, onSelectProgram }: UnifiedPr
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [selectedProgram, setSelectedProgram] = useState<string | null>(null)
+  const [showCompleted, setShowCompleted] = useState(false)
 
   const loadData = useCallback(async () => {
     try {
@@ -215,21 +220,23 @@ export function UnifiedProgramsView({ onSelectImpl, onSelectProgram }: UnifiedPr
   if (selectedProgram) {
     return (
       <div className="h-full flex flex-col">
-        {data?.metrics && <GlobalMetricsBar metrics={data.metrics} />}
         <div className="flex flex-1 overflow-hidden">
-          <div className="flex-1 overflow-y-auto">
-            <div className="px-4 pt-3 pb-1">
-              <button
-                onClick={() => setSelectedProgram(null)}
-                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
-              >
-                &larr; Back to all programs
-              </button>
+          <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-1 overflow-y-auto">
+              <div className="px-4 pt-3 pb-1">
+                <button
+                  onClick={() => setSelectedProgram(null)}
+                  className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  &larr; Back to all programs
+                </button>
+              </div>
+              <ProgramBoard
+                programSlug={selectedProgram}
+                onSelectImpl={onSelectImpl}
+              />
             </div>
-            <ProgramBoard
-              programSlug={selectedProgram}
-              onSelectImpl={onSelectImpl}
-            />
+            {data?.metrics && <PipelineMetricsBar metrics={data.metrics} />}
           </div>
           <OperationsPanel onSelectItem={onSelectImpl} />
         </div>
@@ -257,45 +264,86 @@ export function UnifiedProgramsView({ onSelectImpl, onSelectProgram }: UnifiedPr
   const metrics = data?.metrics
   const standalone = data?.standalone ?? []
 
+  // Split standalone into active vs completed
+  const activeEntries = standalone.filter((e) => e.status !== 'complete')
+  const completedEntries = standalone.filter((e) => e.status === 'complete')
+
   return (
-    <div className="h-full flex flex-col">
-      {metrics && <GlobalMetricsBar metrics={metrics} />}
-      <div className="flex flex-1 overflow-hidden">
-        <div className="flex-1 overflow-y-auto p-4">
-          <div className="max-w-5xl mx-auto space-y-6">
+    <div className="h-full flex flex-col bg-background">
+      {/* Two-column body */}
+      <div className="flex flex-1 min-h-0">
+        {/* Left: main content */}
+        <div className="flex-1 flex flex-col min-w-0">
+          <div className="flex-1 overflow-y-auto">
             {/* Programs section */}
-            {programs.length > 0 ? (
-              <div className="space-y-3">
-                <h2 className="text-lg font-semibold text-foreground">Programs</h2>
+            {programs.length > 0 && (
+              <div className="px-6 pt-5 pb-3">
+                <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">Programs</h2>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {programs.map((p) => (
                     <ProgramCard key={p.slug} program={p} onClick={() => handleSelectProgram(p.slug)} />
                   ))}
                 </div>
               </div>
-            ) : (
-              <div className="text-center py-8">
-                <p className="text-sm text-muted-foreground">No programs yet. Use New Program to create one.</p>
+            )}
+
+            {/* Active IMPLs — pipeline row style */}
+            {activeEntries.length > 0 && (
+              <div>
+                <div className="px-6 pt-4 pb-2">
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                    Active ({activeEntries.length})
+                  </h2>
+                </div>
+                {activeEntries.map((entry) => (
+                  <PipelineRow
+                    key={entry.slug}
+                    entry={entry}
+                    onSelect={onSelectImpl}
+                    onSelectProgram={handleSelectProgram}
+                  />
+                ))}
               </div>
             )}
 
-            {/* Standalone IMPLs section */}
-            {standalone.length > 0 && (
-              <div className="space-y-3">
-                <h2 className="text-lg font-semibold text-foreground">Standalone IMPLs</h2>
-                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {standalone.map((entry) => (
-                    <StandaloneImplCard
-                      key={entry.slug}
-                      entry={entry}
-                      onClick={() => onSelectImpl(entry.slug)}
-                    />
-                  ))}
-                </div>
+            {activeEntries.length === 0 && programs.length === 0 && (
+              <div className="flex flex-col items-center justify-center h-48 gap-2 text-muted-foreground">
+                <p>No active IMPLs in pipeline</p>
+                {completedEntries.length > 0 && (
+                  <p className="text-xs">{completedEntries.length} completed IMPL{completedEntries.length !== 1 ? 's' : ''} archived</p>
+                )}
+              </div>
+            )}
+
+            {/* Completed IMPLs — collapsed by default */}
+            {completedEntries.length > 0 && (
+              <div>
+                <button
+                  onClick={() => setShowCompleted((prev) => !prev)}
+                  className="flex items-center gap-2 px-6 pt-4 pb-2 w-full text-left group"
+                >
+                  <ChevronDown className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ${showCompleted ? '' : '-rotate-90'}`} />
+                  <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground group-hover:text-foreground transition-colors">
+                    Completed ({completedEntries.length})
+                  </h2>
+                </button>
+                {showCompleted && completedEntries.map((entry) => (
+                  <PipelineRow
+                    key={entry.slug}
+                    entry={entry}
+                    onSelect={onSelectImpl}
+                    onSelectProgram={handleSelectProgram}
+                  />
+                ))}
               </div>
             )}
           </div>
+
+          {/* Metrics bar at bottom */}
+          {metrics && <PipelineMetricsBar metrics={metrics} />}
         </div>
+
+        {/* Right: operations sidebar */}
         <OperationsPanel onSelectItem={onSelectImpl} />
       </div>
     </div>
@@ -326,25 +374,6 @@ function ProgramCard({ program, onClick }: { program: ProgramDiscovery; onClick:
   )
 }
 
-function StandaloneImplCard({ entry, onClick }: { entry: PipelineEntry; onClick: () => void }): JSX.Element {
-  const borderColor = getImplStatusColor(entry.status)
-  return (
-    <div
-      onClick={onClick}
-      className="flex flex-col gap-2 p-3 rounded-lg border-2 cursor-pointer hover:scale-105 hover:shadow-lg transition-all"
-      style={{ borderColor }}
-    >
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-semibold text-foreground truncate">{entry.title || entry.slug}</span>
-        {getImplStatusBadge(entry.status)}
-      </div>
-      {entry.wave_progress && (
-        <span className="text-xs text-muted-foreground">{entry.wave_progress}</span>
-      )}
-    </div>
-  )
-}
-
 // --- Original ProgramBoard (single-program detail view) ---
 
 export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoardProps): JSX.Element {
@@ -354,10 +383,12 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
   const [connected, setConnected] = useState(false)
   const [waveProgress, setWaveProgress] = useState<Record<string, string>>({})
   const [replanning, setReplanning] = useState(false)
+  const [viewMode, setViewMode] = useState<'list' | 'graph'>('list')
 
   useEffect(() => {
-    // Reset wave progress when programSlug changes
+    // Reset wave progress and view mode when programSlug changes
     setWaveProgress({})
+    setViewMode('list')
 
     // Initial fetch
     const loadStatus = async () => {
@@ -506,6 +537,31 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
             </p>
           </div>
           <div className="flex items-center gap-3">
+            {/* View mode toggle */}
+            <div className="flex rounded-lg overflow-hidden border border-border">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === 'list'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+                List
+              </button>
+              <button
+                onClick={() => setViewMode('graph')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === 'graph'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <GitBranch className="w-3.5 h-3.5" />
+                Graph
+              </button>
+            </div>
             {(status.state === 'BLOCKED' || status.state === 'blocked') && (
               <button
                 onClick={() => void handleReplan()}
@@ -557,24 +613,33 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
           </div>
         )}
 
-        {/* Tier sections */}
-        <div className="space-y-6">
-          {status.tier_statuses.map((tier) => {
-            const isActive = tier.number === status.current_tier
-            const isBlocked = tier.number > status.current_tier && !status.tier_statuses[tier.number - 2]?.complete
-            return (
-              <TierSection
-                key={tier.number}
-                tier={tier}
-                isActive={isActive}
-                isBlocked={isBlocked}
-                onExecuteTier={isActive && !tier.complete ? () => handleExecuteTier(tier.number) : undefined}
-                onSelectImpl={onSelectImpl}
-                waveProgress={waveProgress}
-              />
-            )
-          })}
-        </div>
+        {/* Tier sections / Graph view */}
+        {viewMode === 'list' ? (
+          <div className="space-y-6">
+            {status.tier_statuses.map((tier) => {
+              const isActive = tier.number === status.current_tier
+              const isBlocked = tier.number > status.current_tier && !status.tier_statuses[tier.number - 2]?.complete
+              return (
+                <TierSection
+                  key={tier.number}
+                  tier={tier}
+                  isActive={isActive}
+                  isBlocked={isBlocked}
+                  onExecuteTier={isActive && !tier.complete ? () => handleExecuteTier(tier.number) : undefined}
+                  onSelectImpl={onSelectImpl}
+                  waveProgress={waveProgress}
+                />
+              )
+            })}
+          </div>
+        ) : (
+          <ProgramDependencyGraph
+            programSlug={programSlug}
+            status={status}
+            onSelectImpl={onSelectImpl}
+            waveProgress={waveProgress}
+          />
+        )}
 
         {/* Executing banner */}
         {status.is_executing && (
