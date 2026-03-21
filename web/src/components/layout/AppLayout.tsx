@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useRef } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 export interface AppLayoutProps {
@@ -28,13 +28,17 @@ export function AppLayout(props: AppLayoutProps): JSX.Element {
     sidebarDividerProps,
   } = props
 
+  const draggingRight = useRef(false)
+
   const rightDividerMouseDown = (e: React.MouseEvent) => {
     if (!onRightPanelResize) return
     e.preventDefault()
+    draggingRight.current = true
     const onMove = (mv: MouseEvent) => {
       onRightPanelResize(Math.max(240, Math.min(window.innerWidth - mv.clientX, window.innerWidth * 0.30)))
     }
     const onUp = () => {
+      draggingRight.current = false
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
     }
@@ -46,36 +50,27 @@ export function AppLayout(props: AppLayoutProps): JSX.Element {
     <div className="h-screen flex flex-col bg-background overflow-hidden">
       {header}
       <div className="flex flex-1 min-h-0">
-        {/* Left sidebar */}
-        {sidebarCollapsed ? (
-          <div className="relative shrink-0 border-r w-0 bg-muted">
-            <button
-              onClick={onToggleSidebar}
-              title="Expand sidebar"
-              className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 flex items-center justify-center w-5 h-8 rounded-none border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shadow-sm"
-            >
-              <ChevronRight size={12} />
-            </button>
+        {/* Left sidebar — single container, animated width */}
+        <div
+          className={`shrink-0 flex flex-col border-r bg-muted overflow-hidden transition-[width] duration-200 ease-in-out ${sidebarCollapsed ? 'cursor-pointer hover:bg-muted/60' : ''}`}
+          style={{ width: sidebarCollapsed ? 40 : sidebarWidth }}
+          onClick={sidebarCollapsed ? onToggleSidebar : undefined}
+          title={sidebarCollapsed ? 'Expand sidebar' : undefined}
+        >
+          <div
+            onClick={!sidebarCollapsed ? onToggleSidebar : undefined}
+            className={`flex items-center border-b border-border px-2 py-1.5 text-muted-foreground shrink-0 ${!sidebarCollapsed ? 'cursor-pointer hover:text-foreground hover:bg-muted/80 transition-colors' : ''}`}
+            title={!sidebarCollapsed ? 'Collapse sidebar' : undefined}
+          >
+            {sidebarCollapsed ? <ChevronRight size={16} /> : <ChevronLeft size={16} />}
           </div>
-        ) : (
-          <>
-            {/* Outer wrapper: positioning context for the toggle button, no overflow */}
-            <div className="relative shrink-0" style={{ width: sidebarWidth }}>
-              {/* Inner div: scroll container, separate from button positioning */}
-              <div className="flex flex-col overflow-y-auto h-full border-r bg-muted w-full">
-                {sidebar}
-              </div>
-              <button
-                onClick={onToggleSidebar}
-                title="Collapse sidebar"
-                className="absolute right-0 top-1/2 -translate-y-1/2 translate-x-1/2 z-20 flex items-center justify-center w-5 h-8 rounded-none border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shadow-sm"
-              >
-                <ChevronLeft size={12} />
-              </button>
+          {!sidebarCollapsed && (
+            <div className="flex flex-col overflow-y-auto flex-1">
+              {sidebar}
             </div>
-            {sidebarDividerProps && <div {...sidebarDividerProps} />}
-          </>
-        )}
+          )}
+        </div>
+        {!sidebarCollapsed && sidebarDividerProps && <div {...sidebarDividerProps} />}
 
         {/* Center column */}
         <div className="flex-1 overflow-y-auto min-w-0">

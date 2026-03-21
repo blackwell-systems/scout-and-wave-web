@@ -201,6 +201,8 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
   const rowRefs = useRef<Map<string, HTMLDivElement>>(new Map())
   const [highlight, setHighlight] = useState<{ top: number; height: number } | null>(null)
   const [animating, setAnimating] = useState(false)
+  const highlightRef = useRef<{ top: number; height: number } | null>(null)
+  const prevCollapsedRef = useRef<Set<string>>(new Set())
 
   const registerRef = useCallback((slug: string, el: HTMLDivElement | null) => {
     if (el) rowRefs.current.set(slug, el)
@@ -208,15 +210,38 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
   }, [])
 
   useLayoutEffect(() => {
-    if (!selectedSlug || !listRef.current) { setHighlight(null); return }
+    const prevCollapsed = prevCollapsedRef.current
+    prevCollapsedRef.current = new Set(collapsedRepos)
+
+    if (!selectedSlug || !listRef.current) { setHighlight(null); highlightRef.current = null; return }
     const row = rowRefs.current.get(selectedSlug)
-    if (!row) { setHighlight(null); return }
+    if (!row) { setHighlight(null); highlightRef.current = null; return }
+
     const listRect = listRef.current.getBoundingClientRect()
     const rowRect = row.getBoundingClientRect()
-    const newTop = rowRect.top - listRect.top + listRef.current.scrollTop
-    const newHeight = rowRect.height
-    setAnimating(highlight !== null) // animate only if moving from a previous position
-    setHighlight({ top: newTop, height: newHeight })
+    const finalTop = rowRect.top - listRect.top + listRef.current.scrollTop
+    const finalHeight = rowRect.height
+
+    // Detect repo cascade: selected item's repo was just expanded
+    const entry = entries.find(e => e.slug === selectedSlug)
+    const repoName = entry?.repo || 'default'
+    const repoBecameExpanded = prevCollapsed.has(repoName) && !collapsedRepos.has(repoName)
+
+    if (repoBecameExpanded) {
+      // Cascade: snap to top of list, then slide down to actual position
+      setHighlight({ top: 8, height: finalHeight })
+      setAnimating(false)
+      highlightRef.current = { top: 8, height: finalHeight }
+      requestAnimationFrame(() => {
+        setAnimating(true)
+        setHighlight({ top: finalTop, height: finalHeight })
+        highlightRef.current = { top: finalTop, height: finalHeight }
+      })
+    } else {
+      setAnimating(highlightRef.current !== null)
+      setHighlight({ top: finalTop, height: finalHeight })
+      highlightRef.current = { top: finalTop, height: finalHeight }
+    }
   }, [selectedSlug, entries, collapsedRepos, showCompletedRepos])
 
   // Group entries by repo
@@ -290,7 +315,7 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
             style={{
               top: highlight.top,
               height: highlight.height,
-              transition: animating ? 'top 200ms cubic-bezier(0.4, 0, 0.2, 1), height 150ms ease' : 'none',
+              transition: animating ? 'top 250ms cubic-bezier(0.4, 0, 0.2, 1), height 200ms ease' : 'none',
             }}
           />
         )}
@@ -344,12 +369,16 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
                       className="flex-1 flex items-center justify-between text-xs font-semibold text-foreground px-2 py-1.5 hover:bg-primary/10 transition-colors"
                     >
                       <span>{repoName}</span>
-                      <span className="text-[10px] text-primary">{isCollapsed ? '▶' : '▼'}</span>
+                      <span className={`text-[10px] text-primary transition-transform duration-200 ${isCollapsed ? '' : 'rotate-90'}`}>▶</span>
                     </button>
                   </div>
-                  {!isCollapsed && (
-                    <>
-                      {activeEntries.map((e) => (
+                  {/* Animated expand/collapse — rows are conditionally rendered inside so refs only register when visible */}
+                  <div
+                    className="grid transition-[grid-template-rows] duration-[250ms] ease-in-out"
+                    style={{ gridTemplateRows: isCollapsed ? '0fr' : '1fr' }}
+                  >
+                    <div className="overflow-hidden">
+                      {!isCollapsed && activeEntries.map((e) => (
                         <EntryRow
                           key={e.slug}
                           e={e}
@@ -360,7 +389,7 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
                           registerRef={registerRef}
                         />
                       ))}
-                      {completedEntries.length > 0 && (
+                      {!isCollapsed && completedEntries.length > 0 && (
                         <div className="mt-2 ml-1 rounded-none bg-background/80">
                           <button
                             onClick={() => setShowCompletedRepos(prev => {
@@ -371,23 +400,31 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
                             className="w-full flex items-center justify-between text-xs font-medium uppercase tracking-wider text-muted-foreground px-2 py-1.5 hover:bg-muted rounded-none transition-colors"
                           >
                             <span>Completed ({completedEntries.length})</span>
-                            <span className="text-[10px]">{showCompletedRepos.has(repoName) ? '▼' : '▶'}</span>
+                            <span className={`text-[10px] transition-transform duration-200 ${showCompletedRepos.has(repoName) ? 'rotate-90' : ''}`}>▶</span>
                           </button>
-                          {showCompletedRepos.has(repoName) && completedEntries.map((e) => (
-                            <EntryRow
-                              key={e.slug}
-                              e={e}
-                              selectedSlug={selectedSlug}
-                              loading={loading}
-                              onSelect={onSelect}
-                              onRequestDelete={setPendingDelete}
-                              registerRef={registerRef}
-                            />
-                          ))}
+                          {/* Animated completed section */}
+                          <div
+                            className="grid transition-[grid-template-rows] duration-[200ms] ease-in-out"
+                            style={{ gridTemplateRows: showCompletedRepos.has(repoName) ? '1fr' : '0fr' }}
+                          >
+                            <div className="overflow-hidden">
+                              {showCompletedRepos.has(repoName) && completedEntries.map((e) => (
+                                <EntryRow
+                                  key={e.slug}
+                                  e={e}
+                                  selectedSlug={selectedSlug}
+                                  loading={loading}
+                                  onSelect={onSelect}
+                                  onRequestDelete={setPendingDelete}
+                                  registerRef={registerRef}
+                                />
+                              ))}
+                            </div>
+                          </div>
                         </div>
                       )}
-                    </>
-                  )}
+                    </div>
+                  </div>
                 </div>
               )
             })}
@@ -442,19 +479,26 @@ export default React.memo(function ImplList(props: ImplListProps): JSX.Element {
                   className="w-full flex items-center justify-between text-xs font-medium uppercase tracking-wider text-muted-foreground px-2 py-1.5 hover:bg-muted rounded-none transition-colors"
                 >
                   <span>Completed ({Object.values(entriesByRepo).flat().filter((e) => e.doc_status === 'complete').length})</span>
-                  <span className="text-[10px]">{showCompletedRepos.has('_all') ? '▼' : '▶'}</span>
+                  <span className={`text-[10px] transition-transform duration-200 ${showCompletedRepos.has('_all') ? 'rotate-90' : ''}`}>▶</span>
                 </button>
-                {showCompletedRepos.has('_all') && Object.values(entriesByRepo).flat().filter((e) => e.doc_status === 'complete').map((e) => (
-                  <EntryRow
-                    key={e.slug}
-                    e={e}
-                    selectedSlug={selectedSlug}
-                    loading={loading}
-                    onSelect={onSelect}
-                    onRequestDelete={setPendingDelete}
-                    registerRef={registerRef}
-                  />
-                ))}
+                <div
+                  className="grid transition-[grid-template-rows] duration-[200ms] ease-in-out"
+                  style={{ gridTemplateRows: showCompletedRepos.has('_all') ? '1fr' : '0fr' }}
+                >
+                  <div className="overflow-hidden">
+                    {showCompletedRepos.has('_all') && Object.values(entriesByRepo).flat().filter((e) => e.doc_status === 'complete').map((e) => (
+                      <EntryRow
+                        key={e.slug}
+                        e={e}
+                        selectedSlug={selectedSlug}
+                        loading={loading}
+                        onSelect={onSelect}
+                        onRequestDelete={setPendingDelete}
+                        registerRef={registerRef}
+                      />
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </>

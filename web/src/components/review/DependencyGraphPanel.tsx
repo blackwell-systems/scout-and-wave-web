@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
-import { getAgentColor, resetThemeCache } from '../../lib/agentColors'
+import { getAgentColor, resetThemeCache } from '../../lib/entityColors'
 import { ExecutionSyncState, AgentExecStatus } from '../../hooks/useExecutionSync'
 import { WaveInfo, FileOwnershipEntry } from '../../types'
 

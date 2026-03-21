@@ -24,46 +24,23 @@ export default function OperationsPanel({ onSelectItem }: OperationsPanelProps):
   const [collapsed, setCollapsed] = useState(false)
   const [sideTab, setSideTab] = useState<SideTab>('queue')
 
-  if (collapsed) {
-    return (
-      <div className="w-10 shrink-0 border-l border-border flex flex-col items-center py-2 gap-2 bg-muted/20">
-        <button
-          onClick={() => setCollapsed(false)}
-          className="p-1.5 text-muted-foreground hover:text-foreground transition-colors"
-          aria-label="Expand operations panel"
-        >
-          <PanelRightOpen className="w-4 h-4" />
-        </button>
-        {tabConfig.map(({ key, icon: Icon }) => (
-          <button
-            key={key}
-            onClick={() => { setSideTab(key); setCollapsed(false) }}
-            className={`p-1.5 transition-colors ${
-              sideTab === key
-                ? 'text-foreground'
-                : 'text-muted-foreground hover:text-foreground'
-            }`}
-            aria-label={key}
-          >
-            <Icon className="w-4 h-4" />
-          </button>
-        ))}
-      </div>
-    )
-  }
-
   return (
-    <div className="w-[320px] shrink-0 border-l border-border flex flex-col">
-      {/* Tabs header with collapse toggle */}
-      <div className="flex border-b border-border">
+    <div
+      className={`shrink-0 border-l border-border flex flex-col overflow-hidden transition-[width] duration-200 ease-in-out ${collapsed ? 'cursor-pointer hover:bg-muted/40' : ''}`}
+      style={{ width: collapsed ? 40 : 320 }}
+      onClick={collapsed ? () => setCollapsed(false) : undefined}
+      title={collapsed ? 'Expand operations panel' : undefined}
+    >
+      {/* Header — collapse/expand + tabs */}
+      <div className="flex border-b border-border shrink-0">
         <button
-          onClick={() => setCollapsed(true)}
-          className="px-2 text-muted-foreground hover:text-foreground transition-colors border-r border-border"
-          aria-label="Collapse operations panel"
+          onClick={() => setCollapsed(v => !v)}
+          className="px-2 py-2 text-muted-foreground hover:text-foreground transition-colors border-r border-border"
+          aria-label={collapsed ? 'Expand operations panel' : 'Collapse operations panel'}
         >
-          <PanelRightClose className="w-4 h-4" />
+          {collapsed ? <PanelRightOpen className="w-4 h-4" /> : <PanelRightClose className="w-4 h-4" />}
         </button>
-        {tabConfig.map(({ key, label }) => (
+        {!collapsed && tabConfig.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setSideTab(key)}
@@ -77,12 +54,31 @@ export default function OperationsPanel({ onSelectItem }: OperationsPanelProps):
           </button>
         ))}
       </div>
-      {/* Tab content */}
-      <div className="flex-1 overflow-y-auto">
-        {sideTab === 'queue' && <QueuePanel onSelectItem={onSelectItem} />}
-        {sideTab === 'daemon' && <DaemonControl />}
-        {sideTab === 'settings' && <AutonomySettings />}
-      </div>
+      {/* Collapsed: icon buttons / Expanded: tab content */}
+      {collapsed ? (
+        <div className="flex flex-col items-center py-2 gap-2">
+          {tabConfig.map(({ key, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => { setSideTab(key); setCollapsed(false) }}
+              className={`p-1.5 transition-colors ${
+                sideTab === key
+                  ? 'text-foreground'
+                  : 'text-muted-foreground hover:text-foreground'
+              }`}
+              aria-label={key}
+            >
+              <Icon className="w-4 h-4" />
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="flex-1 overflow-y-auto">
+          {sideTab === 'queue' && <QueuePanel onSelectItem={onSelectItem} />}
+          {sideTab === 'daemon' && <DaemonControl />}
+          {sideTab === 'settings' && <AutonomySettings />}
+        </div>
+      )}
     </div>
   )
 }

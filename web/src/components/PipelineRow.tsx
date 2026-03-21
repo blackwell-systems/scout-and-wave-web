@@ -1,10 +1,13 @@
-import { CheckCircle, Loader2, PauseCircle, Clock } from 'lucide-react'
+import { CheckCircle, Loader2, PauseCircle, Clock, Plus, Check } from 'lucide-react'
 import { PipelineEntry } from '../types/autonomy'
+import { getRepoColor, getRepoColorWithOpacity } from '../lib/entityColors'
 
 interface PipelineRowProps {
   entry: PipelineEntry
   onSelect: (slug: string) => void
   onSelectProgram?: (programSlug: string) => void
+  onToggleProgramSelect?: (slug: string) => void
+  isProgramSelected?: boolean
 }
 
 const hoverColors: Record<string, string> = {
@@ -14,7 +17,7 @@ const hoverColors: Record<string, string> = {
   queued: 'hover:bg-muted/50',
 }
 
-export default function PipelineRow({ entry, onSelect, onSelectProgram }: PipelineRowProps): JSX.Element {
+export default function PipelineRow({ entry, onSelect, onSelectProgram, onToggleProgramSelect, isProgramSelected }: PipelineRowProps): JSX.Element {
   const statusIcon = () => {
     switch (entry.status) {
       case 'complete':
@@ -109,9 +112,13 @@ export default function PipelineRow({ entry, onSelect, onSelectProgram }: Pipeli
     return null
   }
 
+  const repoColor = entry.repo ? getRepoColor(entry.repo) : undefined
+  const repoBgColor = entry.repo ? getRepoColorWithOpacity(entry.repo, 0.12) : undefined
+
   return (
     <div
       className={`flex items-center gap-4 px-6 py-4 border-b border-border ${hoverColors[entry.status] ?? 'hover:bg-muted/50'} transition-all duration-150 cursor-pointer`}
+      style={repoColor ? { borderLeft: `4px solid ${repoColor}` } : undefined}
       onClick={() => onSelect(entry.slug)}
     >
       <div className="flex-shrink-0">
@@ -123,7 +130,10 @@ export default function PipelineRow({ entry, onSelect, onSelectProgram }: Pipeli
         </div>
         <div className="flex items-center gap-2 mt-1">
           {entry.repo && (
-            <span className="text-xs font-mono text-muted-foreground bg-muted px-1.5 py-0.5 rounded">
+            <span
+              className="text-xs font-mono px-1.5 py-0.5 rounded"
+              style={{ color: repoColor, backgroundColor: repoBgColor }}
+            >
               {entry.repo}
             </span>
           )}
@@ -147,8 +157,21 @@ export default function PipelineRow({ entry, onSelect, onSelectProgram }: Pipeli
           {statusDetail()}
         </div>
       </div>
-      <div className="flex-shrink-0">
+      <div className="flex-shrink-0 flex items-center gap-2">
         {actionButton()}
+        {onToggleProgramSelect && entry.status !== 'complete' && !entry.program_slug && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onToggleProgramSelect(entry.slug) }}
+            className={`px-4 py-2 text-sm font-medium rounded transition-all active:scale-95 ${
+              isProgramSelected
+                ? 'text-violet-700 dark:text-violet-300 bg-violet-100 dark:bg-violet-900/40 border border-violet-300 dark:border-violet-700'
+                : 'text-muted-foreground bg-muted hover:bg-muted/80 border border-transparent'
+            }`}
+            title={isProgramSelected ? 'Remove from program selection' : 'Add to program — select 2+ IMPLs to create a program with disjoint analysis'}
+          >
+            {isProgramSelected ? <Check className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+          </button>
+        )}
       </div>
     </div>
   )

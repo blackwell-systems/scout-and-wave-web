@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo, useLayoutEffect } from 'react'
 import { IMPLDocResponse } from '../../types'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
-import { getAgentColor, getAgentColorWithOpacity } from '../../lib/agentColors'
+import { getAgentColor, getAgentColorWithOpacity } from '../../lib/entityColors'
 import { ExecutionSyncState } from '../../hooks/useExecutionSync'
 
 interface WaveStructurePanelProps {

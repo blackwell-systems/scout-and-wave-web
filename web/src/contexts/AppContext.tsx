@@ -14,7 +14,7 @@ export interface AppContextValue {
   entries: IMPLListEntry[]
   refreshEntries: () => Promise<void>
   models: {
-    scout: string; scaffold: string; wave: string
+    scout: string; critic: string; scaffold: string; wave: string
     integration: string; chat: string; planner: string
   }
   saveModel: (field: string, value: string) => Promise<void>
@@ -27,6 +27,7 @@ export interface AppContextValue {
 
 const defaultModels = {
   scout: 'claude-sonnet-4-6',
+  critic: 'claude-sonnet-4-6',
   scaffold: 'claude-sonnet-4-6',
   wave: 'claude-sonnet-4-6',
   integration: 'claude-sonnet-4-6',
@@ -67,6 +68,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
   const [programs, setPrograms] = useState<ProgramDiscovery[]>([])
 
   const [scoutModel, setScoutModel] = useState<string>(defaultModels.scout)
+  const [criticModel, setCriticModel] = useState<string>(defaultModels.critic)
   const [scaffoldModel, setScaffoldModel] = useState<string>(defaultModels.scaffold)
   const [waveModel, setWaveModel] = useState<string>(defaultModels.wave)
   const [integrationModel, setIntegrationModel] = useState<string>(defaultModels.integration)
@@ -141,6 +143,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         setRepos([{ name: 'repo', path: config.repo.path }])
       }
       setScoutModel(config.agent?.scout_model || defaultModels.scout)
+      setCriticModel(config.agent?.critic_model || defaultModels.critic)
       setScaffoldModel(config.agent?.scaffold_model || defaultModels.scaffold)
       setWaveModel(config.agent?.wave_model || defaultModels.wave)
       setIntegrationModel(config.agent?.integration_model || defaultModels.integration)
@@ -174,19 +177,21 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
         agent: {
           ...cfg.agent,
           ...(field === 'scout' && { scout_model: value }),
+          ...(field === 'critic' && { critic_model: value }),
           ...(field === 'scaffold' && { scaffold_model: value }),
           ...(field === 'wave' && { wave_model: value }),
           ...(field === 'integration' && { integration_model: value }),
           ...(field === 'chat' && { chat_model: value }),
           ...(field === 'planner' && { planner_model: value }),
           ...(field === 'all' && {
-            scout_model: value, scaffold_model: value, wave_model: value,
+            scout_model: value, critic_model: value, scaffold_model: value, wave_model: value,
             integration_model: value, chat_model: value, planner_model: value,
           }),
         },
       }
       await saveConfig(updated)
       if (field === 'scout' || field === 'all') setScoutModel(value)
+      if (field === 'critic' || field === 'all') setCriticModel(value)
       if (field === 'scaffold' || field === 'all') setScaffoldModel(value)
       if (field === 'wave' || field === 'all') setWaveModel(value)
       if (field === 'integration' || field === 'all') setIntegrationModel(value)
@@ -205,6 +210,7 @@ export function AppProvider({ children }: { children: ReactNode }): JSX.Element 
     refreshEntries,
     models: {
       scout: scoutModel,
+      critic: criticModel,
       scaffold: scaffoldModel,
       wave: waveModel,
       integration: integrationModel,

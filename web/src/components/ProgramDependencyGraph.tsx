@@ -1,7 +1,7 @@
 import { useRef, useEffect, useState, useCallback, useMemo } from 'react'
 import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card'
-import { resetThemeCache } from '../lib/agentColors'
+import { resetThemeCache } from '../lib/entityColors'
 import { fetchProgramStatus } from '../programApi'
 import { ProgramStatus, ImplTierStatus } from '../types/program'
 
@@ -20,14 +20,14 @@ interface ImplNode {
 }
 
 const NODE_W = 140
-const NODE_H = 64
-const BASE_TIER_GAP = 200
-const BASE_IMPL_GAP = 84
-const MIN_TIER_GAP = 180
-const MIN_IMPL_GAP = 80
-const PAD_X = 120
-const PAD_Y = 50
-const LABEL_X = 60 // center of the left label column
+const NODE_H = 74
+const BASE_TIER_GAP = 140  // vertical gap between tier rows
+const BASE_IMPL_GAP = 160  // horizontal gap between nodes in same row (must > NODE_W)
+// MIN_TIER_GAP removed — tierGap is fixed in vertical layout
+const MIN_IMPL_GAP = 155
+const PAD_X = 60
+const PAD_Y = 30
+// LABEL_X removed — tier labels now positioned inline with rows
 
 // Tier column colors — progressive spectrum for visual tier separation
 const TIER_COLORS = [
@@ -103,30 +103,28 @@ function layoutNodes(
   const tiers = Array.from(tierGroups.keys()).sort((a, b) => a - b)
   const maxImpls = Math.max(...Array.from(tierGroups.values()).map(g => g.length))
 
-  const bandLeft = PAD_X - 12
+  // Vertical layout: tiers as rows (top-to-bottom), IMPLs spread horizontally
   const implAreaWidth = (maxImpls - 1) * implGap + NODE_W
-  const width = bandLeft + (tiers.length - 1) * tierGap + NODE_W + PAD_X + 16
-  const bandRight = width - 4
-  const bandCenter = (bandLeft + bandRight) / 2
+  const width = PAD_X * 2 + implAreaWidth
 
   for (let ti = 0; ti < tiers.length; ti++) {
     const tier = tiers[ti]
     const impls = tierGroups.get(tier)!
-    const x = PAD_X + ti * tierGap
+    const y = PAD_Y + 40 + ti * tierGap // 40px offset for tier label above
 
-    const totalHeight = (impls.length - 1) * implGap + NODE_H
-    const startY = bandCenter - totalHeight / 2
+    const totalWidth = (impls.length - 1) * implGap + NODE_W
+    const startX = width / 2 - totalWidth / 2
 
     for (let ii = 0; ii < impls.length; ii++) {
       positions.push({
-        x,
-        y: startY + ii * implGap,
+        x: startX + ii * implGap,
+        y,
         impl: impls[ii],
       })
     }
   }
 
-  const height = PAD_Y * 2 + implAreaWidth // use same vertical space calculation
+  const height = PAD_Y * 2 + 40 + (tiers.length - 1) * tierGap + NODE_H
 
   return { nodes: positions, width, height }
 }
@@ -239,9 +237,9 @@ export default function ProgramDependencyGraph({
     if (containerWidth <= 0) {
       return { tierGap: BASE_TIER_GAP, implGap: BASE_IMPL_GAP }
     }
-    // Scale tier gap based on available width, with floor at MIN_TIER_GAP
-    const tg = Math.max(MIN_TIER_GAP, Math.min(BASE_TIER_GAP, containerWidth / 5))
-    const ig = Math.max(MIN_IMPL_GAP, Math.min(BASE_IMPL_GAP, containerWidth / 8))
+    // Vertical layout: tierGap is fixed (vertical), implGap scales with container width
+    const tg = BASE_TIER_GAP
+    const ig = Math.max(MIN_IMPL_GAP, Math.min(BASE_IMPL_GAP, containerWidth / 5))
     return { tierGap: tg, implGap: ig }
   }, [containerWidth])
 
@@ -391,18 +389,18 @@ export default function ProgramDependencyGraph({
               </filter>
             </defs>
 
-            {/* Tier column backgrounds */}
+            {/* Tier row backgrounds */}
             {tiers.map((tier, ti) => {
-              const x = PAD_X + ti * tierGap - 16
-              const colW = NODE_W + 32
+              const y = PAD_Y + 40 + ti * tierGap - 16
+              const rowH = NODE_H + 32
               const color = TIER_COLORS[ti % TIER_COLORS.length]
               return (
                 <rect
                   key={`bg-${tier}`}
-                  x={x}
-                  y={PAD_Y - 12}
-                  width={colW}
-                  height={height - PAD_Y * 2 + 24}
+                  x={PAD_X - 12}
+                  y={y}
+                  width={width - PAD_X * 2 + 24}
+                  height={rowH}
                   rx={12}
                   fill={color}
                   opacity={0.08}
@@ -410,32 +408,32 @@ export default function ProgramDependencyGraph({
               )
             })}
 
-            {/* Tier labels — left side */}
+            {/* Tier labels — left of each row */}
             {tiers.map((tier, ti) => {
-              const x = PAD_X + ti * tierGap + NODE_W / 2
+              const y = PAD_Y + 40 + ti * tierGap + NODE_H / 2
               const color = TIER_COLORS[ti % TIER_COLORS.length]
               return (
                 <g key={`label-${tier}`}>
                   <text
-                    x={x}
-                    y={LABEL_X - 7}
-                    textAnchor="middle"
+                    x={12}
+                    y={y - 7}
+                    textAnchor="start"
                     dominantBaseline="central"
                     fill={color}
-                    fontSize={10}
+                    fontSize={9}
                     fontWeight={600}
-                    letterSpacing={2.5}
+                    letterSpacing={2}
                     style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', textTransform: 'uppercase' }}
                   >
                     TIER
                   </text>
                   <text
-                    x={x}
-                    y={LABEL_X + 10}
-                    textAnchor="middle"
+                    x={12}
+                    y={y + 10}
+                    textAnchor="start"
                     dominantBaseline="central"
                     fill={color}
-                    fontSize={20}
+                    fontSize={18}
                     fontWeight={800}
                     style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
                   >
@@ -447,14 +445,14 @@ export default function ProgramDependencyGraph({
 
             {/* Edges */}
             {edges.map((edge, i) => {
-              const x1 = edge.from.x + NODE_W
-              const y1 = edge.from.y + NODE_H / 2
-              const x2 = edge.to.x
-              const y2 = edge.to.y + NODE_H / 2
-              const midX = (x1 + x2) / 2
+              const x1 = edge.from.x + NODE_W / 2
+              const y1 = edge.from.y + NODE_H
+              const x2 = edge.to.x + NODE_W / 2
+              const y2 = edge.to.y
+              const midY = (y1 + y2) / 2
 
-              // Cubic bezier for smooth curves
-              const pathD = `M${x1},${y1} C${midX},${y1} ${midX},${y2} ${x2},${y2}`
+              // Cubic bezier for smooth vertical curves
+              const pathD = `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`
 
               return (
                 <g key={`edge-group-${i}`}>
@@ -467,7 +465,7 @@ export default function ProgramDependencyGraph({
                   />
                   {/* Arrow marker */}
                   <polygon
-                    points={`${x2},${y2} ${x2 - 10},${y2 - 5} ${x2 - 10},${y2 + 5}`}
+                    points={`${x2},${y2} ${x2 - 5},${y2 - 10} ${x2 + 5},${y2 - 10}`}
                     fill={edge.color}
                     opacity={0.5}
                   />
@@ -565,8 +563,48 @@ export default function ProgramDependencyGraph({
                       {statusLabel}
                     </text>
                   </g>
-                  {/* Wave progress for executing nodes */}
-                  {(node.impl.status === 'executing') && progress && (
+                  {/* Wave progress bar */}
+                  {progress && (() => {
+                    const match = progress.match(/(\d+)\/(\d+)/)
+                    const current = match ? parseInt(match[1]) : 0
+                    const total = match ? parseInt(match[2]) : 0
+                    if (total <= 0) return null
+                    const barX = node.x + 8
+                    const barY = node.y + NODE_H - 14
+                    const barW = NODE_W - 16
+                    const segW = (barW - (total - 1) * 2) / total
+                    return (
+                      <g>
+                        {Array.from({ length: total }, (_, i) => (
+                          <rect
+                            key={i}
+                            x={barX + i * (segW + 2)}
+                            y={barY}
+                            width={segW}
+                            height={6}
+                            rx={2}
+                            fill={i < current ? fill.text : fill.border}
+                            opacity={i < current ? 0.8 : 0.3}
+                          />
+                        ))}
+                        <text
+                          x={cx}
+                          y={barY + 3}
+                          textAnchor="middle"
+                          dominantBaseline="central"
+                          fill={fill.text}
+                          fontSize={5}
+                          fontWeight={700}
+                          fontFamily="ui-monospace, monospace"
+                          opacity={0.6}
+                        >
+                          {progress}
+                        </text>
+                      </g>
+                    )
+                  })()}
+                  {/* Legacy wave progress text fallback */}
+                  {false && (node.impl.status === 'executing') && progress && (
                     <text
                       x={cx}
                       y={node.y + 54}

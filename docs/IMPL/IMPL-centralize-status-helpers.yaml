@@ -1,0 +1,638 @@
+title: "Centralize status color/badge mappings and Go handler boilerplate"
+feature_slug: centralize-status-helpers
+verdict: SUITABLE
+state: REVIEWED
+
+suitability_assessment: |
+  File decomposition: The work splits cleanly into two independent domains —
+  frontend status color centralization (TypeScript) and backend Go HTTP helper
+  extraction. These share zero files. Within each domain, file ownership is
+  disjoint: the new centralized modules (statusColors.ts, helpers.go) are
+  created by one agent each, while consumer-file updates are distributed
+  across separate agents.
+
+  Investigation-first: No unknowns. The duplication patterns are visible in
+  the codebase and the refactoring is mechanical.
+
+  Interface discoverability: Yes — the helper function signatures can be
+  fully defined before implementation. Both statusColors.ts exports and
+  helpers.go functions have clear, typed contracts.
+
+  Pre-implementation status: StatusBadges.tsx already partially centralizes
+  badge configs (agentStatusConfig, waveStatusConfig, implStatusConfig) but
+  5+ components still define their own color maps independently. No Go
+  helpers.go exists yet.
+
+  Parallelization value: High. Build+test cycle is ~4s for Go, plus npm
+  build for frontend. 4 agents across 2 waves, with Wave 1 fully parallel
+  (2 agents creating new files). Each agent touches 2-5 files. Clear speedup.
+
+  Estimated times:
+  - Scout phase: ~8 min
+  - Agent execution: ~12 min (4 agents, 2 waves, ~5 min avg)
+  - Merge & verification: ~4 min
+  Total SAW time: ~24 min
+  Sequential baseline: ~35 min (4 agents x ~8 min avg + context switching)
+  Time savings: ~11 min (31% faster)
+  Recommendation: Clear speedup.
+
+test_command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./pkg/api/... && cd web && npx vitest run --reporter=verbose"
+lint_command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./pkg/api/..."
+
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./..."
+      required: true
+    - type: lint
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./pkg/api/..."
+      required: true
+    - type: test
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./pkg/api/... -short"
+      required: true
+    - type: build
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit"
+      required: true
+    - type: test
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx vitest run --reporter=verbose"
+      required: true
+
+scaffolds: []
+# No scaffolds needed — agents have independent type ownership. The two new
+# files (statusColors.ts and helpers.go) are each owned by a single agent
+# and consumed only after their creating wave completes.
+
+interface_contracts:
+  - name: "statusColors module exports"
+    description: |
+      Central status color definitions for all UI status domains.
+      Replaces inline color maps in AgentCard, PipelineRow, ProgramBoard,
+      ProgramDependencyGraph, and SuitabilityBadge.
+    definition: |
+      // web/src/lib/statusColors.ts
+
+      // Raw RGB color values for status-based border/glow effects (AgentCard style)
+      export function getStatusBorderColor(domain: StatusDomain, status: string): string
+      export function getStatusGlowStyle(domain: StatusDomain, status: string): { borderColor: string; boxShadow: string }
+
+      // Tailwind class strings for badge/hover styling
+      export function getStatusBadgeClasses(domain: StatusDomain, status: string): string
+      export function getStatusHoverClass(domain: StatusDomain, status: string): string
+      export function getStatusLabel(domain: StatusDomain, status: string): string
+
+      // SVG node fill colors (for ProgramDependencyGraph)
+      export function getNodeFillColors(status: string): { bg: string; border: string; text: string }
+
+      // Program state dot colors (Tailwind classes)
+      export function getProgramStateDotClass(state: string): string
+
+      // Suitability verdict colors (Tailwind classes)
+      export function getSuitabilityBadgeClasses(verdict: string): string
+
+      export type StatusDomain = 'agent' | 'wave' | 'impl' | 'pipeline' | 'program'
+    location: "web/src/lib/statusColors.ts"
+
+  - name: "Go HTTP helpers"
+    description: |
+      Shared HTTP handler helpers to eliminate repeated JSON encode/decode
+      and error response boilerplate across ~30 handler files.
+    definition: |
+      // pkg/api/helpers.go
+      package api
+
+      // respondJSON encodes data as JSON and writes to w with the given status code.
+      // Sets Content-Type: application/json. Logs encoding errors.
+      func respondJSON(w http.ResponseWriter, code int, data interface{})
+
+      // respondError writes a JSON error response: {"error": msg}
+      // Sets Content-Type: application/json.
+      func respondError(w http.ResponseWriter, msg string, code int)
+
+      // decodeJSON reads the request body (max 1MB), decodes into v.
+      // Returns a user-friendly error string on failure (bad JSON, too large, wrong content-type).
+      func decodeJSON(r *http.Request, v interface{}) error
+    location: "pkg/api/helpers.go"
+
+file_ownership:
+  # Wave 1 — create new centralized modules
+  - file: "web/src/lib/statusColors.ts"
+    agent: A
+    wave: 1
+    action: new
+    depends_on: []
+  - file: "web/src/lib/statusColors.test.ts"
+    agent: A
+    wave: 1
+    action: new
+    depends_on: []
+  - file: "pkg/api/helpers.go"
+    agent: B
+    wave: 1
+    action: new
+    depends_on: []
+  - file: "pkg/api/helpers_test.go"
+    agent: B
+    wave: 1
+    action: new
+    depends_on: []
+
+  # Wave 2 — update consumers to use new modules
+  - file: "web/src/components/AgentCard.tsx"
+    agent: C
+    wave: 2
+    action: modify
+    depends_on: ["A"]
+  - file: "web/src/components/PipelineRow.tsx"
+    agent: C
+    wave: 2
+    action: modify
+    depends_on: ["A"]
+  - file: "web/src/components/ProgramBoard.tsx"
+    agent: C
+    wave: 2
+    action: modify
+    depends_on: ["A"]
+  - file: "web/src/components/ProgramDependencyGraph.tsx"
+    agent: C
+    wave: 2
+    action: modify
+    depends_on: ["A"]
+  - file: "web/src/components/SuitabilityBadge.tsx"
+    agent: C
+    wave: 2
+    action: modify
+    depends_on: ["A"]
+  - file: "web/src/components/shared/StatusBadges.tsx"
+    agent: C
+    wave: 2
+    action: modify
+    depends_on: ["A"]
+  - file: "pkg/api/journal_handler.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/amend_handler.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/worktree_handler.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/recovery_handlers.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/program_handler.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/manifest_routes.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/observability.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/queue_handler.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/files_handler.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/critic_handler.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/scout.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/merge_test_handlers.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/bootstrap_handler.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/config_handler.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/impl_edit.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/notification_prefs_handler.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+  - file: "pkg/api/daemon_handler.go"
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: ["B"]
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## What to implement
+
+          Create `web/src/lib/statusColors.ts` — the single source of truth for
+          all status-to-color mappings in the frontend. Also create a test file
+          `web/src/lib/statusColors.test.ts`.
+
+          ### Status domains to cover
+
+          **Agent status** (pending, running, complete, failed):
+          - Tailwind badge classes (from StatusBadges.tsx agentStatusConfig)
+          - Raw RGB border/glow styles (from AgentCard.tsx getStatusStyle)
+          - Status labels
+
+          **Wave status** (pending, running, complete, partial, merged, failed):
+          - Tailwind badge classes (from StatusBadges.tsx waveStatusConfig)
+          - Status labels
+
+          **IMPL status** (complete, executing, in-progress, reviewed, scouting,
+          blocked, not-suitable, pending):
+          - Tailwind badge classes (from StatusBadges.tsx implStatusConfig)
+          - Raw RGB colors (from ProgramBoard.tsx getImplStatusColor)
+          - SVG node fill colors (from ProgramDependencyGraph.tsx getNodeFill)
+          - Status labels
+
+          **Pipeline status** (executing, complete, blocked, queued):
+          - Tailwind hover classes (from PipelineRow.tsx hoverColors)
+
+          **Program state** (COMPLETE, TIER_EXECUTING, REVIEWED, SCAFFOLD, BLOCKED):
+          - Tailwind dot classes (from ProgramBoard.tsx PROGRAM_STATE_COLORS)
+
+          **Suitability verdict** (SUITABLE, NOT SUITABLE, SUITABLE WITH CAVEATS):
+          - Tailwind badge classes (from SuitabilityBadge.tsx getBadgeClasses)
+
+          ### Exports (interface contract)
+
+          ```typescript
+          export type StatusDomain = 'agent' | 'wave' | 'impl' | 'pipeline' | 'program'
+
+          // Tailwind class strings
+          export function getStatusBadgeClasses(domain: StatusDomain, status: string): string
+          export function getStatusHoverClass(domain: StatusDomain, status: string): string
+          export function getStatusLabel(domain: StatusDomain, status: string): string
+
+          // Raw RGB for inline styles (AgentCard glow borders)
+          export function getStatusBorderColor(domain: StatusDomain, status: string): string
+          export function getStatusGlowStyle(domain: StatusDomain, status: string): {
+            borderColor: string; boxShadow: string
+          }
+
+          // SVG fills for dependency graph nodes
+          export function getNodeFillColors(status: string): {
+            bg: string; border: string; text: string
+          }
+
+          // Program state dot (Tailwind class)
+          export function getProgramStateDotClass(state: string): string
+
+          // Suitability badge (Tailwind class)
+          export function getSuitabilityBadgeClasses(verdict: string): string
+          ```
+
+          ### Implementation guidance
+
+          - Organize internal data as typed Record maps (similar to the existing
+            agentStatusConfig pattern in StatusBadges.tsx).
+          - Every function must have a sensible default/fallback for unknown statuses.
+          - Preserve exact color values from existing components — do NOT change
+            any visual appearance.
+          - Export the StatusDomain type for consumer type safety.
+
+          ### Tests (statusColors.test.ts)
+
+          - Each exported function returns expected values for known statuses.
+          - Each exported function returns a fallback for unknown status strings.
+          - getNodeFillColors returns object with bg, border, text keys.
+          - getStatusGlowStyle returns object with borderColor, boxShadow keys.
+
+          ### Verification gate
+
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && npx vitest run src/lib/statusColors.test.ts
+          ```
+
+          ### Constraints
+
+          - Do NOT modify any existing component files. Only create new files.
+          - Preserve all exact color values from existing components.
+          - All functions must be pure (no DOM access, no side effects).
+        files:
+          - "web/src/lib/statusColors.ts"
+          - "web/src/lib/statusColors.test.ts"
+        dependencies: []
+
+      - id: B
+        task: |
+          ## What to implement
+
+          Create `pkg/api/helpers.go` with shared HTTP handler helper functions,
+          and `pkg/api/helpers_test.go` with thorough tests.
+
+          ### Functions to implement
+
+          **respondJSON(w http.ResponseWriter, code int, data interface{})**
+          - Set Content-Type: application/json header
+          - Write the status code via w.WriteHeader(code)
+          - Encode data with json.NewEncoder(w).Encode(data)
+          - If encoding fails, log the error (using log.Printf) — do NOT
+            call http.Error since headers are already sent
+
+          **respondError(w http.ResponseWriter, msg string, code int)**
+          - Set Content-Type: application/json header
+          - Write status code
+          - Encode `{"error": msg}` as JSON response body
+          - This replaces the pattern: http.Error(w, msg, code) which sends
+            plain text — our new version sends JSON for API consistency
+
+          **decodeJSON(r *http.Request, v interface{}) error**
+          - Limit body to 1MB via http.MaxBytesReader
+          - Create json.Decoder from limited body
+          - Decoder.DisallowUnknownFields() — skip this, existing handlers
+            do not enforce it and adding it would break clients
+          - Call Decode(v)
+          - Return user-friendly error messages:
+            - Empty/nil body: "request body is empty"
+            - JSON syntax error: "invalid JSON: <detail>"
+            - Body too large: "request body too large (max 1MB)"
+            - Other decode errors: pass through error message
+
+          ### Tests (helpers_test.go)
+
+          Test each function:
+          - respondJSON: 200 with struct, 201 with slice, handles nil data
+          - respondError: 400 with message, 500 with message, verify JSON
+            structure {"error": "..."}
+          - decodeJSON: valid JSON struct, empty body error, malformed JSON
+            error, body exceeding 1MB
+
+          Use httptest.NewRecorder and httptest.NewRequest.
+
+          ### Verification gate
+
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./pkg/api/... && go test ./pkg/api/ -run TestHelpers -v
+          ```
+
+          ### Constraints
+
+          - Do NOT modify any existing handler files. Only create new files.
+          - Package must be `api` (same as other handlers).
+          - Keep imports minimal: encoding/json, log, net/http, io.
+          - Do NOT add Content-Type checking to decodeJSON — existing handlers
+            do not check it and adding it would break callers.
+        files:
+          - "pkg/api/helpers.go"
+          - "pkg/api/helpers_test.go"
+        dependencies: []
+
+  - number: 2
+    agents:
+      - id: C
+        task: |
+          ## What to implement
+
+          Update frontend components to import from `web/src/lib/statusColors.ts`
+          instead of defining their own inline color maps. Remove the now-redundant
+          local definitions.
+
+          ### Files to modify
+
+          **AgentCard.tsx:**
+          - Remove the `getStatusStyle()` function (lines 41-65)
+          - Import `getStatusGlowStyle` from `../lib/statusColors`
+          - Replace `getStatusStyle(agent.status)` call with
+            `getStatusGlowStyle('agent', agent.status)`
+          - Keep `statusLabels` map OR replace with
+            `getStatusLabel('agent', agent.status)` — either approach is fine
+
+          **PipelineRow.tsx:**
+          - Remove the `hoverColors` map (lines 10-15)
+          - Import `getStatusHoverClass` from `../lib/statusColors`
+          - Replace `hoverColors[entry.status] ?? 'hover:bg-muted/50'` with
+            `getStatusHoverClass('pipeline', entry.status)`
+
+          **ProgramBoard.tsx:**
+          - Remove `getImplStatusColor()` function (lines 22-33)
+          - Remove `getImplStatusBadge()` function (lines 35-53)
+          - Remove `PROGRAM_STATE_COLORS` map (lines 434-440)
+          - Import `getStatusBorderColor`, `getStatusBadgeClasses`,
+            `getStatusLabel`, `getProgramStateDotClass` from `../../lib/statusColors`
+          - In ImplCard: replace `getImplStatusColor(impl.status)` with
+            `getStatusBorderColor('impl', impl.status)`
+          - In ImplCard: replace `getImplStatusBadge(impl.status)` with an
+            inline badge using `getStatusBadgeClasses('impl', impl.status)`
+            and `getStatusLabel('impl', impl.status)`
+          - In ProgramCard: replace `PROGRAM_STATE_COLORS[program.state]` with
+            `getProgramStateDotClass(program.state)`
+
+          **ProgramDependencyGraph.tsx:**
+          - Remove the `getNodeFill()` function (lines 135-148)
+          - Import `getNodeFillColors` from `../../lib/statusColors`
+          - Replace all `getNodeFill(...)` calls with `getNodeFillColors(...)`
+
+          **SuitabilityBadge.tsx:**
+          - Remove `getBadgeClasses()` function (lines 7-17)
+          - Import `getSuitabilityBadgeClasses` from `../lib/statusColors`
+          - Replace `getBadgeClasses(suitability.verdict)` with
+            `getSuitabilityBadgeClasses(suitability.verdict)`
+
+          **shared/StatusBadges.tsx:**
+          - Import `getStatusBadgeClasses` and `getStatusLabel` from
+            `../../lib/statusColors`
+          - Replace inline `agentStatusConfig`, `waveStatusConfig`,
+            `implStatusConfig` maps with calls to the imported functions.
+          - The badge components still render the same JSX structure, just
+            sourcing classes from the central module.
+
+          ### Verification gate
+
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && npx vitest run --reporter=verbose
+          ```
+
+          ### Constraints
+
+          - Zero visual changes — exact same colors, exact same behavior.
+          - Do NOT modify any file not listed above.
+          - Preserve all existing component props, exports, and test IDs.
+          - If a component has existing tests, ensure they still pass.
+        files:
+          - "web/src/components/AgentCard.tsx"
+          - "web/src/components/PipelineRow.tsx"
+          - "web/src/components/ProgramBoard.tsx"
+          - "web/src/components/ProgramDependencyGraph.tsx"
+          - "web/src/components/SuitabilityBadge.tsx"
+          - "web/src/components/shared/StatusBadges.tsx"
+        dependencies: ["A"]
+
+      - id: D
+        task: |
+          ## What to implement
+
+          Update Go HTTP handlers across pkg/api/ to use the new helper
+          functions from helpers.go. Target the most repetitive files first.
+          Focus on mechanical replacement — do NOT change any logic.
+
+          ### Replacement patterns
+
+          **Pattern 1: JSON response (most common, ~88 occurrences)**
+          Before:
+          ```go
+          w.Header().Set("Content-Type", "application/json")
+          json.NewEncoder(w).Encode(data)
+          ```
+          After:
+          ```go
+          respondJSON(w, http.StatusOK, data)
+          ```
+          Note: Some handlers use w.WriteHeader(201) before encoding —
+          use respondJSON(w, http.StatusCreated, data) for those.
+
+          **Pattern 2: Error response**
+          Before:
+          ```go
+          http.Error(w, "some message", http.StatusBadRequest)
+          ```
+          After:
+          ```go
+          respondError(w, "some message", http.StatusBadRequest)
+          ```
+          IMPORTANT: This changes error format from plain text to JSON.
+          Only convert handlers where the caller is our own frontend
+          (all pkg/api/ handlers qualify since they serve our React app).
+
+          **Pattern 3: JSON decode**
+          Before:
+          ```go
+          if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+              http.Error(w, "bad request", http.StatusBadRequest)
+              return
+          }
+          ```
+          After:
+          ```go
+          if err := decodeJSON(r, &req); err != nil {
+              respondError(w, err.Error(), http.StatusBadRequest)
+              return
+          }
+          ```
+
+          ### Files to modify (prioritized by repetition count)
+
+          Update ALL handlers in these files. Each file has 3+ instances of
+          the boilerplate patterns:
+
+          - critic_handler.go (24 encode, 2 decode)
+          - journal_handler.go (5 encode, 1 decode)
+          - program_handler.go (6 encode, 4 decode)
+          - observability.go (5 encode)
+          - files_handler.go (4 encode)
+          - manifest_routes.go (4 encode)
+          - amend_handler.go (4 encode, 1 decode)
+          - worktree_handler.go (4 encode, 1 decode)
+          - recovery_handlers.go (3 encode, 2 decode)
+          - queue_handler.go (3 encode, 2 decode)
+          - merge_test_handlers.go (4 decode)
+          - bootstrap_handler.go (2 encode, 2 decode)
+          - scout.go (2 encode, 1 decode)
+          - config_handler.go (1 encode, 1 decode)
+          - impl_edit.go (1 encode, 1 decode)
+          - notification_prefs_handler.go (2 encode, 1 decode)
+          - daemon_handler.go (2 encode)
+
+          ### Verification gate
+
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./pkg/api/... && go test ./pkg/api/... -short
+          ```
+
+          ### Constraints
+
+          - Do NOT change any handler logic, only the encode/decode/error
+            boilerplate.
+          - Do NOT change function signatures or route registration.
+          - All existing tests must pass without modification. If a test
+            checks for plain-text error responses (http.Error output),
+            note that respondError sends JSON — but existing tests use
+            httptest which should handle both. If any test breaks due to
+            the text-to-JSON change, update ONLY the assertion, not the
+            handler logic.
+          - Remove unused `encoding/json` imports ONLY if the file has no
+            remaining direct json usage.
+          - Do NOT modify helpers.go or helpers_test.go (owned by Agent B).
+        files:
+          - "pkg/api/journal_handler.go"
+          - "pkg/api/amend_handler.go"
+          - "pkg/api/worktree_handler.go"
+          - "pkg/api/recovery_handlers.go"
+          - "pkg/api/program_handler.go"
+          - "pkg/api/manifest_routes.go"
+          - "pkg/api/observability.go"
+          - "pkg/api/queue_handler.go"
+          - "pkg/api/files_handler.go"
+          - "pkg/api/critic_handler.go"
+          - "pkg/api/scout.go"
+          - "pkg/api/merge_test_handlers.go"
+          - "pkg/api/bootstrap_handler.go"
+          - "pkg/api/config_handler.go"
+          - "pkg/api/impl_edit.go"
+          - "pkg/api/notification_prefs_handler.go"
+          - "pkg/api/daemon_handler.go"
+        dependencies: ["B"]
+
+pre_mortem:
+  overall_risk: low
+  rows:
+    - scenario: "respondError changes error format from plain text to JSON, breaking test assertions"
+      likelihood: medium
+      impact: low
+      mitigation: |
+        Agent D's prompt explicitly addresses this: update test assertions
+        if they check for plain-text error bodies. The change is intentional
+        (API consistency) and mechanical to fix.
+    - scenario: "Agent C misses a color value, causing visual regression"
+      likelihood: low
+      impact: medium
+      mitigation: |
+        Agent A's task requires preserving exact color values from existing
+        components. Agent C's verification gate runs TypeScript type checking
+        which catches missing exports. Visual regression is unlikely since
+        the color data is copied verbatim.
+    - scenario: "Agent D touches 17 files, increasing merge complexity"
+      likelihood: low
+      impact: low
+      mitigation: |
+        All changes are mechanical find-and-replace within a single package.
+        No two agents touch the same files. Go compiler catches any typos
+        immediately via the verification gate.

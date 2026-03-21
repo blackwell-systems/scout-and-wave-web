@@ -1,6 +1,8 @@
 // ProgramList — left-sidebar list of discovered PROGRAM manifests.
-// Shown instead of ImplList when Programs view is active.
+// Collapsible section shown above ImplList.
 
+import { useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import type { ProgramDiscovery } from '../types/program'
 
 const STATE_COLORS: Record<string, string> = {
@@ -28,23 +30,22 @@ interface ProgramListProps {
 }
 
 export default function ProgramList({ programs, selectedSlug, onSelect }: ProgramListProps): JSX.Element {
-  if (programs.length === 0) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-2 px-3 py-8 text-center">
-        <p className="text-xs font-medium text-muted-foreground">No programs</p>
-        <p className="text-[10px] text-muted-foreground/60 leading-relaxed">
-          Use <span className="font-mono">New Program</span> to create one
-        </p>
-      </div>
-    )
-  }
+  const [expanded, setExpanded] = useState(true)
+
+  if (programs.length === 0) return <></>
 
   return (
-    <div className="flex flex-col gap-0.5 p-2 overflow-y-auto">
-      <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium px-2 py-1">
-        Programs ({programs.length})
-      </p>
-      {programs.map((p) => {
+    <div className="flex flex-col gap-0.5 px-2 pt-2 pb-1">
+      <button
+        onClick={() => setExpanded((prev) => !prev)}
+        className="flex items-center gap-1.5 px-2 py-1 group"
+      >
+        <ChevronDown className={`w-3 h-3 text-muted-foreground transition-transform duration-200 ${expanded ? '' : '-rotate-90'}`} />
+        <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-medium group-hover:text-muted-foreground transition-colors">
+          Programs ({programs.length})
+        </span>
+      </button>
+      {expanded && programs.map((p) => {
         const isSelected = p.slug === selectedSlug
         const dotColor = STATE_COLORS[p.state] ?? 'bg-gray-400'
         const stateLabel = STATE_LABEL[p.state] ?? p.state

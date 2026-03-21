@@ -25,7 +25,7 @@ vi.mock('react-dom', async () => {
 })
 
 // Mock agentColors to avoid side effects
-vi.mock('../../lib/agentColors', () => ({
+vi.mock('../../lib/entityColors', () => ({
   resetThemeCache: vi.fn(),
 }))
 

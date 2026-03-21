@@ -10,7 +10,6 @@ export interface AppHeaderProps {
   onNewPlanClick: () => void
   onProgramsClick: () => void
   onNewProgramClick: () => void
-  onCreateFromImplsClick: () => void
   onSearchClick: () => void
   onSettingsClick: () => void
   showPrograms: boolean
@@ -45,7 +44,6 @@ export function AppHeader(props: AppHeaderProps): JSX.Element {
     onNewPlanClick,
     onProgramsClick,
     onNewProgramClick,
-    onCreateFromImplsClick,
     onSearchClick,
     onSettingsClick,
     showPrograms,
@@ -55,24 +53,18 @@ export function AppHeader(props: AppHeaderProps): JSX.Element {
   } = props
 
   const [openRole, setOpenRole] = useState<ModelRole | null>(null)
-  const [programMenuOpen, setProgramMenuOpen] = useState(false)
   const pickerRef = useRef<HTMLDivElement>(null)
-  const programMenuRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (!openRole && !programMenuOpen) return
+    if (!openRole) return
     function handleClick(e: MouseEvent) {
       if (openRole && pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
         setOpenRole(null)
-      }
-      if (programMenuOpen && programMenuRef.current && !programMenuRef.current.contains(e.target as Node)) {
-        setProgramMenuOpen(false)
       }
     }
     function handleKey(e: KeyboardEvent) {
       if (e.key === 'Escape') {
         setOpenRole(null)
-        setProgramMenuOpen(false)
       }
     }
     document.addEventListener('mousedown', handleClick)
@@ -81,7 +73,7 @@ export function AppHeader(props: AppHeaderProps): JSX.Element {
       document.removeEventListener('mousedown', handleClick)
       document.removeEventListener('keydown', handleKey)
     }
-  }, [openRole, programMenuOpen])
+  }, [openRole])
 
   return (
     <header className="flex items-stretch justify-between h-[61px] border-b shrink-0">
@@ -98,30 +90,12 @@ export function AppHeader(props: AppHeaderProps): JSX.Element {
         >
           New Plan
         </button>
-        <div ref={programMenuRef} className="relative flex items-stretch">
-          <button
-            onClick={() => setProgramMenuOpen(v => !v)}
-            className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-r bg-violet-50/20 hover:bg-violet-50/50 text-violet-400 border-violet-100 dark:bg-violet-950/10 dark:hover:bg-violet-900/20 dark:text-violet-500 dark:border-violet-900/50"
-          >
-            New Program
-          </button>
-          {programMenuOpen && (
-            <div className="absolute top-full left-0 mt-1 z-50 bg-popover border border-border rounded-lg shadow-2xl py-1 w-48 animate-in fade-in slide-in-from-top-2 duration-200">
-              <button
-                onClick={() => { setProgramMenuOpen(false); onNewProgramClick() }}
-                className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
-              >
-                From Scratch
-              </button>
-              <button
-                onClick={() => { setProgramMenuOpen(false); onCreateFromImplsClick() }}
-                className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-muted transition-colors"
-              >
-                From Existing IMPLs
-              </button>
-            </div>
-          )}
-        </div>
+        <button
+          onClick={onNewProgramClick}
+          className="flex items-center justify-center text-sm font-medium px-6 transition-colors border-r bg-violet-50/20 hover:bg-violet-50/50 text-violet-400 border-violet-100 dark:bg-violet-950/10 dark:hover:bg-violet-900/20 dark:text-violet-500 dark:border-violet-900/50"
+        >
+          New Program
+        </button>
         <button
           onClick={onSearchClick}
           className="flex items-center gap-2 px-4 text-xs text-muted-foreground border-r border-border hover:bg-muted hover:text-foreground transition-colors"

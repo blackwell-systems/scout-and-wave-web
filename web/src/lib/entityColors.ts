@@ -134,6 +134,45 @@ function hslToHex(h: number, s: number, l: number): string {
   return `#${rHex}${gHex}${bHex}`
 }
 
+// ── Repo colors (hash-based) ─────────────────────────────────────────────────
+
+/**
+ * Hash a string to a deterministic hue (0-359).
+ * Uses djb2 hash for fast, well-distributed results.
+ */
+function hashToHue(str: string): number {
+  let hash = 5381
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash) % 360
+}
+
+/**
+ * Get a deterministic color for a repository name.
+ * Uses the same theme-aware saturation/lightness as agent colors
+ * so repo colors feel consistent with the rest of the UI.
+ *
+ * @param repoName - Repository name (e.g. "scout-and-wave-go")
+ * @returns Hex color code (#rrggbb)
+ */
+export function getRepoColor(repoName: string): string {
+  const { saturation, baseLightness } = getThemeVars()
+  const hue = hashToHue(repoName)
+  return hslToHex(hue, saturation, baseLightness)
+}
+
+/**
+ * Get opacity variant of repo color for backgrounds/borders.
+ */
+export function getRepoColorWithOpacity(repoName: string, opacity: number = 0.15): string {
+  const color = getRepoColor(repoName)
+  const r = parseInt(color.slice(1, 3), 16)
+  const g = parseInt(color.slice(3, 5), 16)
+  const b = parseInt(color.slice(5, 7), 16)
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**

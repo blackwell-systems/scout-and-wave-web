@@ -10,6 +10,7 @@ import PipelineRow from './PipelineRow'
 import PipelineMetricsBar from './PipelineMetrics'
 import { useGlobalEvents } from '../hooks/useGlobalEvents'
 import { ChevronDown, List, GitBranch } from 'lucide-react'
+import { getRepoColor, getRepoColorWithOpacity } from '../lib/entityColors'
 import ProgramDependencyGraph from './ProgramDependencyGraph'
 import CreateFromImplsPanel from './CreateFromImplsPanel'
 import DisjointAnalysisScreen from './DisjointAnalysisScreen'
@@ -187,6 +188,8 @@ export function UnifiedProgramsView({ onSelectImpl, onSelectProgram, createFromI
   const [error, setError] = useState<string | null>(null)
   const [selectedProgram, setSelectedProgram] = useState<string | null>(null)
   const [showCompleted, setShowCompleted] = useState(false)
+  const [programSelection, setProgramSelection] = useState<Set<string>>(new Set())
+  const [repoFilters, setRepoFilters] = useState<Set<string>>(new Set())
 
   // Create-from-IMPLs flow state
   const [createFromImplsMode, setCreateFromImplsMode] = useState<'hidden' | 'select' | 'analyze'>('hidden')
@@ -369,23 +372,78 @@ export function UnifiedProgramsView({ onSelectImpl, onSelectProgram, createFromI
             )}
 
             {/* Active IMPLs — pipeline row style */}
-            {activeEntries.length > 0 && (
+            {activeEntries.length > 0 && (() => {
+              const repos = [...new Set(activeEntries.map(e => e.repo).filter(Boolean))] as string[]
+              const filtered = repoFilters.size > 0 ? activeEntries.filter(e => e.repo && repoFilters.has(e.repo)) : activeEntries
+              const allSelected = repoFilters.size === 0
+              return (
               <div>
-                <div className="px-6 pt-4 pb-2">
+                <div className="px-6 pt-4 pb-2 flex items-center gap-3">
                   <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                    Active ({activeEntries.length})
+                    Active ({filtered.length})
                   </h2>
+                  {repos.length > 1 && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => setRepoFilters(prev => prev.size === 0 ? new Set(repos) : new Set())}
+                        className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
+                          allSelected ? 'bg-foreground/10 text-foreground font-medium' : 'text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        All
+                      </button>
+                      {repos.map(repo => {
+                        const isActive = repoFilters.has(repo)
+                        return (
+                          <button
+                            key={repo}
+                            onClick={() => setRepoFilters(prev => {
+                              const next = new Set(prev)
+                              if (next.has(repo)) {
+                                next.delete(repo)
+                                // If nothing left, go back to "all"
+                                if (next.size === 0) return new Set()
+                              } else {
+                                next.add(repo)
+                                // If all selected, clear to "all" mode
+                                if (next.size === repos.length) return new Set()
+                              }
+                              return next
+                            })}
+                            className={`text-[10px] px-2 py-0.5 rounded transition-colors ${
+                              isActive ? 'font-medium' : 'hover:opacity-80'
+                            }`}
+                            style={{
+                              color: getRepoColor(repo),
+                              backgroundColor: isActive ? getRepoColorWithOpacity(repo, 0.2) : 'transparent',
+                            }}
+                          >
+                            {repo}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
-                {activeEntries.map((entry) => (
+                {filtered.map((entry) => (
                   <PipelineRow
                     key={entry.slug}
                     entry={entry}
                     onSelect={onSelectImpl}
                     onSelectProgram={handleSelectProgram}
+                    onToggleProgramSelect={(slug) => {
+                      setProgramSelection(prev => {
+                        const next = new Set(prev)
+                        if (next.has(slug)) next.delete(slug)
+                        else next.add(slug)
+                        return next
+                      })
+                    }}
+                    isProgramSelected={programSelection.has(entry.slug)}
                   />
                 ))}
               </div>
-            )}
+              )})()}
 
             {activeEntries.length === 0 && programs.length === 0 && (
               <div className="flex flex-col items-center justify-center h-48 gap-2 text-muted-foreground">
@@ -419,6 +477,52 @@ export function UnifiedProgramsView({ onSelectImpl, onSelectProgram, createFromI
               </div>
             )}
           </div>
+
+          {/* Program selection action bar */}
+          {programSelection.size >= 2 && (
+            <div className="flex items-center justify-between px-6 py-3 bg-violet-50 dark:bg-violet-950/40 border-t border-violet-200 dark:border-violet-800">
+              <div className="flex items-center gap-3">
+                <span className="text-sm font-medium text-violet-800 dark:text-violet-300">
+                  {programSelection.size} IMPLs selected
+                </span>
+                <button
+                  onClick={() => setProgramSelection(new Set())}
+                  className="text-xs text-violet-600 dark:text-violet-400 hover:text-violet-800 dark:hover:text-violet-200 transition-colors"
+                >
+                  Clear
+                </button>
+              </div>
+              <button
+                onClick={async () => {
+                  const slugs = Array.from(programSelection)
+                  setSelectedImplSlugs(slugs)
+                  try {
+                    const report = await analyzeImpls(slugs)
+                    setConflictReport(report)
+                    setCreateFromImplsMode('analyze')
+                  } catch (err) {
+                    setError(err instanceof Error ? err.message : String(err))
+                  }
+                }}
+                className="text-sm font-medium px-4 py-2 rounded border border-violet-400 dark:border-violet-600 text-violet-800 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors"
+              >
+                Perform Disjoint Analysis
+              </button>
+            </div>
+          )}
+
+          {/* Single selection hint */}
+          {programSelection.size === 1 && (
+            <div className="flex items-center justify-between px-6 py-2 bg-muted/40 border-t border-border">
+              <span className="text-xs text-muted-foreground">Select at least 2 IMPLs to create a program</span>
+              <button
+                onClick={() => setProgramSelection(new Set())}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                Clear
+              </button>
+            </div>
+          )}
 
           {/* Metrics bar at bottom */}
           {metrics && <PipelineMetricsBar metrics={metrics} />}

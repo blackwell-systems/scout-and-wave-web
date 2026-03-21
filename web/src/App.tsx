@@ -81,7 +81,6 @@ export default function App() {
   const [showPalette, setShowPalette] = useState(false)
   const [showPrograms, setShowPrograms] = useState(true)
   const [selectedProgramSlug, setSelectedProgramSlug] = useState<string | null>(null)
-  const [createFromImplsOpen, setCreateFromImplsOpen] = useState(false)
 
   // Bump refresh tick when entries change (SSE-driven via context)
   useEffect(() => {
@@ -220,7 +219,7 @@ export default function App() {
     }
   }, [selectedSlug, refreshEntries])
 
-  const saveModel = useCallback(async (field: 'scout' | 'scaffold' | 'wave' | 'integration' | 'chat' | 'planner' | 'all', value: string) => {
+  const saveModel = useCallback(async (field: 'scout' | 'critic' | 'scaffold' | 'wave' | 'integration' | 'chat' | 'planner' | 'all', value: string) => {
     await contextSaveModel(field, value)
   }, [contextSaveModel])
 
@@ -269,7 +268,6 @@ export default function App() {
       onSelectProgram={(programSlug) => {
         setSelectedProgramSlug(programSlug)
       }}
-      createFromImplsOpen={createFromImplsOpen}
     />
   ) : (
     <>
@@ -342,11 +340,6 @@ export default function App() {
               setSelectedSlug(null); setImpl(null); setLiveView(null)
             }}
             onNewProgramClick={() => setLiveView(v => v === 'planner' ? null : 'planner')}
-            onCreateFromImplsClick={() => {
-              setShowPrograms(true)
-              setSelectedSlug(null); setImpl(null); setLiveView(null)
-              setCreateFromImplsOpen(prev => !prev)
-            }}
             onSearchClick={() => setShowPalette(true)}
             onSettingsClick={settingsModal.toggle}
             showPrograms={showPrograms}

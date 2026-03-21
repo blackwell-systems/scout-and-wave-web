@@ -9,7 +9,7 @@ import {
   TableRow,
 } from './ui/table'
 import { Badge } from './ui/badge'
-import { getAgentColor, getAgentColorWithOpacity } from '../lib/agentColors'
+import { getAgentColor, getAgentColorWithOpacity } from '../lib/entityColors'
 import type { FileActivityEntry } from '../types/fileActivity'
 
 interface FileOwnershipTableProps {

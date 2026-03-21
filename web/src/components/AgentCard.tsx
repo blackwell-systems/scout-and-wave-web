@@ -1,6 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
 import { AgentStatus } from '../types'
-import { getAgentColor } from '../lib/agentColors'
+import { getAgentColor } from '../lib/entityColors'
 import ToolFeed from './ToolFeed'
 
 interface AgentCardProps {
