@@ -11,6 +11,7 @@ import { AgentStatus, RepoEntry, FileOwnershipEntry, IMPLDocResponse } from '../
 import { mergeWave, runWaveTests, rerunAgent, batchDeleteWorktrees, startWave, retryFinalize, fixBuild, fetchImpl } from '../api'
 import { sawClient } from '../lib/apiClient'
 import { useCriticState } from '../hooks/useCriticState'
+import { CriticOutputPanel } from './CriticOutputPanel'
 import ScaffoldCard from './wave/ScaffoldCard'
 import { WaveCompletionPanel } from './wave/WaveCompletionPanel'
 import { WaveRecoveryPanel } from './wave/WaveRecoveryPanel'
@@ -75,7 +76,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
   // Fetch IMPL data for critic threshold detection
   const [impl, setImpl] = useState<IMPLDocResponse | null>(null)
   useEffect(() => { fetchImpl(slug).then(setImpl).catch(() => {}) }, [slug])
-  const { needsCritic, criticReport, criticRunning, runCritic } = useCriticState(slug, impl)
+  const { needsCritic, criticReport, criticRunning, criticOutput, criticError, runCritic } = useCriticState(slug, impl)
 
   // Merge optimistic overrides on top of SSE-driven agent state.
   // Disk-confirmed merged waves are authoritative — override stale SSE failure state.
@@ -203,7 +204,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
       return (
         <button
           onClick={() => void handleRescout(agent)}
-          className="self-start text-xs font-medium px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900 transition-colors"
+          className="self-start text-xs font-medium px-2 py-1 rounded-none border border-amber-400 dark:border-amber-600 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
         >
           &#x21BA; Re-Scout
         </button>
@@ -214,7 +215,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
       return (
         <button
           onClick={() => void handleRerun(agent, { scopeHint: 'Reduce scope: focus only on the files listed in your task. Skip any optional improvements.' })}
-          className="self-start text-xs font-medium px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900 transition-colors"
+          className="self-start text-xs font-medium px-2 py-1 rounded-none border border-amber-400 dark:border-amber-600 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
         >
           &#x21BA; Retry (scope down)
         </button>
@@ -226,7 +227,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
         <div className="flex flex-col gap-1">
           <button
             onClick={() => void handleRerun(agent)}
-            className="self-start text-xs font-medium px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900 transition-colors"
+            className="self-start text-xs font-medium px-2 py-1 rounded-none border border-amber-400 dark:border-amber-600 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
           >
             &#x21BA; Fix + Retry
           </button>
@@ -243,7 +244,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
     return (
       <button
         onClick={() => void handleRerun(agent)}
-        className="self-start text-xs font-medium px-2 py-1 rounded bg-amber-50 border border-amber-200 text-amber-700 hover:bg-amber-100 dark:bg-amber-950 dark:border-amber-800 dark:text-amber-400 dark:hover:bg-amber-900 transition-colors"
+        className="self-start text-xs font-medium px-2 py-1 rounded-none border border-amber-400 dark:border-amber-600 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
       >
         &#x21BA; Retry
       </button>
@@ -278,7 +279,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                     setStaleDismissed(true)
                   } catch { /* ignore */ }
                 }}
-                className="text-xs font-medium px-3 py-1 rounded-none bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+                className="text-xs font-medium px-3 py-1 rounded-none border border-amber-400 dark:border-amber-600 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
               >
                 Clean Up
               </button>
@@ -366,7 +367,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
               <button
                 onClick={runCritic}
                 disabled={criticRunning}
-                className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-violet-500/15 text-violet-400 border border-violet-500/30 hover:bg-violet-500/25 hover:border-violet-500/50 active:scale-[0.98] transition-all backdrop-blur-sm disabled:opacity-50"
+                className="w-full text-sm font-medium px-4 py-2.5 rounded-none border border-violet-400 dark:border-violet-600 text-violet-800 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 active:scale-[0.98] transition-all disabled:opacity-50"
               >
                 {criticRunning ? (
                   <span className="flex items-center justify-center gap-2"><Loader2 size={14} className="animate-spin" /> Reviewing Briefs...</span>
@@ -374,11 +375,22 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                   'Review Briefs'
                 )}
               </button>
+              {(criticRunning || criticOutput) && (
+                <CriticOutputPanel output={criticOutput} running={criticRunning} error={criticError} />
+              )}
+              {criticError && !criticRunning && (
+                <div className="flex items-center justify-between bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-none px-4 py-3">
+                  <span className="text-sm text-red-800 dark:text-red-300">Critic review failed: {criticError}</span>
+                  <button onClick={runCritic} className="text-xs font-medium px-3 py-1.5 rounded-none border border-red-400 dark:border-red-600 text-red-800 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors">
+                    Retry
+                  </button>
+                </div>
+              )}
             </div>
           ) : (
             <button
               onClick={() => void startWave(slug)}
-              className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 hover:border-blue-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
+              className="w-full text-sm font-medium px-4 py-2.5 rounded-none border border-blue-400 dark:border-blue-600 text-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 active:scale-[0.98] transition-all"
             >
               Start Execution
             </button>
@@ -470,7 +482,7 @@ export default function WaveBoard({ slug, compact, onRescout, repos }: WaveBoard
                   </div>
                   <button
                     onClick={() => void handleProceedGate(state.waveGate!.nextWave)}
-                    className="w-full text-sm font-medium px-4 py-2.5 rounded-none bg-blue-500/15 text-blue-400 border border-blue-500/30 hover:bg-blue-500/25 hover:border-blue-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
+                    className="w-full text-sm font-medium px-4 py-2.5 rounded-none border border-blue-400 dark:border-blue-600 text-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 active:scale-[0.98] transition-all"
                   >
                     Proceed to Wave {state.waveGate.nextWave} &rarr;
                   </button>

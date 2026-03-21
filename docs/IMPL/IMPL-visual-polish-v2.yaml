@@ -1,0 +1,761 @@
+title: 'Visual Polish v2 - CSS Animations, Accessibility, and UI Refinements'
+feature_slug: visual-polish-v2
+verdict: SUITABLE
+suitability_assessment: |
+  Work is SUITABLE for SAW with strong parallelization potential.
+
+  **Suitability Gate Assessment:**
+
+  1. **File decomposition:** YES - 10 distinct files with clear ownership boundaries.
+     - Sprint 1: index.css, tailwind.config.js (foundation + accessibility)
+     - Sprint 2: AgentCard.tsx, ProgressBar.tsx, SuitabilityBadge.tsx (status indicators)
+     - Sprint 3: CommandPalette.tsx, ResumeBanner.tsx, ImplList.tsx, AgentCard.tsx, WaveBoard.tsx (navigation + polish)
+     No conflicts expected - each file has independent animation additions.
+
+  2. **Investigation-first items:** NO blockers. All requirements are implementation-defined
+     from the visual polish audit. No root cause analysis needed.
+
+  3. **Interface discoverability:** YES - All CSS keyframes and Tailwind config extensions
+     are fully specifiable before implementation. React component changes are additive
+     (import icons, add classes) with no cross-component dependencies.
+
+  4. **Pre-implementation status check:** 22% implemented (orb animations in
+     WaveStructurePanel are MORE sophisticated than v1 spec). Remaining 78% is net-new:
+     - index.css has 8 keyframes; needs 7 more + utilities
+     - Components have no status icons, no striped progress, no entrance animations
+     - No prefers-reduced-motion guards (accessibility blocker)
+
+  5. **Parallelization value check:** HIGH
+     - Build cycle: ~15-20s (npm run build + tsc + go build + binary rebuild)
+     - 3 waves × 3-4 agents = 9-12 agents total
+     - Agents are fully independent within waves (disjoint files)
+     - Sprint structure matches natural dependency layers (foundation → features → polish)
+     Estimated 40-60% time savings over sequential implementation.
+
+  **Time-to-value estimate:**
+  - Scout phase: ~8 min (CSS contract definitions, component analysis, wave structure)
+  - Agent execution: ~35 min (10 agents × ~5 min avg, 3 waves with parallelism)
+  - Merge & verification: ~6 min (3 wave merges + visual QA)
+  Total SAW time: ~49 min
+
+  Sequential baseline: ~75 min (10 agents × 7.5 min avg sequential)
+  Time savings: ~26 min (35% faster)
+
+  Recommendation: Clear speedup. Proceed with SAW.
+
+  **Note on v1 history:** Original IMPL-visual-polish-v1.yaml was created but execution
+  was skipped. Current codebase shows 22% completion (orb animations exist and exceed
+  v1 spec). This v2 IMPL reflects actual current state and completes remaining 78%.
+
+test_command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm test
+lint_command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx prettier --check src/
+state: SCOUT_PENDING
+
+quality_gates:
+  level: standard
+  gates:
+    - type: format
+      command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx prettier --check src/
+      required: true
+      fix: false
+    - type: build
+      command: cd /Users/dayna.blackwell/code/scout-and-wave-web && npm run build --prefix web && go build -o saw ./cmd/saw
+      required: true
+    - type: test
+      command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm test
+      required: false
+
+scaffolds: []
+
+file_ownership:
+  - file: web/src/index.css
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: web/tailwind.config.js
+    agent: B
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: web/src/components/StageTimeline.tsx
+    agent: C
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: web/src/components/WaveBoard.tsx
+    agent: C2
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: web/src/components/AgentCard.tsx
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: [A]
+  - file: web/src/components/ProgressBar.tsx
+    agent: E
+    wave: 2
+    action: modify
+    depends_on: [A]
+  - file: web/src/components/SuitabilityBadge.tsx
+    agent: F
+    wave: 2
+    action: modify
+    depends_on: []
+  - file: web/src/components/CommandPalette.tsx
+    agent: G
+    wave: 3
+    action: modify
+    depends_on: [A]
+  - file: web/src/components/ResumeBanner.tsx
+    agent: H
+    wave: 3
+    action: modify
+    depends_on: [A]
+  - file: web/src/components/ImplList.tsx
+    agent: I
+    wave: 3
+    action: modify
+    depends_on: [A]
+
+interface_contracts:
+  - name: CSS Keyframe Definitions (index.css)
+    description: Core animation keyframes consumed by all React components
+    location: web/src/index.css
+    definition: |
+      /* Entrance animations */
+      @keyframes fade-in-up {
+        from { opacity: 0; transform: translateY(8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes fade-in-down {
+        from { opacity: 0; transform: translateY(-8px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @keyframes fade-in-scale {
+        from { opacity: 0; transform: scale(0.95); }
+        to { opacity: 1; transform: scale(1); }
+      }
+      @keyframes slide-in-left {
+        from { transform: translateX(-100%); opacity: 0; }
+        to { transform: translateX(0); opacity: 1; }
+      }
+
+      /* Visual effects */
+      @keyframes shimmer {
+        0% { background-position: -200% 0; }
+        100% { background-position: 200% 0; }
+      }
+      @keyframes progress-stripe {
+        0% { background-position: 0 0; }
+        100% { background-position: 40px 0; }
+      }
+      @keyframes count-pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50% { opacity: 0.7; transform: scale(1.05); }
+      }
+
+      /* Utility classes */
+      .stagger-1 { animation-delay: 0.05s; }
+      .stagger-2 { animation-delay: 0.10s; }
+      .stagger-3 { animation-delay: 0.15s; }
+      .stagger-4 { animation-delay: 0.20s; }
+      .stagger-5 { animation-delay: 0.25s; }
+
+      .skeleton-shimmer {
+        background: linear-gradient(90deg, hsl(var(--muted)) 25%, hsl(var(--muted-foreground) / 0.1) 50%, hsl(var(--muted)) 75%);
+        background-size: 200% 100%;
+        animation: shimmer 1.5s infinite;
+      }
+
+      .focus-ring {
+        outline: 2px solid hsl(var(--ring));
+        outline-offset: 2px;
+      }
+
+      /* CRITICAL: Wrap all animations in prefers-reduced-motion */
+      @media (prefers-reduced-motion: no-preference) {
+        .animate-fade-in-up { animation: fade-in-up 0.3s ease-out; }
+        .animate-fade-in-down { animation: fade-in-down 0.3s ease-out; }
+        .animate-fade-in-scale { animation: fade-in-scale 0.2s ease-out; }
+        .animate-slide-in-left { animation: slide-in-left 0.3s ease-out; }
+        .animate-shimmer { animation: shimmer 1.5s infinite; }
+        .animate-progress-stripe { animation: progress-stripe 1s linear infinite; }
+        .animate-count-pulse { animation: count-pulse 1.2s ease-in-out infinite; }
+      }
+
+  - name: Tailwind Animation Extensions
+    description: Tailwind config for animation utilities
+    location: web/tailwind.config.js
+    definition: |
+      // Add to theme.extend in tailwind.config.js:
+      animation: {
+        'fade-in-up': 'fade-in-up 0.3s ease-out',
+        'fade-in-down': 'fade-in-down 0.3s ease-out',
+        'fade-in-scale': 'fade-in-scale 0.2s ease-out',
+        'slide-in-left': 'slide-in-left 0.3s ease-out',
+        'shimmer': 'shimmer 1.5s infinite',
+        'progress-stripe': 'progress-stripe 1s linear infinite',
+        'count-pulse': 'count-pulse 1.2s ease-in-out infinite',
+      },
+      keyframes: {
+        'fade-in-up': {
+          from: { opacity: '0', transform: 'translateY(8px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        'fade-in-down': {
+          from: { opacity: '0', transform: 'translateY(-8px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        'fade-in-scale': {
+          from: { opacity: '0', transform: 'scale(0.95)' },
+          to: { opacity: '1', transform: 'scale(1)' },
+        },
+        'slide-in-left': {
+          from: { transform: 'translateX(-100%)', opacity: '0' },
+          to: { transform: 'translateX(0)', opacity: '1' },
+        },
+        'shimmer': {
+          '0%': { backgroundPosition: '-200% 0' },
+          '100%': { backgroundPosition: '200% 0' },
+        },
+        'progress-stripe': {
+          '0%': { backgroundPosition: '0 0' },
+          '100%': { backgroundPosition: '40px 0' },
+        },
+        'count-pulse': {
+          '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+          '50%': { opacity: '0.7', transform: 'scale(1.05)' },
+        },
+      }
+
+  - name: Lucide React Icons
+    description: Icon imports for status indicators
+    location: web/src/components/*.tsx
+    definition: |
+      // Import from lucide-react (already in package.json):
+      import { Loader2, Check, X, CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+
+      // Usage examples:
+      // - Loader2: <Loader2 className="animate-spin" size={16} />
+      // - Check: <Check className="animate-fade-in-scale" size={16} />
+      // - X: <X className="animate-exec-node-shake" size={16} />
+      // - CheckCircle/XCircle/AlertTriangle: beside badge text
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## Task: Add Missing CSS Keyframes and Accessibility Guards
+
+          **What to implement:**
+          Add 7 missing keyframe definitions and utility classes to `web/src/index.css`:
+          - `@keyframes fade-in-up` (entrance from below)
+          - `@keyframes fade-in-down` (entrance from above)
+          - `@keyframes fade-in-scale` (scale + fade entrance)
+          - `@keyframes slide-in-left` (slide from left)
+          - `@keyframes shimmer` (skeleton loading shimmer)
+          - `@keyframes progress-stripe` (diagonal stripe animation)
+          - `@keyframes count-pulse` (number pulse effect)
+
+          Add utility classes:
+          - `.stagger-1` through `.stagger-5` (animation-delay: 0.05s increments)
+          - `.skeleton-shimmer` (shimmer effect for loading states)
+          - `.focus-ring` (accessible focus indicator)
+
+          **CRITICAL ACCESSIBILITY REQUIREMENT:**
+          Wrap ALL animation utility classes in `@media (prefers-reduced-motion: no-preference)`.
+          Users with `prefers-reduced-motion: reduce` must see static content with no animations.
+
+          **What NOT to do:**
+          - Do NOT modify existing orb animations (exec-jewel-fill, exec-node-pulse, etc.)
+          - Do NOT change scrollbar styling
+          - Do NOT modify theme color variables
+
+          **Interface contracts:**
+          Follow the exact keyframe definitions in the Interface Contracts section above.
+          Other agents depend on these class names (.animate-fade-in-up, .animate-shimmer, etc.).
+
+          **Tests:**
+          Visual verification:
+          1. Animations work in browsers with no motion preference set
+          2. Animations are suppressed when `prefers-reduced-motion: reduce` is set
+          3. All keyframes are valid CSS (no syntax errors)
+
+          **Verification gate:**
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && \
+          npx prettier --check src/index.css && \
+          npm run build
+          ```
+
+          **Constraints:**
+          - Use only transform and opacity properties (GPU-accelerated)
+          - Keep animation durations under 500ms for snappy UX
+          - All animations must have easing functions (ease-out, ease-in-out)
+        files:
+          - web/src/index.css
+        dependencies: []
+
+      - id: B
+        task: |
+          ## Task: Extend Tailwind Config with Animation Utilities
+
+          **What to implement:**
+          Extend `web/tailwind.config.js` with animation utilities matching the CSS keyframes
+          from Agent A's work:
+
+          Add to `theme.extend.animation`:
+          - `fade-in-up`, `fade-in-down`, `fade-in-scale`, `slide-in-left`
+          - `shimmer`, `progress-stripe`, `count-pulse`
+
+          Add to `theme.extend.keyframes`:
+          - Full keyframe definitions (same names as CSS keyframes in index.css)
+
+          **Why both CSS and Tailwind?**
+          - CSS keyframes provide global definitions + accessibility guards
+          - Tailwind utilities enable `className="animate-fade-in-up"` in JSX
+          - This pattern matches existing project style (see `animate-pulse` usage)
+
+          **Interface contracts:**
+          Follow the exact schema in the Interface Contracts section (Tailwind Animation Extensions).
+          Keyframe names and timing must match Agent A's CSS definitions.
+
+          **Tests:**
+          Build verification - ensure Tailwind generates animation classes:
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && \
+          npm run build && \
+          grep "animate-fade-in-up" dist/assets/*.css
+          ```
+
+          **Verification gate:**
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && \
+          npx prettier --check tailwind.config.js && \
+          npm run build
+          ```
+
+          **Constraints:**
+          - Do NOT modify existing color/border/spacing config
+          - Keep keyframe timings identical to CSS definitions (consistency)
+          - Use camelCase for keyframe object keys (Tailwind convention)
+        files:
+          - web/tailwind.config.js
+        dependencies: []
+
+      - id: C
+        task: |
+          ## Task: Migrate StageTimeline Hardcoded Colors to Theme Vars
+
+          **What to implement:**
+          Replace hardcoded Tailwind color classes in `web/src/components/StageTimeline.tsx`
+          with theme-aware CSS variables:
+
+          **Color migrations:**
+          - `bg-white dark:bg-gray-900` → `bg-background`
+          - `border-gray-200 dark:border-gray-700` → `border-border`
+          - `text-gray-600 dark:text-gray-400` → `text-muted-foreground`
+
+          **Why this matters:**
+          The app supports 400+ Base16 themes (see web/src/lib/themes.ts). Hardcoded
+          gray-* colors break theme consistency. CSS variables (--background, --border, etc.)
+          automatically adapt to the active theme.
+
+          **What NOT to change:**
+          - Status-specific colors (blue-500, green-500, red-500) are intentional and should
+            remain hardcoded (status colors are semantic, not theme-dependent)
+          - Animation classes (animate-pulse) - keep as-is
+          - Component logic and structure - only swap color class names
+
+          **Tests:**
+          Visual verification across themes:
+          1. Switch to light theme → StageTimeline uses light background
+          2. Switch to dark theme → StageTimeline uses dark background
+          3. No gray-* classes remain in the component (except in comments)
+
+          **Verification gate:**
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && \
+          npx prettier --check src/components/StageTimeline.tsx && \
+          npm run build
+          ```
+        files:
+          - web/src/components/StageTimeline.tsx
+        dependencies: []
+
+      - id: C2
+        task: |
+          ## Task: Migrate WaveBoard Hardcoded Colors to Theme Vars
+
+          **What to implement:**
+          Replace hardcoded Tailwind color classes in `web/src/components/WaveBoard.tsx`
+          with theme-aware CSS variables:
+
+          **Color migrations (search for these patterns):**
+          - `bg-gray-*` → `bg-muted` or `bg-background`
+          - `text-gray-*` → `text-muted-foreground` or `text-foreground`
+          - `border-gray-*` → `border-border`
+
+          **What NOT to change:**
+          - Status colors (blue-*, green-*, red-*, amber-*) are intentional
+          - Component logic, SSE handling, state management - only swap color classes
+          - Any colors in inline styles (statusStyle, agentColor) - keep as-is
+
+          **Context:**
+          WaveBoard is a complex component with nested child components. Focus only on
+          the WaveBoard file itself. Do not modify AgentCard, ProgressBar, or other
+          imported components (they have separate agents).
+
+          **Tests:**
+          Visual verification:
+          1. Wave sections render with theme-consistent backgrounds
+          2. Text remains readable across light/dark themes
+          3. No hardcoded gray-* classes remain (grep verification)
+
+          **Verification gate:**
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && \
+          npx prettier --check src/components/WaveBoard.tsx && \
+          npm run build
+          ```
+        files:
+          - web/src/components/WaveBoard.tsx
+        dependencies: []
+
+  - number: 2
+    agents:
+      - id: D
+        task: |
+          ## Task: Add Status Icons and Hover Lift to AgentCard
+
+          **What to implement:**
+
+          1. **Import status icons from lucide-react:**
+             ```typescript
+             import { Loader2, Check, X } from 'lucide-react'
+             ```
+
+          2. **Add status icons to agent status badge area (lines 84-115):**
+             - `status === 'running'`: rotating Loader2 icon (replace or augment pulsing dots)
+             - `status === 'complete'`: Check icon with scale-in animation
+             - `status === 'failed'`: X icon with shake animation
+             - Use size={14} for icons to match existing UI scale
+
+          3. **Add hover lift effect to card container (line 74-82):**
+             Current: `transition-all duration-200`
+             Add: `hover:-translate-y-0.5 hover:shadow-lg`
+             This creates a subtle lift on hover without changing border glow behavior.
+
+          **Animations to use:**
+          - Loader2: `className="animate-spin"` (Tailwind built-in)
+          - Check: `className="animate-fade-in-scale"` (from Agent A's keyframes)
+          - X: Use existing `animate-exec-node-shake` class (already in index.css)
+
+          **What NOT to change:**
+          - Existing status border glow logic (getStatusStyle function)
+          - Existing pulsing dots (you can keep them alongside the icon)
+          - ToolFeed, output expansion, or file list sections
+
+          **Tests:**
+          Visual verification:
+          1. Running agents show spinning Loader2 icon
+          2. Complete agents show Check icon with scale-in animation
+          3. Failed agents show X icon with shake animation
+          4. Cards lift slightly on hover with enhanced shadow
+
+          **Verification gate:**
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && \
+          npx prettier --check src/components/AgentCard.tsx && \
+          npm run build && \
+          npm test -- AgentCard
+          ```
+        files:
+          - web/src/components/AgentCard.tsx
+        dependencies: [A]
+
+      - id: E
+        task: |
+          ## Task: Add Striped Progress Animation to ProgressBar
+
+          **What to implement:**
+
+          1. **Add diagonal stripe pattern to progress fill (line 18-20):**
+             Replace solid `bg-blue-500` with striped gradient:
+             ```tsx
+             <div
+               className="h-2.5 rounded-full transition-all duration-500 relative overflow-hidden"
+               style={{
+                 width: `${pct}%`,
+                 background: 'repeating-linear-gradient(45deg, #3b82f6 0px, #3b82f6 10px, #60a5fa 10px, #60a5fa 20px)',
+               }}
+             >
+               <div className="absolute inset-0 animate-progress-stripe" />
+             </div>
+             ```
+
+          2. **Add green flash at 100% completion:**
+             When `pct === 100`, apply `bg-green-500` class with a transition:
+             ```tsx
+             className={`... ${pct === 100 ? 'bg-green-500' : ''}`}
+             ```
+
+          **Animation details:**
+          - `animate-progress-stripe` class (from Agent A) animates the stripe position
+          - Stripe pattern uses blue-500 (#3b82f6) and blue-400 (#60a5fa) for depth
+          - 100% completion triggers instant green fill with 300ms transition
+
+          **What NOT to change:**
+          - Label and percentage display logic (lines 11-15)
+          - Component props interface
+          - Outer container styling
+
+          **Tests:**
+          Visual verification:
+          1. Progress bar shows animated diagonal stripes while < 100%
+          2. Stripes animate right-to-left continuously
+          3. Bar turns green when reaching 100%
+          4. Animation respects prefers-reduced-motion (static stripes if reduced)
+
+          **Verification gate:**
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && \
+          npx prettier --check src/components/ProgressBar.tsx && \
+          npm run build
+          ```
+
+          **Constraints:**
+          - Keep animation subtle (1s duration, not too fast)
+          - Ensure 100% state is visually distinct (green = success signal)
+        files:
+          - web/src/components/ProgressBar.tsx
+        dependencies: [A]
+
+      - id: F
+        task: |
+          ## Task: Add Icons and Gradient to SuitabilityBadge
+
+          **What to implement:**
+
+          1. **Import icons from lucide-react:**
+             ```typescript
+             import { CheckCircle, XCircle, AlertTriangle } from 'lucide-react'
+             ```
+
+          2. **Add icon beside badge text (line 26-30):**
+             Map verdict to icon:
+             - `SUITABLE` → CheckCircle (green)
+             - `NOT SUITABLE` → XCircle (red)
+             - `SUITABLE WITH CAVEATS` → AlertTriangle (yellow)
+             - Use size={14} for icons
+
+          3. **Add subtle background gradient to badge:**
+             Current: `bg-green-100` (solid)
+             New: `bg-gradient-to-r from-green-50 to-green-100`
+             Apply similar gradient pattern to all verdict types.
+
+          **Example implementation:**
+          ```tsx
+          <span className={`inline-flex items-center gap-1.5 px-4 py-2 rounded-full text-sm font-semibold ${badgeClasses}`}>
+            {verdict === 'SUITABLE' && <CheckCircle size={14} />}
+            {verdict === 'NOT SUITABLE' && <XCircle size={14} />}
+            {verdict === 'SUITABLE WITH CAVEATS' && <AlertTriangle size={14} />}
+            {suitability.verdict}
+          </span>
+          ```
+
+          **What NOT to change:**
+          - Rationale text rendering (lines 32-34)
+          - Badge color logic (getBadgeClasses function)
+          - Component props interface
+
+          **Tests:**
+          Visual verification:
+          1. SUITABLE badge shows CheckCircle icon
+          2. NOT SUITABLE badge shows XCircle icon
+          3. SUITABLE WITH CAVEATS badge shows AlertTriangle icon
+          4. Gradient backgrounds render smoothly (no harsh color breaks)
+
+          **Verification gate:**
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && \
+          npx prettier --check src/components/SuitabilityBadge.tsx && \
+          npm run build
+          ```
+        files:
+          - web/src/components/SuitabilityBadge.tsx
+        dependencies: []
+
+  - number: 3
+    agents:
+      - id: G
+        task: |
+          ## Task: Add Backdrop Blur and Scale Animation to CommandPalette
+
+          **What to implement:**
+
+          1. **Add backdrop blur overlay (line 36):**
+             Current: `className="fixed inset-0 z-50 flex items-start justify-center pt-[20vh]"`
+             New: Add `backdrop-blur-sm bg-black/50` classes
+             This creates a blurred + darkened overlay behind the modal.
+
+          2. **Add scale+fade entrance animation to modal (line 37):**
+             Current: `className="bg-popover border border-border rounded-xl shadow-2xl w-full max-w-lg overflow-hidden"`
+             New: Add `animate-fade-in-scale` class
+             Modal will scale from 95% to 100% with fade-in on mount.
+
+          **What NOT to change:**
+          - Search input logic (inputRef, query state, filtering)
+          - Keyboard navigation (ArrowUp/Down/Enter/Escape handlers)
+          - Results rendering and styling
+
+          **Backdrop blur performance note:**
+          `backdrop-blur-sm` is GPU-accelerated in modern browsers. If performance
+          concerns arise (unlikely with a single modal), consider adding
+          `will-change-backdrop-filter` to the overlay.
+
+          **Tests:**
+          Visual verification:
+          1. Opening palette shows blurred background behind modal
+          2. Modal scales up from 95% with fade-in
+          3. Closing palette removes blur immediately
+          4. Backdrop click-to-close still works
+
+          **Verification gate:**
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && \
+          npx prettier --check src/components/CommandPalette.tsx && \
+          npm run build
+          ```
+        files:
+          - web/src/components/CommandPalette.tsx
+        dependencies: [A]
+
+      - id: H
+        task: |
+          ## Task: Add Slide-Down Entrance Animation to ResumeBanner
+
+          **What to implement:**
+
+          Add `animate-fade-in-down` class to the banner container (line 27):
+
+          Current:
+          ```tsx
+          <div className="mx-2 mt-2 mb-1 rounded-none border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-2 space-y-1.5">
+          ```
+
+          New:
+          ```tsx
+          <div className="mx-2 mt-2 mb-1 rounded-none border border-amber-300 dark:border-amber-700 bg-amber-50 dark:bg-amber-950/40 p-2 space-y-1.5 animate-fade-in-down">
+          ```
+
+          **Why fade-in-down instead of slide-in-down?**
+          The banner is at the top of the page. A subtle downward fade (8px translate)
+          is less jarring than a full-height slide. This matches the pattern used in
+          other top-positioned UI elements.
+
+          **What NOT to change:**
+          - Resume logic (resumeExecution API call)
+          - Session metadata display (progress_pct, failed_agents, etc.)
+          - Button states and error handling
+
+          **Tests:**
+          Visual verification:
+          1. Banner slides down with fade when component mounts
+          2. Animation plays only once on mount (not on every re-render)
+          3. Animation respects prefers-reduced-motion (instant appearance if reduced)
+
+          **Verification gate:**
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && \
+          npx prettier --check src/components/ResumeBanner.tsx && \
+          npm run build
+          ```
+        files:
+          - web/src/components/ResumeBanner.tsx
+        dependencies: [A]
+
+      - id: I
+        task: |
+          ## Task: Animate ImplList Hover Card Entrance
+
+          **What to implement:**
+
+          Replace instant hover card appearance with slide-in-right animation (line 81):
+
+          Current:
+          ```tsx
+          <div className="absolute left-full top-0 ml-2 z-50 w-56 bg-popover border border-border rounded-none shadow-xl p-3 text-xs pointer-events-none">
+          ```
+
+          New:
+          ```tsx
+          <div className="absolute left-full top-0 ml-2 z-50 w-56 bg-popover border border-border rounded-none shadow-xl p-3 text-xs pointer-events-none animate-fade-in-scale">
+          ```
+
+          **Why fade-in-scale instead of slide-in-right?**
+          The card appears to the right of the trigger element. A scale+fade animation
+          is more polished than a horizontal slide (which can feel janky with the 400ms
+          delay timer). This matches typical tooltip/popover entrance patterns.
+
+          **What NOT to change:**
+          - Hover delay logic (400ms setTimeout in handleMouseEnter)
+          - Card content (status, waves, agents, suitability)
+          - Entry row logic (delete modal, multi-repo grouping, etc.)
+
+          **Tests:**
+          Visual verification:
+          1. Hover over IMPL entry → card appears after 400ms with scale+fade
+          2. Move mouse away → card disappears immediately
+          3. Animation plays smoothly without jank
+
+          **Verification gate:**
+          ```bash
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && \
+          npx prettier --check src/components/ImplList.tsx && \
+          npm run build
+          ```
+        files:
+          - web/src/components/ImplList.tsx
+        dependencies: [A]
+
+pre_mortem:
+  overall_risk: low
+  rows:
+    - scenario: Animation conflicts with existing orb animations (exec-jewel-fill, exec-node-pulse)
+      likelihood: low
+      impact: low
+      mitigation: |
+        Agents explicitly instructed NOT to modify existing orb animations.
+        File ownership is disjoint - orb animations live in WaveStructurePanel.tsx
+        (not in file ownership table), so no agent will touch them.
+    - scenario: Build breaks due to npm/Go binary rebuild
+      likelihood: low
+      impact: medium
+      mitigation: |
+        Quality gates include full build (npm run build + go build) after each wave.
+        Agent D and E depend on Agent A (CSS keyframes must exist before component imports).
+        Wave 1 establishes foundation, Waves 2-3 are additive only.
+    - scenario: Accessibility regression (animations not wrapped in prefers-reduced-motion)
+      likelihood: low
+      impact: high
+      mitigation: |
+        Agent A has CRITICAL instruction to wrap animations in @media guard.
+        This is the first task in Wave 1, blocking all downstream animation usage.
+        Post-merge verification includes manual check with browser dev tools.
+    - scenario: Theme variable migration breaks existing UI
+      likelihood: low
+      impact: low
+      mitigation: |
+        Agents C and C2 only swap color classes (gray-* → muted/background).
+        Status colors (blue, green, red) are intentionally preserved.
+        Visual QA across light/dark themes catches any regressions.
+    - scenario: Icon imports fail (lucide-react not installed)
+      likelihood: low
+      impact: low
+      mitigation: |
+        lucide-react is already in package.json (line 40). Imports are guaranteed to work.
+        Build gate will fail immediately if imports are malformed.

@@ -64,7 +64,7 @@ export function WaveMergePanel({
       {allComplete && mergeStatus === 'idle' && !hasGate && (
         <button
           onClick={() => void onMerge(wave.wave)}
-          className="mt-3 w-full text-sm font-medium px-4 py-2.5 rounded-none bg-violet-600 text-white hover:bg-violet-700 active:scale-[0.98] transition-all"
+          className="mt-3 w-full text-sm font-medium px-4 py-2.5 rounded-none border border-violet-400 dark:border-violet-600 text-violet-800 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 active:scale-[0.98] transition-all"
         >
           Merge Wave {wave.wave}
         </button>
@@ -97,13 +97,13 @@ export function WaveMergePanel({
             <div className="flex">
               <button
                 onClick={() => void onRunTests(wave.wave)}
-                className="flex-1 text-sm font-medium px-4 py-2.5 rounded-none bg-teal-500/15 text-teal-400 border border-teal-500/30 hover:bg-teal-500/25 hover:border-teal-500/50 active:scale-[0.98] transition-all backdrop-blur-sm"
+                className="flex-1 text-sm font-medium px-4 py-2.5 rounded-none border border-teal-400 dark:border-teal-600 text-teal-800 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/40 active:scale-[0.98] transition-all"
               >
                 Run Tests
               </button>
               <button
                 onClick={() => setTestOutputOpen(testOutputOpen === wave.wave ? null : wave.wave)}
-                className={`px-3 py-2.5 rounded-none border-l-0 border text-xs font-medium transition-all backdrop-blur-sm ${testOutputOpen === wave.wave ? 'bg-teal-500/30 border-teal-500/50 text-teal-300' : 'bg-teal-500/15 border-teal-500/30 text-teal-400 hover:bg-teal-500/25'}`}
+                className={`px-3 py-2.5 rounded-none border-l-0 border text-xs font-medium transition-all ${testOutputOpen === wave.wave ? 'bg-teal-100 dark:bg-teal-900/40 border-teal-400 dark:border-teal-600 text-teal-800 dark:text-teal-300' : 'border-teal-400 dark:border-teal-600 text-teal-800 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/40'}`}
                 title="Toggle live output"
               >
                 Watch
@@ -113,12 +113,12 @@ export function WaveMergePanel({
 
           {testStatus === 'running' && (
             <div className="flex">
-              <div className="flex-1 bg-teal-500/15 border border-teal-500/30 rounded-none px-4 py-2.5 text-teal-400 text-sm animate-pulse">
+              <div className="flex-1 border border-teal-400 dark:border-teal-600 rounded-none px-4 py-2.5 text-teal-800 dark:text-teal-300 text-sm animate-pulse">
                 Running tests...
               </div>
               <button
                 onClick={() => setTestOutputOpen(testOutputOpen === wave.wave ? null : wave.wave)}
-                className={`px-3 py-2.5 rounded-none border-l-0 border text-xs font-medium transition-all backdrop-blur-sm ${testOutputOpen === wave.wave ? 'bg-teal-500/30 border-teal-500/50 text-teal-300' : 'bg-teal-500/15 border-teal-500/30 text-teal-400 hover:bg-teal-500/25'}`}
+                className={`px-3 py-2.5 rounded-none border-l-0 border text-xs font-medium transition-all ${testOutputOpen === wave.wave ? 'bg-teal-100 dark:bg-teal-900/40 border-teal-400 dark:border-teal-600 text-teal-800 dark:text-teal-300' : 'border-teal-400 dark:border-teal-600 text-teal-800 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-900/40'}`}
                 title="Toggle live output"
               >
                 Watch
@@ -139,7 +139,7 @@ export function WaveMergePanel({
                 <div className="flex gap-2">
                   <button
                     onClick={() => void onRunTests(wave.wave)}
-                    className="text-xs font-medium px-2 py-1 rounded bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+                    className="text-xs font-medium px-2 py-1 rounded-none border border-amber-400 dark:border-amber-600 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
                   >
                     &#x21BA; Retry
                   </button>
@@ -150,13 +150,13 @@ export function WaveMergePanel({
                         void onFixBuild(wave.wave, testState?.output || 'Tests failed', 'test')
                       }}
                       disabled={fixBuildStatus === 'running'}
-                      className="text-xs font-medium px-2 py-1 rounded-none rounded-l bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+                      className="text-xs font-medium px-2 py-1 rounded-none border border-blue-400 dark:border-blue-600 text-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40 disabled:opacity-50 transition-colors"
                     >
                       {fixBuildStatus === 'running' ? 'Fixing\u2026' : '\u2726 Fix with AI'}
                     </button>
                     <button
                       onClick={() => setFixOutputOpen(fixOutputOpen === wave.wave ? null : wave.wave)}
-                      className={`text-xs font-medium px-2 py-1 rounded-none rounded-r border-l border-blue-500 transition-colors ${fixOutputOpen === wave.wave ? 'bg-blue-500 text-white' : 'bg-blue-600/60 text-blue-200 hover:bg-blue-600'}`}
+                      className={`text-xs font-medium px-2 py-1 rounded-none border-l-0 border border-blue-400 dark:border-blue-600 transition-colors ${fixOutputOpen === wave.wave ? 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300' : 'text-blue-800 dark:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-900/40'}`}
                       title="Toggle AI fix output"
                     >
                       Watch
@@ -198,7 +198,7 @@ export function WaveMergePanel({
               actions={fixBuildStatus === 'complete' ? (
                 <button
                   onClick={() => void onRetryFinalize(wave.wave)}
-                  className="text-xs font-medium px-2 py-1 rounded-none bg-green-600 text-white hover:bg-green-700 transition-colors"
+                  className="text-xs font-medium px-2 py-1 rounded-none border border-green-400 dark:border-green-600 text-green-800 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40 transition-colors"
                 >
                   &#x21BA; Retry Finalization
                 </button>
@@ -224,7 +224,7 @@ export function WaveMergePanel({
                 </div>
                 <button
                   onClick={() => void onStartWave()}
-                  className="shrink-0 text-sm font-semibold px-5 py-2.5 rounded-none bg-green-600 text-white hover:bg-green-700 active:scale-[0.98] transition-all shadow-sm"
+                  className="shrink-0 text-sm font-semibold px-5 py-2.5 rounded-none border border-green-400 dark:border-green-600 text-green-800 dark:text-green-300 hover:bg-green-100 dark:hover:bg-green-900/40 active:scale-[0.98] transition-all"
                 >
                   Run Wave {wave.wave + 1} &rarr;
                 </button>
@@ -251,21 +251,21 @@ export function WaveMergePanel({
             <div className="flex items-center gap-2 mt-3">
               <button
                 onClick={() => void onMerge(wave.wave)}
-                className="text-xs font-medium px-3 py-1.5 rounded-md bg-gray-600 text-white hover:bg-gray-700 transition-colors"
+                className="text-xs font-medium px-3 py-1.5 rounded-none border border-gray-400 dark:border-gray-600 text-gray-800 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-900/40 transition-colors"
               >
                 Abort Merge
               </button>
               {(mergeState?.conflictingFiles?.length ?? 0) > 0 && (
                 <button
                   onClick={() => void resolveConflicts(slug, wave.wave)}
-                  className="text-xs font-medium px-3 py-1.5 rounded-md bg-violet-600 text-white hover:bg-violet-700 transition-colors"
+                  className="text-xs font-medium px-3 py-1.5 rounded-none border border-violet-400 dark:border-violet-600 text-violet-800 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/40 transition-colors"
                 >
                   Resolve with AI
                 </button>
               )}
               <button
                 onClick={() => void onMerge(wave.wave)}
-                className="text-xs font-medium px-3 py-1.5 rounded-md bg-amber-600 text-white hover:bg-amber-700 transition-colors"
+                className="text-xs font-medium px-3 py-1.5 rounded-none border border-amber-400 dark:border-amber-600 text-amber-800 dark:text-amber-300 hover:bg-amber-100 dark:hover:bg-amber-900/40 transition-colors"
               >
                 Retry Merge
               </button>

@@ -52,19 +52,25 @@ function getNodeColor(node: TimelineNode): string {
 
 let orbCounter = 0
 
-function Orb({ color, filled, filling, size = 20, type }: {
+function Orb({ color, filled, filling, size = 20, type, totalSegments, filledSegments }: {
   color: string
   filled: boolean
   filling?: boolean
   size?: number
   type: NodeType
+  /** Number of horizontal partitions (e.g. agent count) */
+  totalSegments?: number
+  /** How many segments are filled (bottom to top) */
+  filledSegments?: number
 }) {
   const [uid] = useState(() => `orb-${++orbCounter}`)
   const r = size / 2
   const prevFilled = useRef(filled)
+  const prevFilledSegs = useRef(filledSegments ?? 0)
   const [justFilled, setJustFilled] = useState(false)
+  const [justFilledSeg, setJustFilledSeg] = useState(-1)
 
-  // Detect unfilled → filled transition
+  // Detect unfilled → filled transition (whole orb)
   useLayoutEffect(() => {
     if (filled && !prevFilled.current) {
       setJustFilled(true)
@@ -74,10 +80,27 @@ function Orb({ color, filled, filling, size = 20, type }: {
     prevFilled.current = filled
   }, [filled])
 
+  // Detect individual segment fill transitions
+  useLayoutEffect(() => {
+    const cur = filledSegments ?? 0
+    const prev = prevFilledSegs.current
+    if (cur > prev && !filled) {
+      setJustFilledSeg(cur - 1)
+      const timer = setTimeout(() => setJustFilledSeg(-1), 600)
+      prevFilledSegs.current = cur
+      return () => clearTimeout(timer)
+    }
+    prevFilledSegs.current = cur
+  }, [filledSegments, filled])
+
   // Derive lighter/darker shades from the base color
   const lightColor = color + '80'
   const midColor = color
   const darkColor = color + 'cc'
+
+  const isSegmented = totalSegments !== undefined && totalSegments > 0 && !filled
+  const segCount = totalSegments ?? 0
+  const segFilled = filledSegments ?? 0
 
   return (
     <svg
@@ -86,7 +109,11 @@ function Orb({ color, filled, filling, size = 20, type }: {
       viewBox={`0 0 ${size} ${size}`}
       className={`flex-shrink-0 ${filling && !justFilled ? 'scale-110' : ''}`}
       style={{
-        filter: filled ? `drop-shadow(0 0 ${justFilled ? 12 : 6}px ${color}${justFilled ? 'aa' : '60'})` : undefined,
+        filter: filled
+          ? `drop-shadow(0 0 ${justFilled ? 12 : 6}px ${color}${justFilled ? 'aa' : '60'})`
+          : segFilled > 0
+            ? `drop-shadow(0 0 4px ${color}40)`
+            : undefined,
         transform: justFilled ? 'scale(1.35)' : undefined,
         transition: justFilled
           ? 'transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.15s ease-out'
@@ -115,6 +142,10 @@ function Orb({ color, filled, filling, size = 20, type }: {
           <stop offset="60%" stopColor="white" stopOpacity="0.2" />
           <stop offset="100%" stopColor="white" stopOpacity="0" />
         </radialGradient>
+        {/* Clip path for segmented fills — circle shape */}
+        <clipPath id={`${uid}-clip`}>
+          <circle cx={r} cy={r} r={r - 1.5} />
+        </clipPath>
       </defs>
       {/* Outer glow ring — only when filled */}
       {filled && (
@@ -122,14 +153,66 @@ function Orb({ color, filled, filling, size = 20, type }: {
           <animate attributeName="opacity" from="0" to="0.2" dur="0.5s" fill="freeze" />
         </circle>
       )}
-      {/* Body */}
+      {/* Body — unfilled base or full gradient when completely filled */}
       <circle
         cx={r} cy={r} r={r - 1.5}
-        fill={`url(#${uid}-grad)`}
+        fill={isSegmented ? `${midColor}15` : `url(#${uid}-grad)`}
         stroke={midColor}
         strokeWidth={filled ? 1.5 : 1}
         strokeOpacity={filled ? 0.8 : 0.3}
       />
+      {/* Segmented fill — horizontal partitions filling bottom-to-top */}
+      {isSegmented && (
+        <g clipPath={`url(#${uid}-clip)`}>
+          {Array.from({ length: segCount }, (_, i) => {
+            const segHeight = (size - 3) / segCount
+            const gap = 0.5
+            // Segments indexed bottom-to-top: segment 0 is at the bottom
+            const y = (size - 1.5) - (i + 1) * segHeight + gap / 2
+            const isFilled = i < segFilled
+            const isJustFilled = i === justFilledSeg
+            return (
+              <rect
+                key={i}
+                x={1.5}
+                y={y}
+                width={size - 3}
+                height={segHeight - gap}
+                rx={0.5}
+                fill={isFilled ? midColor : 'transparent'}
+                opacity={isFilled ? (isJustFilled ? 1 : 0.75) : 0}
+              >
+                {isFilled && (
+                  <animate
+                    attributeName="opacity"
+                    from="0"
+                    to={isJustFilled ? '1' : '0.75'}
+                    dur="0.4s"
+                    fill="freeze"
+                  />
+                )}
+              </rect>
+            )
+          })}
+          {/* Thin separator lines between segments */}
+          {Array.from({ length: segCount - 1 }, (_, i) => {
+            const segHeight = (size - 3) / segCount
+            const y = (size - 1.5) - (i + 1) * segHeight
+            return (
+              <line
+                key={`sep-${i}`}
+                x1={1.5}
+                y1={y}
+                x2={size - 1.5}
+                y2={y}
+                stroke={midColor}
+                strokeWidth={0.5}
+                strokeOpacity={0.2}
+              />
+            )
+          })}
+        </g>
+      )}
       {/* Inner highlight — glassy reflection */}
       <circle cx={r} cy={r} r={r - 2.5} fill={`url(#${uid}-hl)`} />
       {/* Shine burst — plays once on fill transition */}
@@ -406,6 +489,26 @@ export default function WaveStructurePanel({ impl, executionState }: WaveStructu
             const color = getNodeColor(node)
             const orbSize = node.type === 'merge' ? 12 : 20
 
+            // Compute segment data for wave orbs
+            let totalSegments: number | undefined
+            let filledSegments: number | undefined
+            if (node.type === 'wave' && node.waveNum !== undefined && node.agentCount && node.agentCount > 1) {
+              totalSegments = node.agentCount
+              // Count completed agents from execution state
+              if (executionState && executionState.agents.size > 0) {
+                let count = 0
+                for (const agent of node.agents ?? []) {
+                  const exec = executionState.agents.get(`${node.waveNum}:${agent}`)
+                  if (exec?.status === 'complete') count++
+                }
+                filledSegments = count
+              } else if (filled) {
+                filledSegments = totalSegments // all done
+              } else {
+                filledSegments = 0
+              }
+            }
+
             return (
               <div
                 key={i}
@@ -420,6 +523,8 @@ export default function WaveStructurePanel({ impl, executionState }: WaveStructu
                     size={orbSize}
                     filled={filled}
                     filling={filling}
+                    totalSegments={totalSegments}
+                    filledSegments={filledSegments}
                   />
                 </div>
 

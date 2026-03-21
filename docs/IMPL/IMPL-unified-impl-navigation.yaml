@@ -1,0 +1,453 @@
+title: "Unified IMPL Navigation — Merge Pipeline into Programs"
+feature_slug: unified-impl-navigation
+verdict: SUITABLE
+state: REVIEWED
+
+suitability_assessment: |
+  1. File decomposition: Work spans 10+ files across frontend (TSX components, hooks, types)
+     and backend (Go handlers). Files decompose cleanly into 4 agents with disjoint ownership.
+  2. Investigation-first: No unknowns — all components are well-understood, clear deprecation path.
+  3. Interface discoverability: The unified metrics endpoint contract can be fully defined upfront.
+     ProgramBoard already consumes program data; adding metrics is additive.
+  4. Pre-implementation status: All work is new — no prior partial implementations.
+  5. Parallelization value: Build/test cycle is >30s (Go build + npm build + vitest).
+     4 agents across 2 waves, with agents touching 2-4 files each. Clear speedup.
+
+  Estimated times:
+  - Scout phase: ~8 min
+  - Agent execution: ~12 min (4 agents, 2 waves, ~6 min avg per wave)
+  - Merge & verification: ~4 min
+  Total SAW time: ~24 min
+
+  Sequential baseline: ~40 min (4 agents x 10 min avg)
+  Time savings: ~16 min (40% faster)
+
+  Recommendation: Clear speedup. Proceed.
+
+test_command: "go test ./... && cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run"
+lint_command: "go vet ./..."
+
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./..."
+      required: true
+    - type: lint
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./..."
+      required: true
+    - type: test
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./..."
+      required: true
+    - type: build
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit"
+      required: true
+    - type: test
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run"
+      required: true
+
+scaffolds: []
+
+interface_contracts:
+  - name: "GET /api/programs (enhanced)"
+    description: |
+      Enhance the existing GET /api/programs endpoint to include global pipeline
+      metrics (throughput, queue depth, blocked/complete counts) alongside the
+      program list. Also returns standalone IMPLs not belonging to any program.
+    definition: |
+      // Go response type (program_handler.go)
+      type ProgramListResponse struct {
+        Programs   []protocol.ProgramDiscovery `json:"programs"`
+        Metrics    PipelineMetrics             `json:"metrics"`
+        Standalone []PipelineEntry             `json:"standalone"`
+      }
+    location: pkg/api/program_handler.go
+
+  - name: "UnifiedProgramsView props"
+    description: |
+      The enhanced ProgramBoard becomes the unified view. It receives global
+      metrics and standalone IMPLs alongside program data.
+    definition: |
+      interface UnifiedProgramsViewProps {
+        onSelectImpl: (slug: string) => void
+        onSelectProgram: (programSlug: string) => void
+      }
+    location: web/src/components/ProgramBoard.tsx
+
+  - name: "GlobalMetricsBar component"
+    description: |
+      Extracted metrics bar component that displays pipeline throughput stats.
+      Reuses the existing PipelineMetrics type from types/autonomy.ts.
+    definition: |
+      interface GlobalMetricsBarProps {
+        metrics: PipelineMetrics
+      }
+      export default function GlobalMetricsBar({ metrics }: GlobalMetricsBarProps): JSX.Element
+    location: web/src/components/GlobalMetricsBar.tsx
+
+  - name: "OperationsPanel component"
+    description: |
+      Collapsible sidebar panel containing Queue, Daemon, and Autonomy controls.
+      Extracted from PipelineView's right sidebar.
+    definition: |
+      interface OperationsPanelProps {
+        onSelectItem?: (slug: string) => void
+      }
+      export default function OperationsPanel({ onSelectItem }: OperationsPanelProps): JSX.Element
+    location: web/src/components/OperationsPanel.tsx
+
+file_ownership:
+  # Wave 1
+  - file: pkg/api/program_handler.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: pkg/api/program_handler_test.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+
+  - file: web/src/components/GlobalMetricsBar.tsx
+    agent: B
+    wave: 1
+    action: new
+    depends_on: []
+  - file: web/src/components/OperationsPanel.tsx
+    agent: B
+    wave: 1
+    action: new
+    depends_on: []
+
+  - file: web/src/programApi.ts
+    agent: C
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: web/src/types/program.ts
+    agent: C
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: web/src/hooks/usePipeline.ts
+    agent: C
+    wave: 1
+    action: modify
+    depends_on: []
+  - file: web/src/types/autonomy.ts
+    agent: C
+    wave: 1
+    action: modify
+    depends_on: []
+
+  # Wave 2
+  - file: web/src/components/ProgramBoard.tsx
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: [A, B, C]
+  - file: web/src/App.tsx
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: [A, B, C]
+  - file: web/src/components/layout/AppHeader.tsx
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: []
+  - file: web/src/components/layout/SidebarNav.tsx
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: []
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## Agent A — Backend: Enhance Program List Endpoint with Metrics + Standalone IMPLs
+
+          **What to implement:**
+          Modify `handleListPrograms` in `pkg/api/program_handler.go` to also return:
+          1. Global pipeline metrics (PipelineMetrics struct — reuse from pipeline_handler.go)
+          2. A list of "standalone" IMPLs that do not belong to any program
+
+          **Steps:**
+          1. In `program_handler.go`, the `PipelineMetrics` and `PipelineEntry` types
+             are already defined in `pipeline_handler.go` in the same package — no import needed.
+          2. Modify `ProgramListResponse` to add two fields:
+             ```go
+             type ProgramListResponse struct {
+               Programs   []protocol.ProgramDiscovery `json:"programs"`
+               Metrics    PipelineMetrics             `json:"metrics"`
+               Standalone []PipelineEntry             `json:"standalone"`
+             }
+             ```
+          3. In `handleListPrograms`, after listing programs, call the same logic as
+             `handleGetPipeline` to build metrics and entries. Filter entries to find
+             standalone IMPLs (those where `ProgramSlug == ""`).
+          4. Extract the metrics-building logic from `handleGetPipeline` into a helper
+             function `buildPipelineData(repos []RepoEntry, activeRuns *sync.Map) ([]PipelineEntry, PipelineMetrics)`
+             so both handlers can reuse it. Place this helper in `pipeline_handler.go`.
+
+          **Tests:**
+          Update `program_handler_test.go`:
+          - Test that GET /api/programs returns `metrics` and `standalone` fields
+          - Test that standalone IMPLs have no `program_slug`
+          - Test that program-linked IMPLs do NOT appear in `standalone`
+
+          **Verification gate:**
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./... && go test ./pkg/api/ -run TestProgram
+          ```
+
+          **Constraints:**
+          - Do NOT delete or modify the existing `handleGetPipeline` handler or its route.
+            It will be deprecated in a later cleanup, but must remain functional.
+          - Reuse existing types; do not create duplicate struct definitions.
+        files:
+          - pkg/api/program_handler.go
+          - pkg/api/program_handler_test.go
+        dependencies: []
+
+      - id: B
+        task: |
+          ## Agent B — Frontend: GlobalMetricsBar + OperationsPanel Components
+
+          **What to implement:**
+          Create two new React components extracted from PipelineView functionality:
+
+          **1. GlobalMetricsBar (`web/src/components/GlobalMetricsBar.tsx`):**
+          A horizontal metrics bar showing pipeline throughput stats. Port the display
+          logic from `PipelineMetrics.tsx` (the `PipelineMetricsBar` component) but
+          designed to sit at the top of the unified programs view rather than the bottom.
+
+          Props interface:
+          ```tsx
+          import { PipelineMetrics } from '../types/autonomy'
+          interface GlobalMetricsBarProps {
+            metrics: PipelineMetrics
+          }
+          ```
+
+          Display: IMPLs/hr, Avg Wave time, Queue depth, Blocked count, Completed count.
+          Use the same data fields as `PipelineMetrics` type in `types/autonomy.ts`.
+          Style as a top bar with subtle background (`bg-muted/40`), horizontal layout.
+
+          **2. OperationsPanel (`web/src/components/OperationsPanel.tsx`):**
+          A collapsible panel containing the Queue, Daemon, and Autonomy Settings tabs.
+          Port the tab structure from `PipelineView.tsx` lines 93-116 (the right sidebar
+          with Queue/Daemon/Settings tabs rendering QueuePanel, DaemonControl, AutonomySettings).
+
+          Props interface:
+          ```tsx
+          interface OperationsPanelProps {
+            onSelectItem?: (slug: string) => void
+          }
+          ```
+
+          Include a collapse/expand toggle button. When collapsed, show only a small
+          icon bar. When expanded, show the full tabbed panel (same as PipelineView sidebar).
+
+          **Tests:**
+          No unit tests required for these presentational components. TypeScript compilation
+          serves as the verification.
+
+          **Verification gate:**
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+          ```
+
+          **Constraints:**
+          - Import QueuePanel, DaemonControl, AutonomySettings from existing paths.
+          - Do NOT modify PipelineView.tsx, PipelineMetrics.tsx, or PipelineRow.tsx.
+          - Use the existing PipelineMetrics type from types/autonomy.ts.
+        files:
+          - web/src/components/GlobalMetricsBar.tsx
+          - web/src/components/OperationsPanel.tsx
+        dependencies: []
+
+      - id: C
+        task: |
+          ## Agent C — Frontend: API Layer + Type Updates for Unified Programs
+
+          **What to implement:**
+          Update the frontend API layer and types to consume the enhanced programs endpoint.
+
+          **1. Update `web/src/types/program.ts`:**
+          Import `PipelineMetrics` and `PipelineEntry` from `./autonomy` and add:
+          ```tsx
+          import { PipelineMetrics, PipelineEntry } from './autonomy'
+
+          export interface ProgramListResponse {
+            programs: ProgramDiscovery[]
+            metrics: PipelineMetrics
+            standalone: PipelineEntry[]
+          }
+          ```
+
+          **2. Update `web/src/programApi.ts`:**
+          Modify the `listPrograms` function to return the full `ProgramListResponse`
+          instead of just `ProgramDiscovery[]`:
+          ```tsx
+          export async function listPrograms(): Promise<ProgramListResponse> {
+            return sawClient.program.list() // update return type
+          }
+          ```
+          Also update the sawClient type definition in `lib/apiClient.ts` if the
+          `program.list()` method's return type needs updating.
+
+          **3. Update `web/src/hooks/usePipeline.ts`:**
+          Add a comment marking the hook as deprecated (it will be removed when
+          PipelineView is removed). Do not change its functionality — it still needs
+          to work for the existing PipelineView during the transition.
+          ```tsx
+          /** @deprecated Use the enhanced programs endpoint instead. Will be removed with PipelineView. */
+          ```
+
+          **4. Update `web/src/types/autonomy.ts`:**
+          Ensure `PipelineMetrics` and `PipelineEntry` are exported (they already are).
+          No changes needed unless they are not currently exported with `export`.
+
+          **Verification gate:**
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+          ```
+
+          **Constraints:**
+          - Do NOT break existing imports of `listPrograms` — the function signature
+            change is backward-compatible (returns a superset).
+          - Do NOT remove or modify the `usePipeline` hook functionality.
+          - Do NOT modify PipelineView.tsx or ProgramBoard.tsx.
+        files:
+          - web/src/programApi.ts
+          - web/src/types/program.ts
+          - web/src/hooks/usePipeline.ts
+          - web/src/types/autonomy.ts
+        dependencies: []
+
+  - number: 2
+    agents:
+      - id: D
+        task: |
+          ## Agent D — Frontend: Unified Programs View + Routing Consolidation
+
+          **What to implement:**
+          Wire together Wave 1 outputs to create the unified navigation experience.
+
+          **1. Enhance ProgramBoard.tsx (`web/src/components/ProgramBoard.tsx`):**
+          Transform ProgramBoard from a single-program view into the unified programs hub:
+
+          - Add a new top-level `UnifiedProgramsView` component (exported, in the same file
+            or a new wrapper) that:
+            a. Fetches program list via `listPrograms()` from programApi.ts (now returns
+               metrics + standalone IMPLs alongside programs)
+            b. Renders `GlobalMetricsBar` at the top with the metrics data
+            c. Renders program cards/list (existing ProgramList-style display) for each program
+            d. Renders a "Standalone" section at the bottom for IMPLs not in any program,
+               using the `standalone` array from the API response. Each standalone IMPL
+               shows as a clickable card similar to ImplCard.
+            e. When a program is selected, shows the existing ProgramBoard tier view
+            f. Renders `OperationsPanel` as a collapsible right sidebar
+
+          - Keep the existing `ProgramBoard` component for single-program detail view.
+            The new `UnifiedProgramsView` wraps it.
+
+          Props for the new component:
+          ```tsx
+          interface UnifiedProgramsViewProps {
+            onSelectImpl: (slug: string) => void
+            onSelectProgram: (programSlug: string) => void
+          }
+          ```
+
+          Subscribe to SSE events `program_list_updated` and `pipeline_updated` to
+          refresh data. Use the existing `useGlobalEvents` hook.
+
+          **2. Simplify App.tsx (`web/src/App.tsx`):**
+          - Remove `showPipeline` state variable and all pipeline-related branching
+          - Make the programs/unified view the default main content (remove the
+            `showPipeline` conditional branch that renders `<PipelineView>`)
+          - Remove the PipelineView import
+          - Change `showPrograms` to default to `true` (programs view is now the default)
+          - Update the main content area: when no specific IMPL is selected, show
+            `UnifiedProgramsView`
+          - Keep the ability to drill into a specific IMPL via `handleSelect` (which
+            shows ReviewScreen)
+
+          **3. Update AppHeader.tsx (`web/src/components/layout/AppHeader.tsx`):**
+          - Remove the "Pipeline" button entirely from the header
+          - Remove `onPipelineClick` and `showPipeline` from `AppHeaderProps`
+          - Rename "Programs" to "Home" or keep as "Programs" — it is now the primary nav
+          - Keep "New Plan", "New Program", search, settings buttons
+
+          **4. Update SidebarNav.tsx (`web/src/components/layout/SidebarNav.tsx`):**
+          - The sidebar should always show the program list (since programs is now default)
+          - When `showPrograms` is true (default), show ProgramList
+          - When a specific IMPL is selected, show the ImplList as before
+          - No major logic change needed, just ensure the default state works
+
+          **Verification gate:**
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && node_modules/.bin/vitest run
+          ```
+
+          **Constraints:**
+          - Do NOT delete PipelineView.tsx, PipelineRow.tsx, or PipelineMetrics.tsx files.
+            Mark them as deprecated with comments. File deletion happens in a follow-up cleanup.
+          - Do NOT modify pipeline_handler.go or any Go backend files.
+          - Import GlobalMetricsBar from './GlobalMetricsBar'
+          - Import OperationsPanel from './OperationsPanel'
+          - Import the enhanced listPrograms from '../programApi'
+          - The existing ProgramBoard single-program detail view must continue to work.
+        files:
+          - web/src/components/ProgramBoard.tsx
+          - web/src/App.tsx
+          - web/src/components/layout/AppHeader.tsx
+          - web/src/components/layout/SidebarNav.tsx
+        dependencies:
+          - A
+          - B
+          - C
+
+pre_mortem:
+  overall_risk: medium
+  rows:
+    - scenario: "Enhanced /api/programs endpoint returns different shape, breaking existing ProgramBoard consumers"
+      likelihood: medium
+      impact: high
+      mitigation: "Agent A adds fields to ProgramListResponse additively. Existing consumers only destructure 'programs' and ignore unknown fields. Agent C updates the TS type to match."
+
+    - scenario: "Removing pipeline button from header confuses users who rely on pipeline view"
+      likelihood: low
+      impact: low
+      mitigation: "Pipeline route/handler stays functional — only the UI button is removed. Users can still access /api/pipeline directly. Full cleanup is a separate follow-up."
+
+    - scenario: "Agent D's ProgramBoard changes conflict with existing SSE event handling"
+      likelihood: medium
+      impact: medium
+      mitigation: "Agent D wraps existing ProgramBoard in UnifiedProgramsView rather than modifying internal SSE logic. The existing per-program SSE stays intact."
+
+    - scenario: "Standalone IMPLs section shows duplicates of program-linked IMPLs"
+      likelihood: low
+      impact: medium
+      mitigation: "Agent A's backend logic explicitly filters standalone as ProgramSlug == empty string. Agent D renders only the standalone array from the API."
+
+known_issues: []
+
+post_merge_checklist:
+  groups:
+    - title: "Functional verification"
+      items:
+        - description: "Verify Programs view loads as default on app startup (no blank screen)"
+        - description: "Verify clicking a standalone IMPL navigates to ReviewScreen"
+        - description: "Verify PipelineView still works if accessed programmatically (not deleted yet)"
+    - title: "Build and test"
+      items:
+        - description: "Run full test suite"
+          command: "go test ./... && cd web && node_modules/.bin/vitest run"
+        - description: "Rebuild binary"
+          command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go build -o saw ./cmd/saw"

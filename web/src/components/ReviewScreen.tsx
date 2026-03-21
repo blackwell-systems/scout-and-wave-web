@@ -6,6 +6,7 @@ import { useExecutionSync, ExecutionSyncState, AgentExecStatus } from '../hooks/
 import { useGlobalEvents } from '../hooks/useGlobalEvents'
 import ActionButtons from './ActionButtons'
 import { CriticReviewPanel } from './CriticReviewPanel'
+import { CriticOutputPanel } from './CriticOutputPanel'
 import RevisePanel from './RevisePanel'
 import OverviewPanel from './review/OverviewPanel'
 import NotSuitableResearchPanel from './review/NotSuitableResearchPanel'
@@ -181,7 +182,7 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
   }, [executionState, diskStatus, hasWaveWork])
 
   // Critic gate — shared hook handles fetch, run, SSE, threshold detection
-  const { needsCritic, criticReport, criticRunning, runCritic: handleRunCritic } = useCriticState(slug, impl)
+  const { needsCritic, criticReport, criticRunning, criticOutput, criticError, runCritic: handleRunCritic } = useCriticState(slug, impl)
 
   const handleImplUpdated = useCallback((e: MessageEvent) => {
     try {
@@ -300,6 +301,21 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
         <div className={`mb-6 ${isNotSuitable ? 'opacity-40 pointer-events-none' : ''}`}>
           <OverviewPanel impl={impl} />
         </div>
+
+        {/* Critic live output — shown while running */}
+        {!isNotSuitable && (criticRunning || criticOutput) && !criticReport && (
+          <div className="mb-6">
+            <CriticOutputPanel output={criticOutput} running={criticRunning} error={criticError} />
+          </div>
+        )}
+        {!isNotSuitable && criticError && !criticRunning && (
+          <div className="mb-6 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-none px-4 py-3 flex items-center justify-between">
+            <span className="text-sm text-red-800 dark:text-red-300">Critic review failed: {criticError}</span>
+            <button onClick={handleRunCritic} className="text-xs font-medium px-3 py-1.5 rounded-none border border-red-400 dark:border-red-600 text-red-800 dark:text-red-300 hover:bg-red-100 dark:hover:bg-red-900/40 transition-colors">
+              Retry
+            </button>
+          </div>
+        )}
 
         {/* Critic review — display only, shown when report exists */}
         {!isNotSuitable && criticReport && (

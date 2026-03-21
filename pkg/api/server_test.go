@@ -605,23 +605,17 @@ func TestHandleApprove_PublishesEvent(t *testing.T) {
 
 // TestHandleWaveStart_Returns202 verifies that the start endpoint returns 202 Accepted
 // for a slug that is not currently active.
+//
+// handleWaveStart delegates to service.StartWave which spawns a real runWaveLoop
+// goroutine. The goroutine will fail quickly (no real git repo) and clean up
+// ActiveWaves. We just verify the 202 response and clean up the active marker.
 func TestHandleWaveStart_Returns202(t *testing.T) {
-	// Inject a no-op loop so the background goroutine doesn't write to the
-	// temp dir after the test ends (which would cause TempDir cleanup to fail).
-	// done channel ensures t.Cleanup waits for the goroutine to finish reading
-	// runWaveLoopFunc before restoring it, preventing a data race.
-	done := make(chan struct{})
-	orig := runWaveLoopFunc
-	runWaveLoopFunc = func(implPath, slug, repoPath string, publish func(string, interface{}), onStage func(ExecutionStage, StageStatus, int, string)) {
-		defer close(done)
-	}
-	t.Cleanup(func() {
-		<-done
-		runWaveLoopFunc = orig
-	})
-
 	s, dir := makeTestServer(t)
 	writeIMPLDoc(t, dir, "my-feature", minimalIMPL)
+
+	t.Cleanup(func() {
+		service.ActiveWaves.Delete("my-feature")
+	})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/wave/my-feature/start", nil)
 	req.SetPathValue("slug", "my-feature")

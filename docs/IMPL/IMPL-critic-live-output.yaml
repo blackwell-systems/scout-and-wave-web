@@ -1,0 +1,352 @@
+title: Critic Live Output Streaming
+feature_slug: critic-live-output
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability checks pass:
+
+    1. File decomposition: 6 files across backend and frontend, cleanly split
+       into 3 agents with disjoint ownership. Backend streaming (Go) is independent
+       of frontend display (React).
+
+    2. Investigation-first items: None. The pattern is well-established — Scout and
+       Wave agents already stream output via SSE. This is replication of a known pattern.
+
+    3. Interface discoverability: Yes. The SSE event names and payload shapes can be
+       fully specified upfront, matching existing scout_output/scout_complete patterns.
+
+    4. Pre-implementation status: All work is TODO. No existing streaming for critic.
+       Current implementation is fire-and-forget with silent failure (critic_handler.go:78-90).
+
+    5. Parallelization value: Build+test cycle is ~30s (Go build + npm build + embedded
+       assets). 3 agents across 2 waves with 2 files each is good parallelization.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~12 min (3 agents, waves 1+2)
+    - Merge and verification: ~5 min
+    Total SAW time: ~25 min
+    Sequential baseline: ~35 min
+    Time savings: ~10 min (29% faster)
+    Recommendation: Clear speedup with coordination value.
+test_command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go test -v ./...
+lint_command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./...
+file_ownership:
+    - file: pkg/api/critic_handler.go
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/api/critic_handler_test.go
+      agent: A
+      wave: 1
+      action: new
+    - file: web/src/hooks/useCriticState.ts
+      agent: B
+      wave: 1
+      action: modify
+    - file: web/src/components/CriticOutputPanel.tsx
+      agent: B
+      wave: 1
+      action: new
+    - file: web/src/components/WaveBoard.tsx
+      agent: C
+      wave: 2
+      action: modify
+    - file: web/src/components/ReviewScreen.tsx
+      agent: C
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: 'critic SSE event: critic_review_started'
+      description: Emitted immediately when critic execution begins
+      definition: |
+        SSE event name: critic_review_started
+        Payload: {"slug": string}
+        Emitted by: runCriticAsync in critic_handler.go
+        Consumed by: useCriticState.ts via global SSE events
+      location: pkg/api/critic_handler.go
+    - name: 'critic SSE event: critic_output'
+      description: Streamed line-by-line critic agent stdout
+      definition: |
+        SSE event name: critic_output
+        Payload: {"slug": string, "chunk": string}
+        Emitted by: runCriticAsync in critic_handler.go (line-by-line from subprocess)
+        Consumed by: useCriticState.ts, displayed in CriticOutputPanel.tsx
+      location: pkg/api/critic_handler.go
+    - name: 'critic SSE event: critic_review_failed'
+      description: Emitted when critic execution fails or times out
+      definition: |
+        SSE event name: critic_review_failed
+        Payload: {"slug": string, "error": string}
+        Emitted by: runCriticAsync in critic_handler.go
+        Consumed by: useCriticState.ts to stop spinner and show error
+      location: pkg/api/critic_handler.go
+    - name: useCriticState extended interface
+      description: Hook returns additional fields for live output and error state
+      definition: |
+        interface CriticState {
+          needsCritic: boolean
+          criticReport: CriticResult | null
+          criticRunning: boolean
+          criticOutput: string          // NEW: accumulated live output
+          criticError: string | null    // NEW: error message if failed
+          runCritic: () => void
+        }
+      location: web/src/hooks/useCriticState.ts
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Backend: Streaming critic output via SSE
+
+            **What to implement:**
+
+            Modify `runCriticAsync` in `pkg/api/critic_handler.go` to:
+
+            1. Emit `critic_review_started` SSE event immediately when the goroutine starts:
+               ```go
+               s.globalBroker.broadcastJSON("critic_review_started", map[string]string{"slug": slug})
+               ```
+
+            2. Replace `cmd.Run()` with line-by-line stdout/stderr streaming. Use `cmd.StdoutPipe()`
+               and `cmd.StderrPipe()` with `bufio.Scanner` to read output line-by-line, emitting
+               each line as a `critic_output` SSE event:
+               ```go
+               s.globalBroker.broadcastJSON("critic_output", map[string]interface{}{
+                 "slug": slug, "chunk": line + "\n",
+               })
+               ```
+
+            3. Add a 5-minute timeout using `context.WithTimeout`. If the context expires,
+               emit `critic_review_failed` with error "critic timed out after 5 minutes".
+
+            4. On any error (subprocess exit code != 0, pipe failure), emit `critic_review_failed`:
+               ```go
+               s.globalBroker.broadcastJSON("critic_review_failed", map[string]interface{}{
+                 "slug": slug, "error": err.Error(),
+               })
+               ```
+
+            5. On success, continue to emit `critic_review_complete` as before.
+
+            **Reference pattern:** See `runScoutAgent` in `pkg/service/scout_service.go` lines 76-150
+            for the exact stdout streaming pattern (onChunk callback). The critic uses globalBroker
+            directly since it doesn't have a per-run SSE channel.
+
+            **Tests:** Create `pkg/api/critic_handler_test.go` with:
+            - Test that `critic_review_started` event is emitted before subprocess runs
+            - Test that `critic_review_failed` event is emitted on error
+            - Test the timeout behavior (use a short timeout for testing)
+            - Mock the subprocess execution
+
+            **Verification gate:**
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./... && go vet ./... && go test ./pkg/api/... -run TestCritic
+            ```
+
+            **Constraints:**
+            - Do NOT modify any frontend files
+            - Keep the existing `handleGetCriticReview`, `handleRunCriticReview`, and `handleFixCritic` handler signatures unchanged
+            - The POST /api/impl/{slug}/run-critic endpoint must still return 202 immediately
+            - Use `globalBroker.broadcastJSON` for all SSE events (same pattern as `EmitCriticReviewComplete`)
+          files:
+            - pkg/api/critic_handler.go
+            - pkg/api/critic_handler_test.go
+        - id: B
+          task: |
+            ## Frontend: useCriticState hook + CriticOutputPanel
+
+            **What to implement:**
+
+            1. **Extend `useCriticState.ts`** to handle three new SSE events via `useGlobalEvents`:
+
+               - `critic_review_started`: set `criticRunning = true`, clear `criticOutput` and `criticError`
+               - `critic_output`: append `data.chunk` to `criticOutput` accumulator
+               - `critic_review_failed`: set `criticRunning = false`, set `criticError = data.error`
+
+               Add two new state fields:
+               ```typescript
+               const [criticOutput, setCriticOutput] = useState('')
+               const [criticError, setCriticError] = useState<string | null>(null)
+               ```
+
+               Return them from the hook: `{ needsCritic, criticReport, criticRunning, criticOutput, criticError, runCritic }`
+
+               Wire the SSE event handlers via `useGlobalEvents`:
+               ```typescript
+               useGlobalEvents({
+                 critic_review_complete: handleCriticComplete,
+                 critic_review_started: handleCriticStarted,
+                 critic_output: handleCriticOutput,
+                 critic_review_failed: handleCriticFailed,
+               })
+               ```
+
+               Each handler should check `data?.slug === slug` before updating state (same pattern as existing `handleCriticComplete`).
+
+            2. **Create `CriticOutputPanel.tsx`** — a collapsible panel that shows live critic output:
+
+               ```typescript
+               interface CriticOutputPanelProps {
+                 output: string
+                 running: boolean
+                 error: string | null
+               }
+               ```
+
+               - When `running && !output`: show "Starting critic review..." with a spinner
+               - When `running && output`: show output in a `<pre>` with auto-scroll (same pattern as ScoutLauncher output area)
+               - When `error`: show error in a red banner
+               - When `!running && !error && output`: show output collapsed by default with a toggle
+               - Use the typewriter effect pattern from ScoutLauncher (requestAnimationFrame-based catch-up)
+               - Style: dark code block background, monospace font, max-height with scroll
+
+            **Reference:** See `ScoutLauncher.tsx` lines 44-61 for the typewriter effect and lines 125-132 for SSE event handling pattern.
+
+            **Verification gate:**
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+            ```
+
+            **Constraints:**
+            - Do NOT modify WaveBoard.tsx or ReviewScreen.tsx (those are Wave 2 Agent C's files)
+            - Do NOT modify any Go files
+            - Export `CriticOutputPanel` as a named export
+            - The hook must remain backward-compatible: existing consumers that don't use the new fields should still work
+          files:
+            - web/src/hooks/useCriticState.ts
+            - web/src/components/CriticOutputPanel.tsx
+      base_commit: 8246a0b7122dc7063aeebe2d73ec6c9cc440ad93
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Frontend: Wire CriticOutputPanel into WaveBoard and ReviewScreen
+
+            **What to implement:**
+
+            1. **WaveBoard.tsx** — Add live critic output display:
+
+               The `useCriticState` hook is already called at line 78. After Wave 1 merges,
+               it now returns `criticOutput` and `criticError` in addition to existing fields.
+
+               Destructure the new fields:
+               ```typescript
+               const { needsCritic, criticReport, criticRunning, criticOutput, criticError, runCritic } = useCriticState(slug, impl)
+               ```
+
+               In the critic gate section (lines 360-377), when `criticRunning` is true,
+               render `<CriticOutputPanel>` below the "Reviewing Briefs..." button:
+               ```tsx
+               import { CriticOutputPanel } from './CriticOutputPanel'
+               // ...
+               {criticRunning && (
+                 <CriticOutputPanel output={criticOutput} running={criticRunning} error={criticError} />
+               )}
+               ```
+
+               Also show error state: if `criticError` and not `criticRunning`, show an error
+               banner with a "Retry" button that calls `runCritic`.
+
+            2. **ReviewScreen.tsx** — Add critic output in review screen:
+
+               The `useCriticState` hook is already called at line 184. Destructure new fields:
+               ```typescript
+               const { needsCritic, criticReport, criticRunning, criticOutput, criticError, runCritic: handleRunCritic } = useCriticState(slug, impl)
+               ```
+
+               Below the existing `CriticReviewPanel` display (line 305-309), add:
+               ```tsx
+               {criticRunning && (
+                 <div className="mb-6">
+                   <CriticOutputPanel output={criticOutput} running={criticRunning} error={criticError} />
+                 </div>
+               )}
+               {criticError && !criticRunning && (
+                 <div className="mb-6 bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800 rounded-lg px-4 py-3 flex items-center justify-between">
+                   <span className="text-sm text-red-800 dark:text-red-300">Critic review failed: {criticError}</span>
+                   <button onClick={handleRunCritic} className="text-xs font-medium px-3 py-1.5 rounded border border-red-300 dark:border-red-700 text-red-700 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900 transition-colors">
+                     Retry
+                   </button>
+                 </div>
+               )}
+               ```
+
+            **Verification gate:**
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+            ```
+
+            **Constraints:**
+            - Import `CriticOutputPanel` from `./CriticOutputPanel`
+            - Do NOT modify useCriticState.ts, CriticOutputPanel.tsx, or any Go files
+            - Preserve all existing functionality in both files
+            - Match existing styling patterns (Tailwind classes, dark mode support)
+          files:
+            - web/src/components/WaveBoard.tsx
+            - web/src/components/ReviewScreen.tsx
+          dependencies:
+            - B
+      base_commit: cfe0536212f5902fe996c7515f3a0d761d23e7de
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./...
+          required: true
+        - type: lint
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./...
+          required: true
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./pkg/api/... -run TestCritic
+          required: true
+        - type: custom
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+          required: true
+post_merge_checklist:
+    groups:
+        - title: Build and Deploy
+          items:
+            - description: Rebuild Go binary with embedded frontend assets
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-web && cd web && npm run build && cd .. && go build -o saw ./cmd/saw
+            - description: Restart server and trigger a critic review to verify SSE events stream correctly
+            - description: Verify critic_review_failed surfaces in UI when sawtools run-critic is not in PATH
+        - title: Full Test Suite
+          items:
+            - description: Run Go tests and TypeScript type check
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./... && cd web && npx tsc --noEmit
+completion_reports:
+    A:
+        status: complete
+        worktree: merged
+        branch: main
+        commit: cfe0536
+        notes: Stream critic output via SSE with timeout and failure events
+    B:
+        status: complete
+        worktree: merged
+        branch: main
+        commit: 01a7429
+        notes: Live critic output in useCriticState hook and CriticOutputPanel component
+integration_reports:
+    wave1:
+        wave: 1
+        gaps: []
+        valid: true
+        summary: Wave 1 merged to main — both agents' work committed
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: globalBroker SSE events dropped under high load
+          likelihood: low
+          impact: low
+          mitigation: globalBroker has buffered channels (size 16). Critic output is line-by-line, not high-frequency. Dropped lines are cosmetic only.
+        - scenario: Subprocess pipe reading blocks indefinitely
+          likelihood: low
+          impact: medium
+          mitigation: 5-minute context timeout ensures cleanup. Use cmd.Process.Kill() in defer after context cancellation.
+        - scenario: TypeScript compilation errors from new hook fields
+          likelihood: low
+          impact: low
+          mitigation: New fields are additive to existing interface. Existing destructuring patterns are unaffected.
+state: WAVE_EXECUTING

@@ -1,0 +1,496 @@
+title: "Session Replay — Record and Replay WaveBoard Execution Sessions"
+feature_slug: session-replay
+verdict: SUITABLE
+state: REVIEWED
+
+suitability_assessment: |
+  1. File decomposition: Work spans 10+ files across Go backend and React frontend
+     with clean separation. Backend recording (Go) is fully independent of frontend
+     replay UI (React). No two agents need the same file. PASS.
+
+  2. Investigation-first items: None. The SSE broker and WaveBoard reducer are
+     well-understood from code review. The publish() function in wave_runner.go
+     is the single tee point. PASS.
+
+  3. Interface discoverability: The JSONL event format is trivially defined
+     (timestamp_ms + event_type + data). The GET /api/replay/{slug} response
+     is just the JSONL content. All cross-agent interfaces are concrete. PASS.
+
+  4. Pre-implementation status: No existing replay infrastructure found in the
+     codebase. All work is greenfield. No DONE items to skip.
+
+  5. Parallelization value: 3 agents in Wave 1 (backend recording, replay API,
+     React replay UI) are fully independent. Build/test cycle is ~45s (Go build +
+     npm build). Each agent touches 2-3 files. Clear speedup over sequential.
+
+  Estimated times:
+  - Scout phase: ~8 min
+  - Agent execution: ~12 min (4 agents, ~8 min avg, 2 waves with 3+1 parallelism)
+  - Merge and verification: ~5 min
+  Total SAW time: ~25 min
+
+  Sequential baseline: ~35 min (4 agents x ~8 min avg + overhead)
+  Time savings: ~10 min (29% faster)
+
+  Recommendation: Clear speedup. Proceed.
+
+test_command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./... && cd web && npx tsc --noEmit"
+lint_command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./..."
+
+quality_gates:
+  level: standard
+  gates:
+    - type: build
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./cmd/saw"
+      required: true
+    - type: lint
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./..."
+      required: true
+    - type: typecheck
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit"
+      required: true
+    - type: test
+      command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./pkg/api/... -run TestReplay -count=1"
+      required: true
+
+scaffolds: []
+
+interface_contracts:
+  - name: RecordedEvent
+    description: "JSONL line format for recorded SSE events"
+    definition: |
+      // RecordedEvent is one line of the event-log.jsonl file.
+      type RecordedEvent struct {
+          TimestampMS int64       `json:"timestamp_ms"`
+          EventType   string      `json:"event_type"`
+          Data        interface{} `json:"data"`
+      }
+    location: "pkg/api/event_recorder.go"
+
+  - name: EventRecorder
+    description: "Interface for recording SSE events to JSONL during execution"
+    definition: |
+      // EventRecorder appends SSE events to a JSONL file.
+      type EventRecorder struct {
+          mu   sync.Mutex
+          file *os.File
+          enc  *json.Encoder
+          t0   int64 // start time in unix ms
+      }
+
+      func NewEventRecorder(dir string) (*EventRecorder, error)
+      func (r *EventRecorder) Record(eventType string, data interface{})
+      func (r *EventRecorder) Close() error
+    location: "pkg/api/event_recorder.go"
+
+  - name: "handleGetReplayLog"
+    description: "GET /api/replay/{slug} — returns the recorded JSONL event log"
+    definition: |
+      func (s *Server) handleGetReplayLog(w http.ResponseWriter, r *http.Request)
+      // Returns Content-Type: application/x-ndjson
+      // Body: one JSON object per line (RecordedEvent)
+      // 404 if no event-log.jsonl exists for slug
+    location: "pkg/api/replay_handler.go"
+
+  - name: "handleGetReplayExport"
+    description: "GET /api/replay/{slug}/export — returns self-contained HTML replay file"
+    definition: |
+      func (s *Server) handleGetReplayExport(w http.ResponseWriter, r *http.Request)
+      // Returns Content-Type: text/html
+      // Content-Disposition: attachment; filename="replay-{slug}.html"
+      // Embeds event data + minimal React player as inline script
+    location: "pkg/api/replay_handler.go"
+
+  - name: "useReplayEvents"
+    description: "React hook that replays recorded events through the waveEventsReducer"
+    definition: |
+      interface ReplayControls {
+        playing: boolean
+        speed: number        // 1, 2, 5, 10
+        progress: number     // 0-1 fraction
+        currentTimeMs: number
+        totalTimeMs: number
+        play: () => void
+        pause: () => void
+        setSpeed: (s: number) => void
+        seek: (fraction: number) => void
+      }
+
+      function useReplayEvents(slug: string): {
+        state: AppWaveState
+        controls: ReplayControls
+        loading: boolean
+        error: string | null
+      }
+    location: "web/src/hooks/useReplayEvents.ts"
+
+  - name: "ReplayBoard"
+    description: "React component that renders WaveBoard in replay mode with playback controls"
+    definition: |
+      interface ReplayBoardProps {
+        slug: string
+      }
+      function ReplayBoard(props: ReplayBoardProps): JSX.Element
+    location: "web/src/components/ReplayBoard.tsx"
+
+  - name: "fetchReplayLog"
+    description: "API client function to fetch the JSONL replay log"
+    definition: |
+      async function fetchReplayLog(slug: string): Promise<RecordedEvent[]>
+      // Fetches GET /api/replay/{slug}, parses NDJSON lines
+    location: "web/src/lib/apiClient.ts"
+
+file_ownership:
+  - file: pkg/api/event_recorder.go
+    agent: A
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/api/event_recorder_test.go
+    agent: A
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/api/wave_runner.go
+    agent: A
+    wave: 1
+    action: modify
+    depends_on: []
+
+  - file: pkg/api/replay_handler.go
+    agent: B
+    wave: 1
+    action: new
+    depends_on: []
+  - file: pkg/api/replay_handler_test.go
+    agent: B
+    wave: 1
+    action: new
+    depends_on: []
+
+  - file: web/src/hooks/useReplayEvents.ts
+    agent: C
+    wave: 1
+    action: new
+    depends_on: []
+  - file: web/src/components/ReplayBoard.tsx
+    agent: C
+    wave: 1
+    action: new
+    depends_on: []
+
+  - file: pkg/api/server.go
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: []
+  - file: web/src/lib/apiClient.ts
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: []
+  - file: web/src/components/ImplList.tsx
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: []
+  - file: web/src/components/ReviewScreen.tsx
+    agent: D
+    wave: 2
+    action: modify
+    depends_on: []
+
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: |
+          ## Agent A — Event Recording Infrastructure (Backend)
+
+          ### What to implement
+
+          Create `pkg/api/event_recorder.go` with:
+
+          1. `RecordedEvent` struct: `{TimestampMS int64, EventType string, Data interface{}}`.
+          2. `EventRecorder` struct that writes JSONL to `.saw-state/<slug>/event-log.jsonl`.
+             - `NewEventRecorder(dir string) (*EventRecorder, error)` — creates/truncates the JSONL file.
+             - `Record(eventType string, data interface{})` — appends one JSON line with timestamp_ms
+               relative to recorder creation time. Must be goroutine-safe (mutex around writes).
+             - `Close() error` — flushes and closes the file.
+
+          3. Integrate recording into `wave_runner.go`:
+             - In `runWaveLoop()`, after the `publish("run_started", ...)` call near line 96,
+               create an `EventRecorder` writing to the .saw-state directory for the slug.
+               The .saw-state dir path: find it from repoPath + "/.saw-state/" + slug + "/".
+               Create the directory if it doesn't exist.
+             - Wrap the existing `publish` function to also call `recorder.Record(event, data)`
+               for every event. The original publish behavior must be preserved exactly.
+             - Call `recorder.Close()` in a defer after creation, or after run_complete/run_failed.
+
+          ### Interface contract
+          ```go
+          type RecordedEvent struct {
+              TimestampMS int64       `json:"timestamp_ms"`
+              EventType   string      `json:"event_type"`
+              Data        interface{} `json:"data"`
+          }
+          ```
+
+          ### Tests
+          Create `pkg/api/event_recorder_test.go`:
+          - TestEventRecorder_BasicRecording: create recorder, record 3 events, close, read file,
+            verify JSONL format and timestamps are monotonically increasing.
+          - TestEventRecorder_ConcurrentWrites: goroutine-safe recording from 10 goroutines.
+          - TestEventRecorder_DirectoryCreation: recorder creates missing parent dirs.
+
+          ### Verification gate
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./cmd/saw && go test ./pkg/api/ -run TestEventRecorder -count=1 -v
+          ```
+
+          ### Constraints
+          - Do NOT modify the publish function signature. Wrap it in-place within runWaveLoop.
+          - The recorder must not block or slow down SSE delivery. Writes happen in the same
+            goroutine (publish is already serialized), so a simple mutex suffices.
+          - Use `json.Encoder` for streaming writes (no buffering full event list in memory).
+          - File path: `<repoPath>/.saw-state/<slug>/event-log.jsonl`
+        files:
+          - pkg/api/event_recorder.go
+          - pkg/api/event_recorder_test.go
+          - pkg/api/wave_runner.go
+        dependencies: []
+
+      - id: B
+        task: |
+          ## Agent B — Replay API Endpoints (Backend)
+
+          ### What to implement
+
+          Create `pkg/api/replay_handler.go` with two HTTP handlers:
+
+          1. `handleGetReplayLog(w, r)` — GET /api/replay/{slug}
+             - Read `r.PathValue("slug")` to get the slug.
+             - Resolve the IMPL path using `s.resolveIMPLPath(slug)` to get the repoPath.
+             - Open `<repoPath>/.saw-state/<slug>/event-log.jsonl`.
+             - If file not found, return 404 with JSON error `{"error": "no replay log found"}`.
+             - Set Content-Type: application/x-ndjson and stream the file contents to the response.
+
+          2. `handleGetReplayExport(w, r)` — GET /api/replay/{slug}/export
+             - Read the event-log.jsonl file (same resolution as above).
+             - Return 404 if not found.
+             - Build a self-contained HTML file:
+               - HTML page with inline `<script>` containing the event data as a JSON array.
+               - Minimal JavaScript player that iterates events with setTimeout, updating a
+                 simple text-based visualization (agent names, statuses, wave progress).
+               - Playback controls: play/pause button, speed selector (1x/2x/5x/10x).
+               - No React dependency in the export — use vanilla JS for portability.
+             - Set Content-Type: text/html.
+             - Set Content-Disposition: attachment; filename="replay-{slug}.html".
+
+          ### Tests
+          Create `pkg/api/replay_handler_test.go`:
+          - TestHandleGetReplayLog_Success: write a sample JSONL file, request it, verify NDJSON response.
+          - TestHandleGetReplayLog_NotFound: request non-existent slug, verify 404.
+          - TestHandleGetReplayExport_Success: write sample JSONL, request export, verify HTML
+            contains the event data and has <script> tags.
+          - TestHandleGetReplayExport_NotFound: verify 404.
+
+          Use `httptest.NewRecorder()` and the existing test_helpers_test.go patterns for setting
+          up a test Server. Reference existing handler tests like `wave_runner_test.go` or
+          `impl_handlers_test.go` for patterns.
+
+          ### Verification gate
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./cmd/saw && go test ./pkg/api/ -run TestHandleGetReplay -count=1 -v
+          ```
+
+          ### Constraints
+          - Do NOT register routes in server.go — that is Agent D's job in Wave 2.
+          - The handlers must be exported methods on `*Server` so they can be registered later.
+          - For the HTML export, use Go's `html/template` to generate the page. Embed the
+            template as a string constant in the same file.
+          - The export HTML must work offline — no external CDN links.
+          - Keep the vanilla JS player simple: a div per agent showing status, a progress bar,
+            and control buttons. No need to replicate the full WaveBoard visual fidelity.
+        files:
+          - pkg/api/replay_handler.go
+          - pkg/api/replay_handler_test.go
+        dependencies: []
+
+      - id: C
+        task: |
+          ## Agent C — Replay UI Components (Frontend)
+
+          ### What to implement
+
+          1. Create `web/src/hooks/useReplayEvents.ts`:
+             - Fetch the JSONL replay log via `fetch('/api/replay/' + slug)`.
+             - Parse the NDJSON response into an array of `{timestamp_ms, event_type, data}`.
+             - Use `useReducer` with the existing `waveEventsReducer` from `./waveEventsReducer`.
+             - Import `waveEventsReducer`, `initialWaveState`, and `AppWaveState` from
+               `./waveEventsReducer`.
+             - Implement timed event dispatch:
+               - On play(), use `setTimeout` chains to dispatch events at their recorded timestamps,
+                 scaled by the current speed multiplier.
+               - Track current event index and elapsed time.
+               - pause() clears the pending timeout.
+               - seek(fraction) jumps to the event nearest to `fraction * totalTimeMs`, resets
+                 the reducer to `initialWaveState`, and replays all events up to that point
+                 synchronously (fast-forward).
+             - Map recorded event_type strings to WaveAction dispatch calls using the same
+               parsing logic from `web/src/lib/waveEventListeners.ts`. Import or replicate
+               the event-to-action mapping from that file.
+             - Return `{ state: AppWaveState, controls: ReplayControls, loading, error }`.
+
+             ReplayControls interface:
+             ```typescript
+             interface ReplayControls {
+               playing: boolean
+               speed: number        // 1, 2, 5, 10
+               progress: number     // 0-1 fraction through the timeline
+               currentTimeMs: number
+               totalTimeMs: number
+               play: () => void
+               pause: () => void
+               setSpeed: (s: number) => void
+               seek: (fraction: number) => void
+             }
+             ```
+
+          2. Create `web/src/components/ReplayBoard.tsx`:
+             - Props: `{ slug: string }`
+             - Use the `useReplayEvents(slug)` hook.
+             - Render the same visual layout as WaveBoard but in read-only mode:
+               - Import `AgentCard` from `./AgentCard` for agent visualization.
+               - Import `StageTimeline` from `./StageTimeline` for stage progress.
+               - Build waves array from state.waves and render agent cards per wave.
+               - No action buttons (no rerun, merge, proceed — replay is read-only).
+             - Add a playback control bar at the top:
+               - Play/Pause button (toggle).
+               - Speed buttons: 1x, 2x, 5x, 10x (highlight active).
+               - Scrub bar: an `<input type="range">` mapped to 0-1 progress.
+                 onChange calls controls.seek().
+               - Time display: "currentTimeMs / totalTimeMs" formatted as mm:ss.
+             - Show loading spinner while fetching event log.
+             - Show error message if fetch fails or slug has no replay data.
+
+          ### Verification gate
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+          ```
+
+          ### Constraints
+          - Do NOT modify any existing files. Only create the two new files.
+          - Do NOT modify apiClient.ts or add route entries — Agent D handles that.
+          - Use plain `fetch()` directly in the hook for now (Agent D will add to apiClient later).
+          - The ReplayBoard must NOT import from WaveBoard.tsx directly (WaveBoard has side
+            effects like SSE connections). Reuse the child components (AgentCard, StageTimeline,
+            ProgressBar) instead.
+          - Use Tailwind classes consistent with the existing WaveBoard styling.
+          - The waveEventsReducer is already pure — same events produce same state. Leverage this
+            for deterministic replay.
+        files:
+          - web/src/hooks/useReplayEvents.ts
+          - web/src/components/ReplayBoard.tsx
+        dependencies: []
+
+  - number: 2
+    type: integration
+    agents:
+      - id: D
+        task: |
+          ## Agent D — Integration Wiring
+
+          ### What to implement
+
+          Wire all Wave 1 outputs into the application:
+
+          1. **pkg/api/server.go** — Register replay routes in the `New()` function.
+             Add after the existing journal routes (around line 214):
+             ```go
+             // Session replay
+             s.mux.HandleFunc("GET /api/replay/{slug}", s.handleGetReplayLog)
+             s.mux.HandleFunc("GET /api/replay/{slug}/export", s.handleGetReplayExport)
+             ```
+
+          2. **web/src/lib/apiClient.ts** — Add replay methods to the SawClient.
+             In the client namespace (find the pattern), add:
+             ```typescript
+             replay: {
+               getLog: (slug: string) => fetchReplayLog(slug),
+               getExportUrl: (slug: string) => `/api/replay/${slug}/export`,
+             }
+             ```
+             Add a `fetchReplayLog` function that fetches GET /api/replay/{slug},
+             reads the response as text, splits by newline, and parses each line as JSON.
+
+          3. **web/src/components/ImplList.tsx** — Add a "Replay" button/icon next to
+             completed IMPLs in the sidebar list. The button should:
+             - Only appear when the IMPL state is "COMPLETE" or in the complete/ directory.
+             - Use a play-circle icon from lucide-react.
+             - Navigate to or trigger showing the ReplayBoard for that slug.
+
+          4. **web/src/components/ReviewScreen.tsx** — Add a "Replay Session" button
+             in the review/completed IMPL view. When clicked, show the ReplayBoard
+             component for the current slug. Add a toggle between "Review" and "Replay"
+             views if ReplayBoard is imported.
+
+          ### Verification gate
+          ```
+          cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./cmd/saw && cd web && npx tsc --noEmit
+          ```
+
+          ### Constraints
+          - Only modify the four files listed. No other files.
+          - Follow existing patterns in server.go for route registration.
+          - Follow existing patterns in apiClient.ts for method namespacing.
+          - The ReplayBoard import should be lazy-loaded (React.lazy) to avoid
+            increasing the initial bundle size for users who don't use replay.
+        files:
+          - pkg/api/server.go
+          - web/src/lib/apiClient.ts
+          - web/src/components/ImplList.tsx
+          - web/src/components/ReviewScreen.tsx
+        dependencies:
+          - A
+          - B
+          - C
+
+post_merge_checklist:
+  groups:
+    - title: "Build verification"
+      items:
+        - description: "Rebuild Go binary"
+          command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go build -o saw ./cmd/saw"
+        - description: "Rebuild frontend assets"
+          command: "cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm run build"
+        - description: "Run full test suite"
+          command: "cd /Users/dayna.blackwell/code/scout-and-wave-web && go test ./..."
+    - title: "Smoke tests"
+      items:
+        - description: "Start a wave execution, verify event-log.jsonl is created in .saw-state/<slug>/"
+        - description: "After completion, click Replay button, verify playback controls work"
+        - description: "Download HTML export, open in browser, verify standalone playback"
+
+pre_mortem:
+  overall_risk: low
+  rows:
+    - scenario: "Event log JSONL grows very large for long-running IMPLs (agent_output chunks)"
+      likelihood: medium
+      impact: low
+      mitigation: "agent_output events contain small chunks (~200 bytes). A 5-agent IMPL with verbose output produces ~2-5MB JSONL. Acceptable for MVP. Future: add event filtering or compression."
+
+    - scenario: "seek() performance degrades with many events (replaying from start on each seek)"
+      likelihood: low
+      impact: low
+      mitigation: "Typical session has 50-200 events. Synchronous replay of 200 reducer calls is <10ms. If needed later, add snapshots at intervals."
+
+    - scenario: "Stale disk state from previous runs creates confusing replay"
+      likelihood: low
+      impact: low
+      mitigation: "NewEventRecorder truncates the file on each new run. Only the latest run is recorded."
+
+    - scenario: "HTML export file size too large for sharing"
+      likelihood: low
+      impact: low
+      mitigation: "Event data is compact JSON. The vanilla JS player adds ~5KB. Total export for typical session: 50-500KB. Acceptable."
