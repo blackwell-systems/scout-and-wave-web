@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import ImplEditor from './ImplEditor'
 import type { CriticResult, CriticIssue, CriticFixRequest } from '../types'
 
 interface CriticReviewPanelProps {
@@ -6,6 +7,11 @@ interface CriticReviewPanelProps {
   onApplyFix?: (fix: CriticFixRequest) => Promise<void>
   onRerunCritic?: () => void
   criticRunning?: boolean
+  onAutoFixAll?: () => Promise<void>
+  autoFixRunning?: boolean
+  showEditor?: boolean
+  onToggleEditor?: () => void
+  slug?: string
 }
 
 function formatReviewedAt(iso: string): string {
@@ -89,11 +95,13 @@ function IssueFixer({
   agentId,
   wave,
   onApplyFix,
+  criticRunning,
 }: {
   issue: CriticIssue
   agentId: string
   wave: number
   onApplyFix?: (fix: CriticFixRequest) => Promise<void>
+  criticRunning?: boolean
 }): JSX.Element | null {
   const [fixStatus, setFixStatus] = useState<IssueFixStatus>({ state: 'idle' })
 
@@ -132,10 +140,13 @@ function IssueFixer({
       {fixStatus.state === 'loading' && (
         <span className="text-[11px] text-muted-foreground animate-pulse">Applying fix...</span>
       )}
-      {fixStatus.state === 'success' && (
+      {fixStatus.state === 'success' && !criticRunning && (
         <span className="text-[11px] text-green-600 dark:text-green-400 font-medium">
           &#10003; Fixed
         </span>
+      )}
+      {fixStatus.state === 'success' && criticRunning && (
+        <span className="text-[11px] text-muted-foreground animate-pulse">Re-running critic...</span>
       )}
       {fixStatus.state === 'error' && (
         <span className="text-[11px] text-red-600 dark:text-red-400">{fixStatus.error}</span>
@@ -156,7 +167,7 @@ function countIssueBySeverity(result: CriticResult): { errors: number; warnings:
   return { errors, warnings }
 }
 
-export function CriticReviewPanel({ result, onApplyFix, onRerunCritic, criticRunning }: CriticReviewPanelProps): JSX.Element {
+export function CriticReviewPanel({ result, onApplyFix, onRerunCritic, criticRunning, onAutoFixAll, autoFixRunning, showEditor, onToggleEditor, slug }: CriticReviewPanelProps): JSX.Element {
   const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set())
 
   const toggleAgent = (agentId: string) => {
@@ -237,6 +248,15 @@ export function CriticReviewPanel({ result, onApplyFix, onRerunCritic, criticRun
         >
           {result.verdict}
         </span>
+        {!isPass && onAutoFixAll && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onAutoFixAll(); }}
+            disabled={autoFixRunning}
+            className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-none border border-primary/30 bg-transparent text-primary hover:bg-primary/5 transition-colors disabled:opacity-50"
+          >
+            {autoFixRunning ? 'Fixing...' : 'Fix All Issues'}
+          </button>
+        )}
         <span className={`text-xs transition-transform duration-200 ${expanded ? '' : '-rotate-90'} ${isPass ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
           &#x25BC;
         </span>
@@ -350,6 +370,7 @@ export function CriticReviewPanel({ result, onApplyFix, onRerunCritic, criticRun
                               agentId={review.agent_id}
                               wave={agentWave}
                               onApplyFix={onApplyFix}
+                              criticRunning={criticRunning}
                             />
                           </li>
                         ))}
@@ -363,24 +384,41 @@ export function CriticReviewPanel({ result, onApplyFix, onRerunCritic, criticRun
         </div>
       )}
 
-      {/* Footer: reviewed at + re-run button */}
+      {/* Footer: reviewed at + re-run button + edit IMPL button */}
       <div className="px-4 pb-4 flex items-center justify-between">
         <p className="text-xs text-muted-foreground">
           Reviewed at: {formatReviewedAt(result.reviewed_at)}
         </p>
-        {onRerunCritic && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onRerunCritic() }}
-            disabled={criticRunning}
-            className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-none border border-border bg-background text-foreground hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {criticRunning && (
-              <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
-            )}
-            {criticRunning ? 'Running...' : 'Re-run Critic'}
-          </button>
-        )}
+        <div className="flex items-center gap-2">
+          {!isPass && onToggleEditor && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onToggleEditor(); }}
+              className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-none border border-border bg-background text-foreground hover:bg-muted transition-colors"
+            >
+              Edit IMPL
+            </button>
+          )}
+          {onRerunCritic && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRerunCritic(); }}
+              disabled={criticRunning}
+              className="flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-none border border-border bg-background text-foreground hover:bg-muted transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {criticRunning && (
+                <span className="inline-block w-3 h-3 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              )}
+              {criticRunning ? 'Running...' : 'Re-run Critic'}
+            </button>
+          )}
+        </div>
       </div>
+
+      {/* Inline IMPL editor */}
+      {showEditor && slug && (
+        <div className="border-t border-border">
+          <ImplEditor slug={slug} />
+        </div>
+      )}
       </>}
     </div>
   )

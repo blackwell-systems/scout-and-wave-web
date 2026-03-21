@@ -1,7 +1,15 @@
 import { useState, useCallback, useEffect, useMemo } from 'react'
 import { sawClient } from '../lib/apiClient'
 import { useGlobalEvents } from './useGlobalEvents'
-import type { CriticResult, IMPLDocResponse } from '../types'
+import type { CriticResult, CriticFixRequest, IMPLDocResponse } from '../types'
+
+/** Response shape from POST /api/impl/{slug}/auto-fix-critic */
+interface AutoFixCriticResponse {
+  fixes_applied: Array<{ check: string; agent_id: string; description: string }>
+  fixes_failed: Array<{ check: string; agent_id: string; reason: string }>
+  new_result?: CriticResult
+  all_resolved: boolean
+}
 
 interface CriticState {
   /** Whether this IMPL meets E37 auto-trigger threshold (3+ wave-1 agents OR 2+ repos) */
@@ -16,6 +24,14 @@ interface CriticState {
   criticError: string | null
   /** Trigger critic review */
   runCritic: () => void
+  /** Apply a single critic fix */
+  applyCriticFix: (fix: CriticFixRequest) => Promise<void>
+  /** Run auto-fix for all fixable issues, re-validate, re-run critic */
+  autoFixAll: () => Promise<void>
+  /** Whether auto-fix is in progress */
+  autoFixRunning: boolean
+  /** Auto-fix result summary (null when not run) */
+  autoFixResult: AutoFixCriticResponse | null
 }
 
 export function useCriticState(slug: string, impl: IMPLDocResponse | null): CriticState {
@@ -23,6 +39,8 @@ export function useCriticState(slug: string, impl: IMPLDocResponse | null): Crit
   const [criticRunning, setCriticRunning] = useState(false)
   const [criticOutput, setCriticOutput] = useState('')
   const [criticError, setCriticError] = useState<string | null>(null)
+  const [autoFixRunning, setAutoFixRunning] = useState(false)
+  const [autoFixResult, setAutoFixResult] = useState<AutoFixCriticResponse | null>(null)
 
   const needsCritic = useMemo(() => {
     if (!impl) return false
@@ -96,5 +114,38 @@ export function useCriticState(slug: string, impl: IMPLDocResponse | null): Crit
     critic_review_failed: handleCriticFailed,
   })
 
-  return { needsCritic, criticReport, criticRunning, criticOutput, criticError, runCritic }
+  const applyCriticFix = useCallback(async (fix: CriticFixRequest) => {
+    await sawClient.impl.applyCriticFix(slug, fix)
+    fetchCritic()
+  }, [slug, fetchCritic])
+
+  const autoFixAll = useCallback(async () => {
+    setAutoFixRunning(true)
+    setAutoFixResult(null)
+    try {
+      // Inline fetch: autoFixCritic client method is added by Agent B in parallel
+      const r = await fetch(`/api/impl/${encodeURIComponent(slug)}/auto-fix-critic`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+      if (!r.ok) throw new Error(await r.text())
+      const data = (await r.json()) as AutoFixCriticResponse
+      setAutoFixResult(data)
+      if (data.new_result) {
+        setCriticReport(data.new_result)
+      } else {
+        fetchCritic()
+      }
+    } catch (err) {
+      setCriticError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setAutoFixRunning(false)
+    }
+  }, [slug, fetchCritic])
+
+  return {
+    needsCritic, criticReport, criticRunning, criticOutput, criticError, runCritic,
+    applyCriticFix, autoFixAll, autoFixRunning, autoFixResult,
+  }
 }
