@@ -1,9 +1,13 @@
 package service
 
 import (
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
 // waveTestPublisher is a test double for EventPublisher that records published events.
@@ -180,5 +184,168 @@ func TestFinalizeWave_InvalidWave(t *testing.T) {
 	err := FinalizeWave(deps, "test-slug", 0)
 	if err == nil {
 		t.Fatal("expected error for wave < 1, got nil")
+	}
+}
+
+func TestRepoRedirect_SingleRepoDifferentFromServer(t *testing.T) {
+	// Create a temporary directory structure simulating sibling repos.
+	parent := t.TempDir()
+	serverRepo := filepath.Join(parent, "scout-and-wave-web")
+	targetRepo := filepath.Join(parent, "scout-and-wave-go")
+	if err := os.MkdirAll(serverRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(targetRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := &protocol.IMPLManifest{
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/engine/run.go", Agent: "A", Wave: 1, Repo: "scout-and-wave-go"},
+			{File: "pkg/engine/run_test.go", Agent: "A", Wave: 1, Repo: "scout-and-wave-go"},
+			{File: "pkg/protocol/validate.go", Agent: "B", Wave: 1, Repo: "scout-and-wave-go"},
+		},
+	}
+
+	resolvedPath, repoName, redirected := resolveTargetRepoFromManifest(manifest, serverRepo)
+	if !redirected {
+		t.Fatal("expected redirect to be true")
+	}
+	if repoName != "scout-and-wave-go" {
+		t.Fatalf("expected target repo name 'scout-and-wave-go', got %q", repoName)
+	}
+	if resolvedPath != targetRepo {
+		t.Fatalf("expected resolved path %q, got %q", targetRepo, resolvedPath)
+	}
+}
+
+func TestRepoRedirect_NoRepoField_NoRedirect(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/service/wave_service.go", Agent: "A", Wave: 1},
+			{File: "pkg/api/handler.go", Agent: "B", Wave: 1},
+		},
+	}
+
+	resolvedPath, repoName, redirected := resolveTargetRepoFromManifest(manifest, "/some/repo/path")
+	if redirected {
+		t.Fatal("expected no redirect when repo fields are empty")
+	}
+	if repoName != "" {
+		t.Fatalf("expected empty target repo name, got %q", repoName)
+	}
+	if resolvedPath != "/some/repo/path" {
+		t.Fatalf("expected original path, got %q", resolvedPath)
+	}
+}
+
+func TestRepoRedirect_SameRepo_NoRedirect(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/foo.go", Agent: "A", Wave: 1, Repo: "my-repo"},
+		},
+	}
+
+	resolvedPath, repoName, redirected := resolveTargetRepoFromManifest(manifest, "/workspace/my-repo")
+	if redirected {
+		t.Fatal("expected no redirect when repo matches current")
+	}
+	if repoName != "" {
+		t.Fatalf("expected empty target repo name, got %q", repoName)
+	}
+	if resolvedPath != "/workspace/my-repo" {
+		t.Fatalf("expected original path, got %q", resolvedPath)
+	}
+}
+
+func TestRepoRedirect_UnresolvableRepo(t *testing.T) {
+	// Use a temp dir with no siblings matching the target repo.
+	parent := t.TempDir()
+	serverRepo := filepath.Join(parent, "server-repo")
+	if err := os.MkdirAll(serverRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := &protocol.IMPLManifest{
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/foo.go", Agent: "A", Wave: 1, Repo: "nonexistent-repo"},
+		},
+	}
+
+	resolvedPath, repoName, redirected := resolveTargetRepoFromManifest(manifest, serverRepo)
+	if redirected {
+		t.Fatal("expected redirected to be false for unresolvable repo")
+	}
+	if repoName != "nonexistent-repo" {
+		t.Fatalf("expected target repo name 'nonexistent-repo', got %q", repoName)
+	}
+	if resolvedPath != "" {
+		t.Fatalf("expected empty resolved path for unresolvable repo, got %q", resolvedPath)
+	}
+}
+
+func TestRepoRedirect_ConfigJsonResolution(t *testing.T) {
+	parent := t.TempDir()
+	serverRepo := filepath.Join(parent, "web-app")
+	targetRepo := filepath.Join(parent, "custom-location", "engine")
+	if err := os.MkdirAll(serverRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(targetRepo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write saw.config.json with custom repo path.
+	configContent := `{"repos": [{"name": "engine", "path": "` + targetRepo + `"}]}`
+	if err := os.WriteFile(filepath.Join(serverRepo, "saw.config.json"), []byte(configContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	manifest := &protocol.IMPLManifest{
+		FileOwnership: []protocol.FileOwnership{
+			{File: "pkg/run.go", Agent: "A", Wave: 1, Repo: "engine"},
+		},
+	}
+
+	resolvedPath, repoName, redirected := resolveTargetRepoFromManifest(manifest, serverRepo)
+	if !redirected {
+		t.Fatal("expected redirect via config json")
+	}
+	if repoName != "engine" {
+		t.Fatalf("expected target repo name 'engine', got %q", repoName)
+	}
+	if resolvedPath != targetRepo {
+		t.Fatalf("expected resolved path %q, got %q", targetRepo, resolvedPath)
+	}
+}
+
+func TestTargetRepoNames(t *testing.T) {
+	manifest := &protocol.IMPLManifest{
+		FileOwnership: []protocol.FileOwnership{
+			{File: "a.go", Agent: "A", Wave: 1, Repo: "repo-a"},
+			{File: "b.go", Agent: "B", Wave: 1, Repo: "repo-b"},
+			{File: "c.go", Agent: "C", Wave: 1, Repo: "repo-a"},
+			{File: "d.go", Agent: "D", Wave: 1},
+		},
+	}
+
+	names := targetRepoNames(manifest)
+	if len(names) != 2 {
+		t.Fatalf("expected 2 unique repo names, got %d: %v", len(names), names)
+	}
+
+	nameSet := make(map[string]bool)
+	for _, n := range names {
+		nameSet[n] = true
+	}
+	if !nameSet["repo-a"] || !nameSet["repo-b"] {
+		t.Fatalf("expected repo-a and repo-b, got %v", names)
+	}
+}
+
+func TestTargetRepoNames_Nil(t *testing.T) {
+	names := targetRepoNames(nil)
+	if names != nil {
+		t.Fatalf("expected nil for nil manifest, got %v", names)
 	}
 }

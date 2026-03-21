@@ -223,6 +223,50 @@ func runWaveLoop(
 		return
 	}
 
+	// Cross-repo detection: check if the IMPL targets a different repo.
+	if targetRepos := targetRepoNames(manifest); len(targetRepos) > 0 {
+		publish("run_started", map[string]interface{}{
+			"slug":         slug,
+			"impl_path":    implPath,
+			"target_repos": targetRepos,
+			"target_repo":  targetRepos[0],
+		})
+	}
+
+	resolvedPath, targetRepo, redirected := resolveTargetRepoFromManifest(manifest, repoPath)
+	if targetRepo != "" && resolvedPath == "" {
+		// Target repo specified but cannot be resolved -- abort.
+		publish("run_failed", map[string]string{
+			"error": fmt.Sprintf(
+				"IMPL targets repo %q but it cannot be resolved. "+
+					"Not found as sibling of %s or in saw.config.json repos list. "+
+					"Configure the repo path in saw.config.json or ensure it exists as a sibling directory.",
+				targetRepo, repoPath),
+		})
+		return
+	}
+	if redirected {
+		fmt.Fprintf(os.Stderr, "[wave] repo redirect: %s -> %s (target repo: %s)\n", repoPath, resolvedPath, targetRepo)
+		publish("repo_redirected", map[string]interface{}{
+			"from":        repoPath,
+			"to":          resolvedPath,
+			"target_repo": targetRepo,
+		})
+		publish("repo_mismatch_warning", map[string]interface{}{
+			"slug":             slug,
+			"server_repo":      repoPath,
+			"target_repo":      targetRepo,
+			"target_repo_path": resolvedPath,
+			"message": fmt.Sprintf(
+				"IMPL targets repo %q at %s but server is running from %s. Redirecting worktree operations.",
+				targetRepo, resolvedPath, repoPath),
+		})
+		// Override repoPath for the remainder of this wave loop.
+		repoPath = resolvedPath
+		// Re-resolve models from the target repo's saw.config.json.
+		waveModel, scaffoldModel, integrationModel = resolveModelsFromPath(repoPath)
+	}
+
 	ctx := context.Background()
 
 	// Run scaffold agent only when scaffolds exist and are not yet committed.
@@ -544,6 +588,95 @@ func splitLines(s string) []string {
 		lines = append(lines, s[start:])
 	}
 	return lines
+}
+
+// resolveTargetRepoFromManifest inspects the manifest's FileOwnership entries
+// to determine if the IMPL targets a repo different from repoPath. If all
+// repo: fields point to a single repo name that differs from repoPath's
+// basename, it attempts to resolve the actual path from saw.config.json repos
+// or sibling directories. Returns the resolved path (which may be the original
+// repoPath if no redirect is needed) and the target repo name (empty if no
+// redirect).
+func resolveTargetRepoFromManifest(manifest *protocol.IMPLManifest, repoPath string) (resolvedPath, targetRepoName string, redirected bool) {
+	if manifest == nil || len(manifest.FileOwnership) == 0 {
+		return repoPath, "", false
+	}
+
+	// Collect distinct repo names from file_ownership entries.
+	repoNames := make(map[string]bool)
+	for _, fo := range manifest.FileOwnership {
+		if fo.Repo != "" {
+			repoNames[fo.Repo] = true
+		}
+	}
+
+	// No repo: fields at all -- no redirect needed.
+	if len(repoNames) == 0 {
+		return repoPath, "", false
+	}
+
+	// Multiple different repos -- multi-repo wave, no single redirect.
+	if len(repoNames) > 1 {
+		return repoPath, "", false
+	}
+
+	// Single target repo -- check if it differs from current repoPath.
+	var targetRepo string
+	for name := range repoNames {
+		targetRepo = name
+	}
+
+	currentRepoName := filepath.Base(repoPath)
+	if targetRepo == currentRepoName {
+		return repoPath, "", false
+	}
+
+	// Target repo differs -- attempt resolution.
+	// 1. Try saw.config.json repos list.
+	if cfgPath := filepath.Join(repoPath, "saw.config.json"); cfgPath != "" {
+		if cfgData, err := os.ReadFile(cfgPath); err == nil {
+			var cfg struct {
+				Repos []struct {
+					Name string `json:"name"`
+					Path string `json:"path"`
+				} `json:"repos,omitempty"`
+			}
+			if json.Unmarshal(cfgData, &cfg) == nil {
+				for _, r := range cfg.Repos {
+					if r.Name == targetRepo && r.Path != "" {
+						if info, err := os.Stat(r.Path); err == nil && info.IsDir() {
+							return r.Path, targetRepo, true
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// 2. Try sibling directory.
+	siblingPath := filepath.Join(filepath.Dir(repoPath), targetRepo)
+	if info, err := os.Stat(siblingPath); err == nil && info.IsDir() {
+		return siblingPath, targetRepo, true
+	}
+
+	// Cannot resolve -- return empty to signal failure.
+	return "", targetRepo, false
+}
+
+// targetRepoNames returns the list of distinct repo names from file_ownership.
+func targetRepoNames(manifest *protocol.IMPLManifest) []string {
+	if manifest == nil {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var names []string
+	for _, fo := range manifest.FileOwnership {
+		if fo.Repo != "" && !seen[fo.Repo] {
+			seen[fo.Repo] = true
+			names = append(names, fo.Repo)
+		}
+	}
+	return names
 }
 
 // waveAgentsHaveCommitsWithManifest checks whether every agent in the wave
