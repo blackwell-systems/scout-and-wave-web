@@ -12,6 +12,9 @@ export interface AppLayoutProps {
   onToggleSidebar?: () => void
   sidebarWidth?: number
   sidebarDividerProps?: Record<string, any>
+  rightPanelCollapsed?: boolean
+  onToggleRightPanel?: () => void
+  rightPanelCollapsedContent?: React.ReactNode
 }
 
 export function AppLayout(props: AppLayoutProps): JSX.Element {
@@ -26,6 +29,9 @@ export function AppLayout(props: AppLayoutProps): JSX.Element {
     onToggleSidebar,
     sidebarWidth,
     sidebarDividerProps,
+    rightPanelCollapsed = false,
+    onToggleRightPanel,
+    rightPanelCollapsedContent,
   } = props
 
   const draggingRight = useRef(false)
@@ -77,19 +83,27 @@ export function AppLayout(props: AppLayoutProps): JSX.Element {
           {main}
         </div>
 
-        {/* Right divider + rail — only when rightPanel is provided */}
-        {rightPanel != null && (
+        {/* Right divider + rail — only when rightPanel is provided and not collapsed */}
+        {rightPanel != null && !rightPanelCollapsed && (
           <div
             onMouseDown={rightDividerMouseDown}
             style={{ width: '4px', flexShrink: 0, alignSelf: 'stretch' }}
             className="cursor-col-resize select-none bg-border hover:bg-primary/30 transition-colors"
           />
         )}
-        {rightPanel != null && (
-          <div className="shrink-0 overflow-hidden border-l" style={{ width: rightPanelWidth }}>
+        {rightPanelCollapsed && rightPanelCollapsedContent != null ? (
+          <div
+            className="shrink-0 border-l border-border flex flex-col overflow-hidden transition-[width] duration-200 ease-in-out cursor-pointer"
+            style={{ width: 40 }}
+            onClick={onToggleRightPanel}
+          >
+            {rightPanelCollapsedContent}
+          </div>
+        ) : rightPanel != null ? (
+          <div className="shrink-0 overflow-hidden border-l transition-[width] duration-200 ease-in-out" style={{ width: rightPanelWidth }}>
             {rightPanel}
           </div>
-        )}
+        ) : null}
       </div>
     </div>
   )
