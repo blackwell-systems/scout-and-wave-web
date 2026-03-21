@@ -1,0 +1,357 @@
+completion_date: "2026-03-21"
+title: Program Dependency Graph visualization in ProgramBoard detail view
+feature_slug: program-dep-graph
+verdict: SUITABLE
+suitability_assessment: |
+    1. File decomposition: 3 files changing across 3 agents with disjoint ownership.
+       ProgramDependencyGraph.tsx (enhanced graph component), ProgramBoard.tsx (toggle
+       integration), and a new test file. No file conflicts.
+
+    2. Investigation-first: None. The existing ProgramDependencyGraph.tsx already has
+       SVG rendering, tier-based layout, and tooltip infrastructure. This is an
+       enhancement, not a mystery to investigate.
+
+    3. Interface discoverability: Yes. The ProgramDependencyGraph component already
+       has a clear props interface. The new onSelectImpl callback and status prop are
+       straightforward extensions. The ProgramBoard already has onSelectImpl in its props.
+
+    4. Pre-implementation status: ProgramDependencyGraph.tsx exists with basic tier-based
+       dep inference. It lacks: click-to-navigate, status badges on nodes, wave progress
+       display, responsive width, and is not integrated into ProgramBoard detail view.
+       The existing component is rendered as a standalone Card but not toggled from the
+       ProgramBoard. PARTIAL status — enhance and integrate.
+
+    5. Parallelization value: Build+test cycle is moderate (tsc + vite build + vitest).
+       3 agents with 1-2 files each. Wave 1 has 2 independent agents (graph enhancement
+       + tests), Wave 2 wires into ProgramBoard. Clear speedup for 2 parallel agents
+       in Wave 1.
+
+    Estimated times:
+    - Scout phase: ~5 min
+    - Agent execution: ~10 min (2 agents parallel in W1 ~5min, 1 agent W2 ~5min)
+    - Merge & verification: ~3 min
+    Total SAW time: ~18 min
+    Sequential baseline: ~25 min (3 agents x ~8 min avg)
+    Time savings: ~7 min (28% faster)
+    Recommendation: Clear speedup from Wave 1 parallelism.
+test_command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run
+lint_command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go vet ./...
+file_ownership:
+    - file: web/src/components/ProgramDependencyGraph.tsx
+      agent: A
+      wave: 1
+      action: modify
+    - file: web/src/components/__tests__/ProgramDependencyGraph.test.tsx
+      agent: B
+      wave: 1
+      action: new
+    - file: web/src/components/ProgramBoard.tsx
+      agent: C
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: ProgramDependencyGraphProps
+      description: |
+        Enhanced props interface for the ProgramDependencyGraph component.
+        Adds onSelectImpl callback for click-to-navigate and waveProgress for
+        live wave status display on executing nodes.
+      definition: |
+        interface ProgramDependencyGraphProps {
+          programSlug: string
+          status?: ProgramStatus
+          onSelectImpl?: (implSlug: string) => void
+          waveProgress?: Record<string, string>
+        }
+      location: web/src/components/ProgramDependencyGraph.tsx
+    - name: ProgramBoardViewToggle
+      description: |
+        The ProgramBoard detail view adds a 'viewMode' state toggling between
+        'list' (existing TierSection cards) and 'graph' (ProgramDependencyGraph).
+        Toggle buttons render in the ProgramBoard header next to existing controls.
+      definition: |
+        // Internal state within ProgramBoard component:
+        const [viewMode, setViewMode] = useState<'list' | 'graph'>('list')
+      location: web/src/components/ProgramBoard.tsx
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Enhance ProgramDependencyGraph.tsx
+
+            **Context:** web/src/components/ProgramDependencyGraph.tsx exists with basic
+            SVG-based tier graph rendering. It has tier column backgrounds, bezier edge
+            paths with transitive reduction, hover tooltips, and abbreviated slug labels.
+
+            **What to implement:**
+
+            1. Add `onSelectImpl?: (implSlug: string) => void` and
+               `waveProgress?: Record<string, string>` to ProgramDependencyGraphProps.
+
+            2. Enhance node rendering (currently just abbreviated initials):
+               - Show full slug text (truncated to fit NODE_W, which should increase
+                 to ~140px to accommodate slug text)
+               - Add a small status badge below the slug text using getNodeFill colors
+                 (a colored dot or small rect with status text like "complete", "pending")
+               - For executing/in-progress nodes, show wave progress from waveProgress
+                 prop (e.g., "W2/3") below the status badge
+               - Add reviewed status (yellow: bg=#eab30840, border=#eab30880, text=#eab308)
+                 to getNodeFill
+
+            3. Make nodes clickable:
+               - When onSelectImpl is provided, add cursor-pointer and hover effect
+                 (slight scale or brightness change via SVG transform)
+               - On click, call onSelectImpl(node.impl.slug)
+               - Keep existing hover tooltip behavior
+
+            4. Responsive width:
+               - Use a useRef + ResizeObserver on the container div to get available width
+               - Scale TIER_GAP and IMPL_GAP dynamically based on container width
+               - Set SVG width to 100% of container, adjust viewBox accordingly
+               - Minimum width: current hardcoded values as floor
+
+            5. Keep existing features intact: tier column backgrounds, tier labels,
+               bezier edge paths, transitive reduction, tooltip with portal, theme
+               reactivity via MutationObserver.
+
+            **Interface contract:**
+            ```typescript
+            interface ProgramDependencyGraphProps {
+              programSlug: string
+              status?: ProgramStatus
+              onSelectImpl?: (implSlug: string) => void
+              waveProgress?: Record<string, string>
+            }
+            ```
+
+            **Verification gate:**
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+            ```
+
+            **Constraints:**
+            - No external graph libraries (keep SVG-based like wave orbs)
+            - Keep the existing Card wrapper with "Program Dependency Graph" title
+            - Preserve all existing functionality (loading states, error states, empty states)
+            - Follow existing codebase patterns: lucide-react for icons, Tailwind for styling
+              where possible (but SVG attributes for SVG-specific styling)
+          files:
+            - web/src/components/ProgramDependencyGraph.tsx
+        - id: B
+          task: |
+            ## Tests for ProgramDependencyGraph
+
+            **Context:** Create tests for the ProgramDependencyGraph component at
+            web/src/components/__tests__/ProgramDependencyGraph.test.tsx
+
+            **What to implement:**
+
+            1. Test rendering with mock ProgramStatus data:
+               - 2 tiers, tier 1 with 2 IMPLs (complete, pending), tier 2 with 1 IMPL (executing)
+               - Verify SVG renders with correct number of rect elements for nodes
+               - Verify tier labels render ("TIER" text elements)
+
+            2. Test empty/loading/error states:
+               - No status prop provided -> shows "Loading..."
+               - Empty tier_statuses -> shows "No tiers to display"
+
+            3. Test onSelectImpl callback:
+               - Render with onSelectImpl mock
+               - Click a node group element -> verify onSelectImpl called with correct slug
+
+            4. Test waveProgress display:
+               - Pass waveProgress={{ "impl-a": "Wave 2/3" }} for an executing IMPL
+               - Verify the wave progress text appears in the SVG
+
+            **Testing patterns to follow:**
+            - Use vitest + @testing-library/react (see existing tests like QueuePanel.test.tsx)
+            - Import { render, screen, fireEvent } from '@testing-library/react'
+            - Mock fetchProgramStatus if needed (the component fetches when no status prop)
+            - Use data-testid attributes if needed for SVG element selection
+
+            **Mock data shape:**
+            ```typescript
+            const mockStatus: ProgramStatus = {
+              program_slug: 'test-program',
+              title: 'Test Program',
+              state: 'TIER_EXECUTING',
+              current_tier: 2,
+              tier_statuses: [
+                {
+                  number: 1,
+                  description: 'Foundation',
+                  impl_statuses: [
+                    { slug: 'impl-alpha', title: 'Alpha', status: 'complete' },
+                    { slug: 'impl-beta', title: 'Beta', status: 'complete' },
+                  ],
+                  complete: true,
+                },
+                {
+                  number: 2,
+                  description: 'Features',
+                  impl_statuses: [
+                    { slug: 'impl-gamma', title: 'Gamma', status: 'executing' },
+                  ],
+                  complete: false,
+                },
+              ],
+              contract_statuses: [],
+              completion: {
+                tiers_complete: 1, tiers_total: 2,
+                impls_complete: 2, impls_total: 3,
+                total_agents: 6, total_waves: 4,
+              },
+              is_executing: true,
+            }
+            ```
+
+            **Verification gate:**
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run ProgramDependencyGraph
+            ```
+
+            **Constraints:**
+            - Follow existing test patterns in the codebase (see __tests__/ directory)
+            - Use vitest, NOT jest
+            - Mock fetch for the programApi calls
+          files:
+            - web/src/components/__tests__/ProgramDependencyGraph.test.tsx
+      base_commit: 7c1c1638c243451d162f57c1b8bc14e77111361e
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Integrate Graph view toggle into ProgramBoard
+
+            **Context:** web/src/components/ProgramBoard.tsx contains the ProgramBoard
+            default export (single-program detail view, lines 376-615). It currently
+            renders tier sections as Card components in a vertical list. The
+            ProgramDependencyGraph component exists at the same directory level.
+
+            **What to implement:**
+
+            1. Add view mode state to ProgramBoard:
+               ```typescript
+               const [viewMode, setViewMode] = useState<'list' | 'graph'>('list')
+               ```
+
+            2. Add toggle buttons in the ProgramBoard header (line ~534, inside the
+               flex div that contains the title and controls):
+               - Two buttons: "List" and "Graph" styled as a segmented control
+               - Use a pill/tab style: the active button gets bg-primary text-primary-foreground,
+                 inactive gets bg-muted text-muted-foreground
+               - Place between the title area and the existing right-side controls
+               - Icons: use lucide-react List and GitBranch (or Network) icons
+
+            3. Conditionally render based on viewMode:
+               - 'list': render existing TierSection cards (current behavior, lines 587-602)
+               - 'graph': render ProgramDependencyGraph with:
+                 - status={status} (pass the already-fetched ProgramStatus)
+                 - programSlug={programSlug}
+                 - onSelectImpl={onSelectImpl}
+                 - waveProgress={waveProgress}
+
+            4. Import ProgramDependencyGraph:
+               ```typescript
+               import ProgramDependencyGraph from './ProgramDependencyGraph'
+               ```
+
+            5. Import icons:
+               ```typescript
+               import { ChevronDown, List, GitBranch } from 'lucide-react'
+               ```
+               (ChevronDown is already imported by UnifiedProgramsView)
+
+            **Key constraint:** Only modify the default export ProgramBoard function
+            (lines 376-615). Do NOT modify UnifiedProgramsView, ProgramCard, TierSection,
+            ImplCard, or any other function in this file.
+
+            **Verification gate:**
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+            ```
+
+            **Constraints:**
+            - Preserve all existing ProgramBoard functionality (SSE, loading, error,
+              replan button, executing banner)
+            - The toggle should persist across re-renders but reset when programSlug changes
+              (add viewMode to the useEffect cleanup or reset in the slug-change effect)
+            - Follow existing styling patterns in the file (Tailwind classes, dark mode support)
+          files:
+            - web/src/components/ProgramBoard.tsx
+          dependencies:
+            - A
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+          required: true
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run
+          required: true
+post_merge_checklist:
+    groups:
+        - title: Visual verification
+          items:
+            - description: Verify ProgramBoard List/Graph toggle renders correctly in the browser
+            - description: Verify clicking a graph node navigates to the IMPL detail view
+        - title: Build and deploy
+          items:
+            - description: Rebuild frontend and Go binary
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-web && cd web && npm run build && cd .. && go build -o saw ./cmd/saw
+completion_reports:
+    A:
+        status: complete
+        branch: saw/program-dep-graph/wave1-agent-A
+        commit: ed553d2
+        files_changed:
+            - web/src/components/ProgramDependencyGraph.tsx
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/program-dep-graph/wave1-agent-B
+        commit: 2d4d037
+        files_changed:
+            - web/src/components/__tests__/ProgramDependencyGraph.test.tsx
+        files_created:
+            - web/src/components/__tests__/ProgramDependencyGraph.test.tsx
+        tests_added:
+            - renders SVG with correct number of node rects
+            - renders tier labels
+            - renders abbreviated labels for nodes
+            - shows Loading
+            - shows No tiers to display
+            - shows error message when fetch fails
+            - calls onSelectImpl with correct slug
+            - displays wave progress text for executing IMPLs
+        verification: PASS (6/8 tests pass now; 2 test interface contract props Agent A will add)
+    C:
+        status: complete
+        branch: main
+        commit: 6917b06
+        files_changed:
+            - web/src/components/ProgramBoard.tsx
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: ResizeObserver not available in test environment (jsdom)
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Agent B should mock ResizeObserver in test setup or use a polyfill.
+            The component should have a fallback for when ResizeObserver is unavailable.
+        - scenario: SVG click events not firing correctly in testing-library
+          likelihood: medium
+          impact: low
+          mitigation: |
+            Use fireEvent.click on the SVG group element. If needed, add data-testid
+            to clickable node groups for reliable selection.
+        - scenario: Graph layout breaks with many IMPLs (>10 per tier)
+          likelihood: low
+          impact: medium
+          mitigation: |
+            The responsive width calculation should handle overflow gracefully.
+            Add horizontal scrolling on the container div (already has overflow-auto).
+state: WAVE_PENDING
