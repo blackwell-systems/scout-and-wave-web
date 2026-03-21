@@ -65,6 +65,186 @@ func TestHandleListPrograms_Empty(t *testing.T) {
 	}
 }
 
+// TestHandleListPrograms_MetricsAndStandalone tests that GET /api/programs returns
+// metrics and standalone fields, and that standalone contains only non-program IMPLs.
+func TestHandleListPrograms_MetricsAndStandalone(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	repoDir := filepath.Join(tmpDir, "test-repo")
+	docsDir := filepath.Join(repoDir, "docs")
+	implDir := filepath.Join(docsDir, "IMPL")
+	completeDir := filepath.Join(implDir, "complete")
+	if err := os.MkdirAll(completeDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a PROGRAM manifest that claims "program-impl"
+	programContent := `title: Test Program
+program_slug: test-program
+state: PLANNING
+impls:
+  - slug: program-impl
+    title: Program Implementation
+    tier: 1
+    status: pending
+tiers:
+  - number: 1
+    impls:
+      - program-impl
+    description: First tier
+completion:
+  tiers_complete: 0
+  tiers_total: 1
+  impls_complete: 0
+  impls_total: 1
+  total_agents: 0
+  total_waves: 0
+`
+	if err := os.WriteFile(filepath.Join(docsDir, "PROGRAM-test-program.yaml"), []byte(programContent), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create active IMPL files: one linked to program, one standalone
+	implLinked := `title: Program Implementation
+feature_slug: program-impl
+`
+	implStandalone := `title: Standalone Feature
+feature_slug: standalone-impl
+`
+	if err := os.WriteFile(filepath.Join(implDir, "IMPL-program-impl.yaml"), []byte(implLinked), 0644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(implDir, "IMPL-standalone-impl.yaml"), []byte(implStandalone), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a completed standalone IMPL
+	implComplete := `title: Done Feature
+feature_slug: done-impl
+`
+	if err := os.WriteFile(filepath.Join(completeDir, "IMPL-done-impl.yaml"), []byte(implComplete), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write saw.config.json
+	configPath := filepath.Join(tmpDir, "saw.config.json")
+	config := SAWConfig{
+		Repos: []RepoEntry{{Name: "test-repo", Path: repoDir}},
+	}
+	configData, _ := json.Marshal(config)
+	if err := os.WriteFile(configPath, configData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Bypass implProgramCache TTL for test
+	oldTTL := implProgramCacheTTL
+	implProgramCacheTTL = 0
+	implProgramCacheInstance = &implProgramCache{ttl: 0}
+	defer func() {
+		implProgramCacheTTL = oldTTL
+		implProgramCacheInstance = &implProgramCache{ttl: oldTTL}
+	}()
+
+	server := &Server{
+		cfg: Config{
+			RepoPath: tmpDir,
+			IMPLDir:  docsDir,
+		},
+	}
+
+	req := httptest.NewRequest("GET", "/api/programs", nil)
+	w := httptest.NewRecorder()
+
+	server.handleListPrograms(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	var resp ProgramListResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	// Verify metrics are present
+	if resp.Metrics.CompletedCount != 1 {
+		t.Errorf("expected completed_count=1, got %d", resp.Metrics.CompletedCount)
+	}
+
+	// Verify standalone only contains non-program IMPLs
+	for _, s := range resp.Standalone {
+		if s.ProgramSlug != "" {
+			t.Errorf("standalone entry %q has program_slug=%q, expected empty", s.Slug, s.ProgramSlug)
+		}
+	}
+
+	// Verify standalone-impl and done-impl are in standalone
+	standaloneSlugs := make(map[string]bool)
+	for _, s := range resp.Standalone {
+		standaloneSlugs[s.Slug] = true
+	}
+	if !standaloneSlugs["standalone-impl"] {
+		t.Error("expected 'standalone-impl' in standalone list")
+	}
+	if !standaloneSlugs["done-impl"] {
+		t.Error("expected 'done-impl' in standalone list")
+	}
+
+	// Verify program-linked IMPL is NOT in standalone
+	if standaloneSlugs["program-impl"] {
+		t.Error("program-impl should NOT appear in standalone list")
+	}
+}
+
+// TestHandleListPrograms_StandaloneEmpty tests that standalone is an empty array (not null)
+// when all IMPLs belong to programs.
+func TestHandleListPrograms_StandaloneEmpty(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	repoDir := filepath.Join(tmpDir, "test-repo")
+	docsDir := filepath.Join(repoDir, "docs")
+	if err := os.MkdirAll(docsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	configPath := filepath.Join(tmpDir, "saw.config.json")
+	config := SAWConfig{
+		Repos: []RepoEntry{{Name: "test-repo", Path: repoDir}},
+	}
+	configData, _ := json.Marshal(config)
+	if err := os.WriteFile(configPath, configData, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	server := &Server{
+		cfg: Config{
+			RepoPath: tmpDir,
+			IMPLDir:  docsDir,
+		},
+	}
+
+	req := httptest.NewRequest("GET", "/api/programs", nil)
+	w := httptest.NewRecorder()
+
+	server.handleListPrograms(w, req)
+
+	if w.Code != http.StatusOK {
+		t.Errorf("expected status 200, got %d", w.Code)
+	}
+
+	var resp ProgramListResponse
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if resp.Standalone == nil {
+		t.Error("standalone should not be nil in JSON (should be [])")
+	}
+	if len(resp.Standalone) != 0 {
+		t.Errorf("expected 0 standalone entries, got %d", len(resp.Standalone))
+	}
+}
+
 // TestHandleGetProgramStatus_NotFound tests 404 when PROGRAM doc doesn't exist.
 func TestHandleGetProgramStatus_NotFound(t *testing.T) {
 	tmpDir := t.TempDir()

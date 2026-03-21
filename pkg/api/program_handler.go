@@ -5,9 +5,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
+	"sync"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/queue"
 	"github.com/blackwell-systems/scout-and-wave-web/pkg/service"
 )
 
@@ -26,7 +31,9 @@ type ProgramStatusResponse struct {
 
 // ProgramListResponse is the JSON response for GET /api/programs.
 type ProgramListResponse struct {
-	Programs []protocol.ProgramDiscovery `json:"programs"`
+	Programs   []protocol.ProgramDiscovery `json:"programs"`
+	Metrics    PipelineMetrics             `json:"metrics"`
+	Standalone []PipelineEntry             `json:"standalone"`
 }
 
 // TierExecuteRequest is the JSON request body for POST /api/program/{slug}/tier/{n}/execute.
@@ -35,7 +42,8 @@ type TierExecuteRequest struct {
 }
 
 // handleListPrograms handles GET /api/programs.
-// Scans all configured repos for PROGRAM-*.yaml files and returns discovery summaries.
+// Scans all configured repos for PROGRAM-*.yaml files and returns discovery summaries,
+// along with global pipeline metrics and standalone IMPLs (those not belonging to any program).
 func (s *Server) handleListPrograms(w http.ResponseWriter, r *http.Request) {
 	deps := s.makeDeps()
 	programs, err := service.ListPrograms(deps)
@@ -44,9 +52,157 @@ func (s *Server) handleListPrograms(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	resp := ProgramListResponse{Programs: programs}
+	repos := s.getConfiguredRepos()
+	entries, metrics := buildPipelineData(repos, &s.activeRuns)
+
+	// Filter standalone IMPLs: those with no program association
+	var standalone []PipelineEntry
+	for _, e := range entries {
+		if e.ProgramSlug == "" {
+			standalone = append(standalone, e)
+		}
+	}
+	if standalone == nil {
+		standalone = []PipelineEntry{}
+	}
+
+	resp := ProgramListResponse{
+		Programs:   programs,
+		Metrics:    metrics,
+		Standalone: standalone,
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(resp)
+}
+
+// buildPipelineData builds pipeline entries and metrics from configured repos.
+// This is the shared logic used by both handleListPrograms and handleGetPipeline.
+func buildPipelineData(repos []RepoEntry, activeRuns *sync.Map) ([]PipelineEntry, PipelineMetrics) {
+	implProgramMap := implProgramCacheInstance.get(repos)
+
+	var entries []PipelineEntry
+	completedCount := 0
+	blockedCount := 0
+	queueDepth := 0
+
+	for _, repo := range repos {
+		repoPath := repo.Path
+
+		// 1. Count/load completed IMPLs from docs/IMPL/complete/
+		completeDir := filepath.Join(repoPath, "docs", "IMPL", "complete")
+		if dirEntries, err := os.ReadDir(completeDir); err == nil {
+			for _, de := range dirEntries {
+				name := de.Name()
+				if !strings.HasPrefix(name, "IMPL-") || !strings.HasSuffix(name, ".yaml") {
+					continue
+				}
+				completedCount++
+				slug := strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".yaml")
+				title := slug
+				fullPath := filepath.Join(completeDir, name)
+				if m, err := protocol.Load(fullPath); err == nil && m.Title != "" {
+					title = m.Title
+				}
+				entry := PipelineEntry{
+					Slug:   slug,
+					Title:  title,
+					Status: "complete",
+					Repo:   repo.Name,
+				}
+				if pi, ok := implProgramMap[slug]; ok {
+					entry.ProgramSlug = pi.programSlug
+					entry.ProgramTitle = pi.programTitle
+					entry.ProgramTier = pi.programTier
+					entry.ProgramTiersTotal = pi.programTiersTotal
+				}
+				entries = append(entries, entry)
+			}
+		}
+
+		// 2. Load active IMPLs from docs/IMPL/ and check if executing
+		activeDir := filepath.Join(repoPath, "docs", "IMPL")
+		if dirEntries, err := os.ReadDir(activeDir); err == nil {
+			for _, de := range dirEntries {
+				name := de.Name()
+				if !strings.HasPrefix(name, "IMPL-") || !strings.HasSuffix(name, ".yaml") {
+					continue
+				}
+				slug := strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".yaml")
+				title := slug
+				fullPath := filepath.Join(activeDir, name)
+				if m, err := protocol.Load(fullPath); err == nil && m.Title != "" {
+					title = m.Title
+				}
+
+				status := "queued"
+				if _, loaded := activeRuns.Load(slug); loaded {
+					status = "executing"
+				}
+				entry := PipelineEntry{
+					Slug:   slug,
+					Title:  title,
+					Status: status,
+					Repo:   repo.Name,
+				}
+				if pi, ok := implProgramMap[slug]; ok {
+					entry.ProgramSlug = pi.programSlug
+					entry.ProgramTitle = pi.programTitle
+					entry.ProgramTier = pi.programTier
+					entry.ProgramTiersTotal = pi.programTiersTotal
+				}
+				entries = append(entries, entry)
+			}
+		}
+
+		// 3. Load queued items from queue manager
+		mgr := queue.NewManager(repoPath)
+		if items, err := mgr.List(); err == nil {
+			for i, item := range items {
+				if entryExists(entries, item.Slug) {
+					if item.Status == "blocked" {
+						blockedCount++
+					}
+					continue
+				}
+				status := "queued"
+				if item.Status == "blocked" {
+					status = "blocked"
+					blockedCount++
+				}
+				entry := PipelineEntry{
+					Slug:          item.Slug,
+					Title:         item.Title,
+					Status:        status,
+					QueuePosition: i + 1,
+					DependsOn:     item.DependsOn,
+					Repo:          repo.Name,
+				}
+				if item.Status == "blocked" {
+					entry.BlockedReason = "dependency"
+				}
+				if pi, ok := implProgramMap[item.Slug]; ok {
+					entry.ProgramSlug = pi.programSlug
+					entry.ProgramTitle = pi.programTitle
+					entry.ProgramTier = pi.programTier
+					entry.ProgramTiersTotal = pi.programTiersTotal
+				}
+				entries = append(entries, entry)
+				queueDepth++
+			}
+		}
+	}
+
+	metrics := PipelineMetrics{
+		CompletedCount: completedCount,
+		QueueDepth:     queueDepth,
+		BlockedCount:   blockedCount,
+	}
+
+	if entries == nil {
+		entries = []PipelineEntry{}
+	}
+
+	return entries, metrics
 }
 
 // handleGetProgramStatus handles GET /api/program/{slug}.
