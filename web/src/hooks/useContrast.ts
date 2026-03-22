@@ -68,14 +68,15 @@ function buildHighContrastCSS(): string {
 }
 
 function injectHighContrastStyles(): void {
-  // Always recompute — theme or dark-mode may have changed since last inject.
-  let el = document.getElementById('saw-high-contrast') as HTMLStyleElement | null
-  if (!el) {
-    el = document.createElement('style')
-    el.id = 'saw-high-contrast'
-    document.head.appendChild(el)
-  }
-  el.textContent = buildHighContrastCSS()
+  // Remove any existing injection FIRST so getComputedStyle reads the raw
+  // theme values — not previously-boosted HC values. Without this, each
+  // dark/light switch compounds the boost until it saturates and freezes.
+  document.getElementById('saw-high-contrast')?.remove()
+  const css = buildHighContrastCSS()
+  const el = document.createElement('style')
+  el.id = 'saw-high-contrast'
+  el.textContent = css
+  document.head.appendChild(el)
 }
 
 function removeHighContrastStyles(): void {
