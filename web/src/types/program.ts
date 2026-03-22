@@ -21,9 +21,21 @@ export interface TierStatus {
   complete: boolean
 }
 
+export interface ImplAgentInfo {
+  id: string
+  status: string  // 'pending' | 'running' | 'complete' | 'failed'
+  dependencies?: string[]
+}
+
+export interface ImplWaveInfo {
+  number: number
+  agents: ImplAgentInfo[]
+}
+
 export interface ImplTierStatus extends ImplReference {
   // slug, title, status inherited from ImplReference
   wave_progress?: string  // e.g. "Wave 2/3" emitted via program_impl_wave_progress SSE (U3)
+  waves?: ImplWaveInfo[]
 }
 
 export interface ContractStatus {
