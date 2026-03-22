@@ -108,6 +108,10 @@ export interface IMPLDocResponse {
   pre_mortem?: PreMortem
   reactions?: ReactionsConfig
   wiring?: WiringEntry[]
+  program_slug?: string
+  program_title?: string
+  program_tier?: number
+  program_tiers_total?: number
 }
 
 export interface IMPLListEntry {

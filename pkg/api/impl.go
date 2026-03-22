@@ -154,6 +154,15 @@ func (s *Server) handleGetImpl(w http.ResponseWriter, r *http.Request) {
 	resp.Repo = repoName
 	resp.RepoPath = repo.Path
 
+	// Populate program membership from cache
+	implProgramMap := implProgramCacheInstance.get(s.getConfiguredRepos())
+	if pi, ok := implProgramMap[slug]; ok {
+		resp.ProgramSlug = pi.programSlug
+		resp.ProgramTitle = pi.programTitle
+		resp.ProgramTier = pi.programTier
+		resp.ProgramTiersTotal = pi.programTiersTotal
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(resp); err != nil {
 		// Headers already written; nothing more we can do.

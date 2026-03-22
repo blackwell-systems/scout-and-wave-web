@@ -1,214 +1,215 @@
-title: "Scout-and-Wave GUI Demo"
+title: Scout-and-Wave GUI Demo
 program_slug: gui-demo
 state: TIER_EXECUTING
 created: "2026-03-18"
 updated: "2026-03-18"
 requirements: |
-  This is a demo PROGRAM manifest. It contains no real implementation
-  intent — its sole purpose is to exercise every visual state in the
-  Programs section of the web GUI.
-
-# ── Program Contracts ────────────────────────────────────────────────────────
+    This is a demo PROGRAM manifest. It contains no real implementation
+    intent — its sole purpose is to exercise every visual state in the
+    Programs section of the web GUI.
 program_contracts:
-  - name: UserRecord
-    description: Core user type shared across all authentication and profile features
-    location: pkg/types/user.go
-    definition: |
-      type UserRecord struct {
-        ID        string    `json:"id"`
-        Email     string    `json:"email"`
-        CreatedAt time.Time `json:"created_at"`
-        Role      string    `json:"role"`
-      }
-    freeze_at: "impl:data-model"
-    consumers:
-      - impl: auth-service
-        usage: Login response and session claims
-      - impl: profile-ui
-        usage: Profile display and edit form
-      - impl: api-gateway
-        usage: Request authentication middleware
-
-  - name: TaskRecord
-    description: Task entity used by the task management and reporting features
-    location: pkg/types/task.go
-    definition: |
-      type TaskRecord struct {
-        ID          string    `json:"id"`
-        Title       string    `json:"title"`
-        AssigneeID  string    `json:"assignee_id"`
-        Status      string    `json:"status"`
-        Priority    int       `json:"priority"`
-        CreatedAt   time.Time `json:"created_at"`
-        CompletedAt *time.Time `json:"completed_at,omitempty"`
-      }
-    freeze_at: "impl:data-model"
-    consumers:
-      - impl: task-api
-        usage: CRUD operations and status transitions
-      - impl: reporting
-        usage: Aggregation queries and export
-
-  - name: NotificationEvent
-    description: Cross-service notification bus event type
-    location: pkg/types/notification.go
-    definition: |
-      type NotificationEvent struct {
-        ID        string    `json:"id"`
-        UserID    string    `json:"user_id"`
-        Channel   string    `json:"channel"`
-        Payload   any       `json:"payload"`
-        CreatedAt time.Time `json:"created_at"`
-      }
-    freeze_at: "impl:notification-infra"
-    consumers:
-      - impl: auth-service
-        usage: Login and security alert notifications
-      - impl: task-api
-        usage: Assignment and deadline notifications
-
-# ── IMPLs ────────────────────────────────────────────────────────────────────
+    - name: UserRecord
+      description: Core user type shared across all authentication and profile features
+      definition: |
+        type UserRecord struct {
+          ID        string    `json:"id"`
+          Email     string    `json:"email"`
+          CreatedAt time.Time `json:"created_at"`
+          Role      string    `json:"role"`
+        }
+      consumers:
+        - impl: auth-service
+          usage: Login response and session claims
+        - impl: profile-ui
+          usage: Profile display and edit form
+        - impl: api-gateway
+          usage: Request authentication middleware
+      location: pkg/types/user.go
+      freeze_at: impl:data-model
+    - name: TaskRecord
+      description: Task entity used by the task management and reporting features
+      definition: |
+        type TaskRecord struct {
+          ID          string    `json:"id"`
+          Title       string    `json:"title"`
+          AssigneeID  string    `json:"assignee_id"`
+          Status      string    `json:"status"`
+          Priority    int       `json:"priority"`
+          CreatedAt   time.Time `json:"created_at"`
+          CompletedAt *time.Time `json:"completed_at,omitempty"`
+        }
+      consumers:
+        - impl: task-api
+          usage: CRUD operations and status transitions
+        - impl: reporting
+          usage: Aggregation queries and export
+      location: pkg/types/task.go
+      freeze_at: impl:data-model
+    - name: NotificationEvent
+      description: Cross-service notification bus event type
+      definition: |
+        type NotificationEvent struct {
+          ID        string    `json:"id"`
+          UserID    string    `json:"user_id"`
+          Channel   string    `json:"channel"`
+          Payload   any       `json:"payload"`
+          CreatedAt time.Time `json:"created_at"`
+        }
+      consumers:
+        - impl: auth-service
+          usage: Login and security alert notifications
+        - impl: task-api
+          usage: Assignment and deadline notifications
+      location: pkg/types/notification.go
+      freeze_at: impl:notification-infra
 impls:
-  # Tier 1 — Foundation (all complete)
-  - slug: data-model
-    title: "Data Model & Schema Migrations"
-    tier: 1
-    status: complete
-    estimated_agents: 3
-    estimated_waves: 2
-    key_outputs:
-      - pkg/types/user.go
-      - pkg/types/task.go
-      - db/migrations/
-
-  - slug: notification-infra
-    title: "Notification Infrastructure"
-    tier: 1
-    status: complete
-    estimated_agents: 2
-    estimated_waves: 1
-    key_outputs:
-      - pkg/types/notification.go
-      - pkg/notify/bus.go
-
-  # Tier 2 — Services (mixed status — active tier)
-  - slug: auth-service
-    title: "Authentication Service"
-    tier: 2
-    depends_on: [data-model, notification-infra]
-    status: complete
-    estimated_agents: 4
-    estimated_waves: 3
-    key_outputs:
-      - pkg/auth/
-      - cmd/auth-server/
-
-  - slug: task-api
-    title: "Task Management API"
-    tier: 2
-    depends_on: [data-model, notification-infra]
-    status: executing
-    estimated_agents: 5
-    estimated_waves: 3
-    key_outputs:
-      - pkg/tasks/
-      - cmd/task-server/
-
-  - slug: profile-ui
-    title: "User Profile UI"
-    tier: 2
-    depends_on: [data-model]
-    status: reviewed
-    estimated_agents: 3
-    estimated_waves: 2
-    key_outputs:
-      - web/src/components/Profile/
-      - web/src/pages/profile.tsx
-
-  - slug: search-indexer
-    title: "Full-Text Search Indexer"
-    tier: 2
-    depends_on: [data-model]
-    status: scouting
-    estimated_agents: 3
-    estimated_waves: 2
-    key_outputs:
-      - pkg/search/
-      - cmd/indexer/
-
-  - slug: audit-log
-    title: "Audit Logging Service"
-    tier: 2
-    depends_on: [data-model]
-    status: pending
-    estimated_agents: 2
-    estimated_waves: 1
-    key_outputs:
-      - pkg/audit/
-
-  # Tier 3 — Frontend & Integration (blocked on tier 2)
-  - slug: api-gateway
-    title: "API Gateway & Routing"
-    tier: 3
-    depends_on: [auth-service, task-api]
-    status: pending
-    estimated_agents: 3
-    estimated_waves: 2
-    key_outputs:
-      - cmd/gateway/
-
-  - slug: dashboard-ui
-    title: "Main Dashboard UI"
-    tier: 3
-    depends_on: [auth-service, task-api, profile-ui]
-    status: pending
-    estimated_agents: 4
-    estimated_waves: 2
-    key_outputs:
-      - web/src/pages/dashboard.tsx
-
-  - slug: reporting
-    title: "Analytics & Reporting"
-    tier: 3
-    depends_on: [task-api, audit-log]
-    status: pending
-    estimated_agents: 3
-    estimated_waves: 2
-    key_outputs:
-      - pkg/reporting/
-      - web/src/pages/reports.tsx
-
-# ── Tiers ────────────────────────────────────────────────────────────────────
+    - slug: data-model
+      title: Data Model & Schema Migrations
+      tier: 1
+      estimated_agents: 3
+      estimated_waves: 2
+      key_outputs:
+        - pkg/types/user.go
+        - pkg/types/task.go
+        - db/migrations/
+      status: complete
+    - slug: notification-infra
+      title: Notification Infrastructure
+      tier: 1
+      estimated_agents: 2
+      estimated_waves: 1
+      key_outputs:
+        - pkg/types/notification.go
+        - pkg/notify/bus.go
+      status: complete
+    - slug: auth-service
+      title: Authentication Service
+      tier: 2
+      depends_on:
+        - data-model
+        - notification-infra
+      estimated_agents: 4
+      estimated_waves: 3
+      key_outputs:
+        - pkg/auth/
+        - cmd/auth-server/
+      status: complete
+    - slug: task-api
+      title: Task Management API
+      tier: 2
+      depends_on:
+        - data-model
+        - notification-infra
+      estimated_agents: 5
+      estimated_waves: 3
+      key_outputs:
+        - pkg/tasks/
+        - cmd/task-server/
+      status: executing
+    - slug: profile-ui
+      title: User Profile UI
+      tier: 2
+      depends_on:
+        - data-model
+      estimated_agents: 3
+      estimated_waves: 2
+      key_outputs:
+        - web/src/components/Profile/
+        - web/src/pages/profile.tsx
+      status: reviewed
+    - slug: search-indexer
+      title: Full-Text Search Indexer
+      tier: 2
+      depends_on:
+        - data-model
+      estimated_agents: 3
+      estimated_waves: 2
+      key_outputs:
+        - pkg/search/
+        - cmd/indexer/
+      status: scouting
+    - slug: audit-log
+      title: Audit Logging Service
+      tier: 2
+      depends_on:
+        - data-model
+      estimated_agents: 2
+      estimated_waves: 1
+      key_outputs:
+        - pkg/audit/
+      status: pending
+    - slug: api-gateway
+      title: API Gateway & Routing
+      tier: 3
+      depends_on:
+        - auth-service
+        - task-api
+      estimated_agents: 3
+      estimated_waves: 2
+      key_outputs:
+        - cmd/gateway/
+      status: pending
+    - slug: dashboard-ui
+      title: Main Dashboard UI
+      tier: 3
+      depends_on:
+        - auth-service
+        - task-api
+        - profile-ui
+      estimated_agents: 4
+      estimated_waves: 2
+      key_outputs:
+        - web/src/pages/dashboard.tsx
+      status: pending
+    - slug: reporting
+      title: Analytics & Reporting
+      tier: 3
+      depends_on:
+        - task-api
+        - audit-log
+      estimated_agents: 3
+      estimated_waves: 2
+      key_outputs:
+        - pkg/reporting/
+        - web/src/pages/reports.tsx
+      status: pending
 tiers:
-  - number: 1
-    description: "Foundation layer — shared types, database schema, and core infrastructure. No cross-IMPL dependencies."
-    impls: [data-model, notification-infra]
-
-  - number: 2
-    description: "Service layer — business logic and APIs built on the frozen Tier 1 contracts. IMPLs run in parallel."
-    impls: [auth-service, task-api, profile-ui, search-indexer, audit-log]
-
-  - number: 3
-    description: "Integration layer — frontend, gateway, and reporting. Consumes all Tier 2 services."
-    impls: [api-gateway, dashboard-ui, reporting]
-
-# ── Tier Gates ───────────────────────────────────────────────────────────────
+    - number: 1
+      impls:
+        - data-model
+        - notification-infra
+      description: Foundation layer — shared types, database schema, and core infrastructure. No cross-IMPL dependencies.
+    - number: 2
+      impls:
+        - auth-service
+        - task-api
+        - profile-ui
+        - search-indexer
+        - audit-log
+      description: Service layer — business logic and APIs built on the frozen Tier 1 contracts. IMPLs run in parallel.
+    - number: 3
+      impls:
+        - api-gateway
+        - dashboard-ui
+        - reporting
+      description: Integration layer — frontend, gateway, and reporting. Consumes all Tier 2 services.
 tier_gates:
-  - type: build
-    command: "go build ./..."
-    description: "Full build must pass before advancing tiers"
-  - type: test
-    command: "go test ./..."
-    description: "All tests must pass"
-  - type: custom
-    command: "sawtools validate-integration docs/IMPL/IMPL-*.yaml"
-    description: "No unconnected exports between IMPLs"
-
-# ── Completion ───────────────────────────────────────────────────────────────
+    - type: build
+      command: go build ./...
+      required: false
+      description: Full build must pass before advancing tiers
+    - type: test
+      command: go test ./...
+      required: false
+      description: All tests must pass
+    - type: custom
+      command: sawtools validate-integration docs/IMPL/IMPL-*.yaml
+      required: false
+      description: No unconnected exports between IMPLs
 completion:
-  tiers_complete: 1
-  tiers_total: 3
-  impls_complete: 2
-  impls_total: 10
-  total_agents: 32
-  total_waves: 20
+    tiers_complete: 1
+    tiers_total: 3
+    impls_complete: 3
+    impls_total: 10
+    total_agents: 32
+    total_waves: 20

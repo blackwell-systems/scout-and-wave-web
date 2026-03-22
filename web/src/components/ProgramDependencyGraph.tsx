@@ -25,20 +25,34 @@ interface ImplNode {
 // Fixed-size fallback for IMPLs without wave data
 const NODE_W = 140
 const NODE_H = 74
-const BASE_TIER_GAP = 140  // vertical gap between tier rows
-const BASE_IMPL_GAP = 160  // horizontal gap between nodes in same row (must > NODE_W)
-const MIN_IMPL_GAP = 155
-const PAD_X = 60
-const PAD_Y = 30
+const BASE_TIER_GAP = 180  // vertical gap between tier rows
+const BASE_IMPL_GAP = 180  // horizontal gap between nodes in same row
+const MIN_IMPL_GAP = 40    // minimum gap between IMPL containers
+const PAD_X = 80
+const PAD_Y = 50
 
-// Nested layout constants
-const AGENT_NODE_SIZE = 28    // small circles for agents
-const AGENT_GAP = 40          // horizontal gap between agent nodes
-const WAVE_ROW_HEIGHT = 50    // vertical gap between wave rows inside IMPL
-const IMPL_PAD_X = 16         // padding inside IMPL container
-const IMPL_PAD_Y = 24         // padding (top includes slug label)
-const IMPL_MIN_W = 120        // minimum IMPL width
-const IMPL_MIN_H = 60         // minimum IMPL height (no waves)
+// Nested layout constants — match DependencyGraphPanel proportions exactly
+const AGENT_NODE_SIZE = 48    // same as DependencyGraphPanel NODE_W/NODE_H
+const AGENT_GAP = 72          // same horizontal gap between agents
+const WAVE_ROW_HEIGHT = 160   // vertical gap between wave rows (match DependencyGraphPanel)
+const IMPL_PAD_X = 100        // left padding (room for wave labels)
+const IMPL_PAD_Y = 60         // top padding (room for slug title + breathing room)
+const IMPL_PAD_RIGHT = 100    // right padding — generous space after last node
+const IMPL_PAD_BOTTOM = 50    // bottom padding
+const IMPL_MIN_W = 300        // minimum IMPL width (ensures wave rows aren't cramped)
+const IMPL_MIN_H = 120        // minimum IMPL height (no waves)
+const WAVE_LABEL_X = 44       // center of wave label column inside IMPL
+const WAVE_ROW_INNER_PAD = 24 // padding inside wave row background around nodes
+
+// Wave row colors inside IMPL containers
+const WAVE_COLORS = [
+  '#3b82f6', // wave 1 -- blue
+  '#ec4899', // wave 2 -- pink
+  '#22c55e', // wave 3 -- green
+  '#f59e0b', // wave 4 -- amber
+  '#6366f1', // wave 5 -- indigo
+  '#14b8a6', // wave 6 -- teal
+]
 
 // Tier column colors -- progressive spectrum for visual tier separation
 const TIER_COLORS = [
@@ -62,8 +76,9 @@ interface NodePos {
 function computeImplSize(waves?: ImplWaveInfo[]): { w: number; h: number } {
   if (!waves || waves.length === 0) return { w: IMPL_MIN_W, h: IMPL_MIN_H }
   const maxAgentsPerWave = Math.max(...waves.map(w => w.agents.length), 1)
-  const w = Math.max(IMPL_MIN_W, IMPL_PAD_X * 2 + maxAgentsPerWave * AGENT_GAP)
-  const h = IMPL_PAD_Y + waves.length * WAVE_ROW_HEIGHT + 16
+  const agentAreaWidth = (maxAgentsPerWave - 1) * AGENT_GAP + AGENT_NODE_SIZE
+  const w = Math.max(IMPL_MIN_W, IMPL_PAD_X + agentAreaWidth + IMPL_PAD_RIGHT)
+  const h = IMPL_PAD_Y + (waves.length - 1) * WAVE_ROW_HEIGHT + AGENT_NODE_SIZE + IMPL_PAD_BOTTOM
   return { w, h }
 }
 
@@ -438,7 +453,7 @@ export default function ProgramDependencyGraph({
       padY: IMPL_PAD_Y,
     })
 
-    // Build a map from agent id to its status from the wave data
+    // Build a map from agent id to its status
     const agentStatusMap = new Map<string, string>()
     for (const wave of node.impl.waves) {
       for (const agent of wave.agents) {
@@ -448,143 +463,200 @@ export default function ProgramDependencyGraph({
 
     return (
       <g data-testid={`nested-agents-${node.impl.slug}`}>
-        {/* Wave row labels */}
-        {node.impl.waves.map((wave, wi) => (
-          <text
-            key={`wave-label-${wave.number}`}
-            x={node.x + 6}
-            y={node.y + IMPL_PAD_Y + wi * WAVE_ROW_HEIGHT + AGENT_NODE_SIZE / 2}
-            textAnchor="start"
-            dominantBaseline="central"
-            fill="#6b7280"
-            fontSize={7}
-            fontWeight={500}
-            style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
-          >
-            W{wave.number}
-          </text>
-        ))}
-
-        {/* Agent circles */}
-        {layout.nodes.map(posAgent => {
-          const agentStatus = agentStatusMap.get(posAgent.agent.id) || 'pending'
-          const agentStyle = getAgentFill(posAgent.agent.id, agentStatus)
-          // Offset positions relative to IMPL container
-          const cx = node.x + posAgent.x + AGENT_NODE_SIZE / 2
-          const cy = node.y + posAgent.y + AGENT_NODE_SIZE / 2
-
+        {/* Wave row backgrounds — colored bands like DependencyGraphPanel */}
+        {node.impl.waves.map((_wave, wi) => {
+          const y = node.y + IMPL_PAD_Y + wi * WAVE_ROW_HEIGHT - WAVE_ROW_INNER_PAD
+          const rowH = AGENT_NODE_SIZE + WAVE_ROW_INNER_PAD * 2
+          const color = WAVE_COLORS[wi % WAVE_COLORS.length]
           return (
-            <g
-              key={`agent-${posAgent.agent.id}`}
-              className={agentStyle.className || undefined}
-              style={agentStyle.className === 'exec-node-running' ? {
-                '--exec-pulse-color': getAgentColor(posAgent.agent.id),
-              } as React.CSSProperties : undefined}
-            >
-              <circle
-                cx={cx}
-                cy={cy}
-                r={AGENT_NODE_SIZE / 2}
-                fill={agentStyle.fill}
-                stroke={agentStyle.stroke}
-                strokeWidth={1.5}
-              />
-              {/* Agent letter label */}
+            <rect
+              key={`wave-bg-${wi}`}
+              x={node.x + IMPL_PAD_X - 20}
+              y={y}
+              width={node.w - IMPL_PAD_X - IMPL_PAD_RIGHT + 80}
+              height={rowH}
+              rx={12}
+              fill={color}
+              opacity={0.08}
+            />
+          )
+        })}
+
+        {/* Wave labels — "WAVE" + number, left column */}
+        {node.impl.waves.map((wave, wi) => {
+          const cy = node.y + IMPL_PAD_Y + wi * WAVE_ROW_HEIGHT + AGENT_NODE_SIZE / 2
+          const color = WAVE_COLORS[wi % WAVE_COLORS.length]
+          return (
+            <g key={`wave-label-${wave.number}`}>
               <text
-                x={cx}
-                y={cy}
+                x={node.x + WAVE_LABEL_X}
+                y={cy - 7}
                 textAnchor="middle"
                 dominantBaseline="central"
-                fill={agentStatus === 'pending' ? '#9ca3af' : agentStyle.stroke}
-                fontSize={10}
-                fontWeight={700}
+                fill={color}
+                fontSize={9}
+                fontWeight={600}
+                letterSpacing={2}
+                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', textTransform: 'uppercase' }}
+              >
+                WAVE
+              </text>
+              <text
+                x={node.x + WAVE_LABEL_X}
+                y={cy + 10}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill={color}
+                fontSize={18}
+                fontWeight={800}
                 style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
               >
-                {posAgent.agent.id}
+                {wave.number}
               </text>
-              {/* Complete checkmark overlay */}
-              {agentStatus === 'complete' && (
-                <text
-                  x={cx + AGENT_NODE_SIZE / 2 - 2}
-                  y={cy - AGENT_NODE_SIZE / 2 + 4}
-                  textAnchor="middle"
-                  dominantBaseline="central"
-                  fill="#22c55e"
-                  fontSize={8}
-                  fontWeight={700}
-                >
-                  {'\u2713'}
-                </text>
-              )}
-              {/* Failed red border indicator */}
-              {agentStatus === 'failed' && (
-                <circle
-                  cx={cx}
-                  cy={cy}
-                  r={AGENT_NODE_SIZE / 2 + 2}
-                  fill="none"
-                  stroke="#f85149"
-                  strokeWidth={1.5}
-                  strokeDasharray="3 2"
-                />
-              )}
             </g>
           )
         })}
 
-        {/* Intra-IMPL dependency edges (thin bezier curves) */}
+        {/* Intra-IMPL dependency edges with particles */}
         {layout.edges.map((edge, ei) => {
-          const fromCx = node.x + edge.from.x + AGENT_NODE_SIZE / 2
-          const fromCy = node.y + edge.from.y + AGENT_NODE_SIZE / 2
-          const toCx = node.x + edge.to.x + AGENT_NODE_SIZE / 2
-          const toCy = node.y + edge.to.y + AGENT_NODE_SIZE / 2
-          // Edge direction: from dependent to dependency (higher wave to lower wave)
-          // Draw from bottom of source to top of target
-          const x1 = fromCx
-          const y1 = fromCy - AGENT_NODE_SIZE / 2
-          const x2 = toCx
-          const y2 = toCy + AGENT_NODE_SIZE / 2
+          // edge.from = dependent (lower wave), edge.to = dependency (upper wave)
+          // Draw line FROM dependency (top, wave 1) DOWN TO dependent (bottom, wave 2)
+          const x1 = node.x + edge.to.x + AGENT_NODE_SIZE / 2    // dependency (upper)
+          const y1 = node.y + edge.to.y + AGENT_NODE_SIZE         // bottom of dependency
+          const x2 = node.x + edge.from.x + AGENT_NODE_SIZE / 2  // dependent (lower)
+          const y2 = node.y + edge.from.y                         // top of dependent
           const midY = (y1 + y2) / 2
           const pathD = `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`
 
-          // Determine edge state for particles
-          const fromStatus = agentStatusMap.get(edge.to.agent.id) || 'pending'
-          const toStatus = agentStatusMap.get(edge.from.agent.id) || 'pending'
-          const isActive = fromStatus === 'complete' && toStatus === 'running'
-          const isFailed = toStatus === 'failed'
+          const depStatus = agentStatusMap.get(edge.to.agent.id) || 'pending'
+          const dependentStatus = agentStatusMap.get(edge.from.agent.id) || 'pending'
+          const isActive = depStatus === 'complete' && dependentStatus === 'running'
+          const isFailed = dependentStatus === 'failed'
 
           return (
             <g key={`intra-edge-${ei}`}>
               <path
                 d={pathD}
-                stroke="#6b728040"
-                strokeWidth={1}
+                stroke="#6b728050"
+                strokeWidth={2}
                 fill="none"
               />
-              {/* Active edge particles */}
+              {/* Arrow marker at target */}
+              <polygon
+                points={`${x2 - 4},${y2 - 6} ${x2 + 4},${y2 - 6} ${x2},${y2}`}
+                fill="#6b728050"
+              />
               {isActive && (<>
-                <circle r="1.5" fill="#58a6ff" filter="url(#nested-particle-glow)" opacity="0.6">
-                  <animateMotion dur="2s" begin="0s" repeatCount="indefinite" path={pathD} />
+                <circle r="2.5" fill="#58a6ff" filter="url(#nested-particle-glow)" opacity="0.6">
+                  <animateMotion dur="2.5s" begin="0s" repeatCount="indefinite" path={pathD} />
                 </circle>
-                <circle r="1.5" fill="#58a6ff" filter="url(#nested-particle-glow)" opacity="0.6">
-                  <animateMotion dur="2s" begin="0.667s" repeatCount="indefinite" path={pathD} />
+                <circle r="2.5" fill="#58a6ff" filter="url(#nested-particle-glow)" opacity="0.6">
+                  <animateMotion dur="2.5s" begin="0.833s" repeatCount="indefinite" path={pathD} />
                 </circle>
-                <circle r="1.5" fill="#58a6ff" filter="url(#nested-particle-glow)" opacity="0.6">
-                  <animateMotion dur="2s" begin="1.333s" repeatCount="indefinite" path={pathD} />
+                <circle r="2.5" fill="#58a6ff" filter="url(#nested-particle-glow)" opacity="0.6">
+                  <animateMotion dur="2.5s" begin="1.667s" repeatCount="indefinite" path={pathD} />
                 </circle>
               </>)}
-              {/* Failed edge particles */}
               {isFailed && (<>
-                <circle r="1.5" fill="#f85149" filter="url(#nested-particle-glow-red)" opacity="0.5">
-                  <animateMotion dur="3s" begin="0s" repeatCount="indefinite" path={pathD} />
+                <circle r="2.5" fill="#f85149" filter="url(#nested-particle-glow-red)" opacity="0.5">
+                  <animateMotion dur="4s" begin="0s" repeatCount="indefinite" path={pathD} />
                 </circle>
-                <circle r="1.5" fill="#f85149" filter="url(#nested-particle-glow-red)" opacity="0.5">
-                  <animateMotion dur="3s" begin="1s" repeatCount="indefinite" path={pathD} />
+                <circle r="2.5" fill="#f85149" filter="url(#nested-particle-glow-red)" opacity="0.5">
+                  <animateMotion dur="4s" begin="1.333s" repeatCount="indefinite" path={pathD} />
                 </circle>
-                <circle r="1.5" fill="#f85149" filter="url(#nested-particle-glow-red)" opacity="0.5">
-                  <animateMotion dur="3s" begin="2s" repeatCount="indefinite" path={pathD} />
+                <circle r="2.5" fill="#f85149" filter="url(#nested-particle-glow-red)" opacity="0.5">
+                  <animateMotion dur="4s" begin="2.667s" repeatCount="indefinite" path={pathD} />
                 </circle>
               </>)}
+            </g>
+          )
+        })}
+
+        {/* Agent nodes — 48x48 rounded rects matching DependencyGraphPanel */}
+        {layout.nodes.map(posAgent => {
+          const agentStatus = agentStatusMap.get(posAgent.agent.id) || 'pending'
+          const color = getAgentColor(posAgent.agent.id)
+          const ax = node.x + posAgent.x
+          const ay = node.y + posAgent.y
+          const cx = ax + AGENT_NODE_SIZE / 2
+          const cy = ay + AGENT_NODE_SIZE / 2
+
+          // Match DependencyGraphPanel fill style
+          const nodeFill = agentStatus === 'complete' ? `${color}30`
+            : agentStatus === 'failed' ? '#f8514920'
+            : agentStatus === 'running' ? `${color}25`
+            : `${color}15`
+          const nodeStroke = agentStatus === 'complete' ? `${color}70`
+            : agentStatus === 'failed' ? '#f8514960'
+            : agentStatus === 'running' ? `${color}60`
+            : `${color}40`
+
+          return (
+            <g
+              key={`agent-${posAgent.agent.id}`}
+              className={agentStatus === 'running' ? 'exec-node-running' : undefined}
+              style={agentStatus === 'running' ? {
+                '--exec-pulse-color': color,
+              } as React.CSSProperties : undefined}
+            >
+              <rect
+                x={ax}
+                y={ay}
+                width={AGENT_NODE_SIZE}
+                height={AGENT_NODE_SIZE}
+                rx={8}
+                fill={nodeFill}
+                stroke={nodeStroke}
+                strokeWidth={2}
+              />
+              {/* Agent letter */}
+              <text
+                x={cx}
+                y={cy + 1}
+                textAnchor="middle"
+                dominantBaseline="central"
+                fill={color}
+                fontSize={posAgent.agent.id.length > 1 ? 12 : 16}
+                fontWeight={700}
+                fontFamily="ui-monospace, monospace"
+              >
+                {posAgent.agent.id}
+              </text>
+              {/* Complete checkmark — bottom-right green circle */}
+              {agentStatus === 'complete' && (
+                <g className="exec-check-overlay">
+                  <circle
+                    cx={ax + AGENT_NODE_SIZE - 4}
+                    cy={ay + AGENT_NODE_SIZE - 4}
+                    r={7}
+                    fill="#22c55e"
+                    opacity={0.9}
+                  />
+                  <path
+                    d="M-4,0 L-1,3 L4,-3"
+                    stroke="white"
+                    strokeWidth={1.5}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    fill="none"
+                    transform={`translate(${ax + AGENT_NODE_SIZE - 4}, ${ay + AGENT_NODE_SIZE - 4})`}
+                  />
+                </g>
+              )}
+              {/* Failed — red dashed ring */}
+              {agentStatus === 'failed' && (
+                <rect
+                  x={ax - 3}
+                  y={ay - 3}
+                  width={AGENT_NODE_SIZE + 6}
+                  height={AGENT_NODE_SIZE + 6}
+                  rx={10}
+                  fill="none"
+                  stroke="#f85149"
+                  strokeWidth={1.5}
+                  strokeDasharray="4 3"
+                />
+              )}
             </g>
           )
         })}
@@ -679,8 +751,8 @@ export default function ProgramDependencyGraph({
               const tierNodes = tierGroups.get(tier)!
               const minY = Math.min(...tierNodes.map(n => n.y))
               const maxH = Math.max(...tierNodes.map(n => n.h))
-              const y = minY - 16
-              const rowH = maxH + 32
+              const y = minY - 30
+              const rowH = maxH + 60
               const color = TIER_COLORS[ti % TIER_COLORS.length]
               return (
                 <rect
@@ -768,6 +840,7 @@ export default function ProgramDependencyGraph({
               const cx = node.x + node.w / 2
               const isHovered = hoveredSlug === node.impl.slug
               const isClickable = !!onSelectImpl
+              const isComplete = node.impl.status.toLowerCase().includes('complete')
               const hasWaves = node.impl.waves && node.impl.waves.length > 0
 
               const displaySlug = truncateSlug(node.impl.slug, node.w - 16)
@@ -811,22 +884,43 @@ export default function ProgramDependencyGraph({
                     height={node.h}
                     rx={8}
                     fill={fill.bg}
-                    stroke={isHovered && isClickable ? fill.text : fill.border}
-                    strokeWidth={isHovered && isClickable ? 2.5 : 2}
+                    stroke={isComplete ? '#22c55e80' : isHovered && isClickable ? fill.text : fill.border}
+                    strokeWidth={isComplete ? 2.5 : isHovered && isClickable ? 2.5 : 2}
                   />
                   {/* Slug text */}
                   <text
                     x={cx}
-                    y={node.y + (hasWaves ? 12 : 18)}
+                    y={node.y + (hasWaves ? 14 : 18)}
                     textAnchor="middle"
                     dominantBaseline="central"
-                    fill={fill.text}
+                    fill={isComplete ? '#22c55e' : fill.text}
                     fontSize={11}
                     fontWeight={700}
                     fontFamily="ui-monospace, monospace"
                   >
                     {displaySlug}
                   </text>
+                  {/* Completion checkmark badge — bottom-right corner */}
+                  {isComplete && (
+                    <g>
+                      <circle
+                        cx={node.x + node.w - 14}
+                        cy={node.y + node.h - 14}
+                        r={10}
+                        fill="#22c55e"
+                        opacity={0.9}
+                      />
+                      <path
+                        d="M-5,0 L-1.5,4 L5,-4"
+                        stroke="white"
+                        strokeWidth={2}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        fill="none"
+                        transform={`translate(${node.x + node.w - 14}, ${node.y + node.h - 14})`}
+                      />
+                    </g>
+                  )}
 
                   {/* For nodes WITHOUT wave data: render old-style status badge + progress */}
                   {!hasWaves && (

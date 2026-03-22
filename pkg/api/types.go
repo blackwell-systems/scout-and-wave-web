@@ -57,6 +57,10 @@ type IMPLDocResponse struct {
 	PostMergeChecklist     *PostMergeChecklist  `json:"post_merge_checklist,omitempty"`
 	KnownIssuesStructured  []KnownIssue         `json:"known_issues_structured,omitempty"`
 	Wiring                 []WiringEntry        `json:"wiring,omitempty"`
+	ProgramSlug            string               `json:"program_slug,omitempty"`
+	ProgramTitle           string               `json:"program_title,omitempty"`
+	ProgramTier            int                  `json:"program_tier,omitempty"`
+	ProgramTiersTotal      int                  `json:"program_tiers_total,omitempty"`
 }
 
 // SuitabilityInfo is the suitability sub-object in IMPLDocResponse.

@@ -1,132 +1,133 @@
-title: "E-Commerce Platform Rebuild"
+title: E-Commerce Platform Rebuild
 program_slug: ecommerce-platform
 state: REVIEWED
 created: "2026-03-18"
 requirements: |
-  Demo program #2. Shows a program in REVIEWED state (not yet executing).
-
+    Demo program #2. Shows a program in REVIEWED state (not yet executing).
 program_contracts:
-  - name: Product
-    description: Core product catalog type
-    location: pkg/catalog/types.go
-    definition: |
-      type Product struct {
-        ID          string  `json:"id"`
-        SKU         string  `json:"sku"`
-        Name        string  `json:"name"`
-        PriceCents  int64   `json:"price_cents"`
-        StockCount  int     `json:"stock_count"`
-      }
-    freeze_at: "impl:catalog-service"
-    consumers:
-      - impl: cart-service
-        usage: Add to cart, price calculation
-      - impl: checkout
-        usage: Order line items
-
-  - name: Order
-    description: Completed purchase record
-    location: pkg/orders/types.go
-    definition: |
-      type Order struct {
-        ID         string      `json:"id"`
-        UserID     string      `json:"user_id"`
-        Lines      []OrderLine `json:"lines"`
-        TotalCents int64       `json:"total_cents"`
-        Status     string      `json:"status"`
-      }
-    freeze_at: "impl:checkout"
-    consumers:
-      - impl: fulfillment
-        usage: Shipment creation
-      - impl: analytics
-        usage: Revenue reporting
-
+    - name: Product
+      description: Core product catalog type
+      definition: |
+        type Product struct {
+          ID          string  `json:"id"`
+          SKU         string  `json:"sku"`
+          Name        string  `json:"name"`
+          PriceCents  int64   `json:"price_cents"`
+          StockCount  int     `json:"stock_count"`
+        }
+      consumers:
+        - impl: cart-service
+          usage: Add to cart, price calculation
+        - impl: checkout
+          usage: Order line items
+      location: pkg/catalog/types.go
+      freeze_at: impl:catalog-service
+    - name: Order
+      description: Completed purchase record
+      definition: |
+        type Order struct {
+          ID         string      `json:"id"`
+          UserID     string      `json:"user_id"`
+          Lines      []OrderLine `json:"lines"`
+          TotalCents int64       `json:"total_cents"`
+          Status     string      `json:"status"`
+        }
+      consumers:
+        - impl: fulfillment
+          usage: Shipment creation
+        - impl: analytics
+          usage: Revenue reporting
+      location: pkg/orders/types.go
+      freeze_at: impl:checkout
 impls:
-  - slug: catalog-service
-    title: "Product Catalog Service"
-    tier: 1
-    status: pending
-    estimated_agents: 3
-    estimated_waves: 2
-    key_outputs:
-      - pkg/catalog/
-
-  - slug: user-accounts
-    title: "User Accounts & Auth"
-    tier: 1
-    status: pending
-    estimated_agents: 3
-    estimated_waves: 2
-    key_outputs:
-      - pkg/accounts/
-
-  - slug: cart-service
-    title: "Shopping Cart Service"
-    tier: 2
-    depends_on: [catalog-service, user-accounts]
-    status: pending
-    estimated_agents: 2
-    estimated_waves: 1
-    key_outputs:
-      - pkg/cart/
-
-  - slug: checkout
-    title: "Checkout & Payment"
-    tier: 2
-    depends_on: [catalog-service, user-accounts]
-    status: pending
-    estimated_agents: 4
-    estimated_waves: 3
-    key_outputs:
-      - pkg/checkout/
-      - pkg/payments/
-
-  - slug: fulfillment
-    title: "Order Fulfillment"
-    tier: 3
-    depends_on: [checkout]
-    status: pending
-    estimated_agents: 3
-    estimated_waves: 2
-    key_outputs:
-      - pkg/fulfillment/
-
-  - slug: analytics
-    title: "Sales Analytics"
-    tier: 3
-    depends_on: [checkout]
-    status: pending
-    estimated_agents: 2
-    estimated_waves: 1
-    key_outputs:
-      - pkg/analytics/
-
+    - slug: catalog-service
+      title: Product Catalog Service
+      tier: 1
+      estimated_agents: 3
+      estimated_waves: 2
+      key_outputs:
+        - pkg/catalog/
+      status: pending
+    - slug: user-accounts
+      title: User Accounts & Auth
+      tier: 1
+      estimated_agents: 3
+      estimated_waves: 2
+      key_outputs:
+        - pkg/accounts/
+      status: pending
+    - slug: cart-service
+      title: Shopping Cart Service
+      tier: 2
+      depends_on:
+        - catalog-service
+        - user-accounts
+      estimated_agents: 2
+      estimated_waves: 1
+      key_outputs:
+        - pkg/cart/
+      status: pending
+    - slug: checkout
+      title: Checkout & Payment
+      tier: 2
+      depends_on:
+        - catalog-service
+        - user-accounts
+      estimated_agents: 4
+      estimated_waves: 3
+      key_outputs:
+        - pkg/checkout/
+        - pkg/payments/
+      status: pending
+    - slug: fulfillment
+      title: Order Fulfillment
+      tier: 3
+      depends_on:
+        - checkout
+      estimated_agents: 3
+      estimated_waves: 2
+      key_outputs:
+        - pkg/fulfillment/
+      status: pending
+    - slug: analytics
+      title: Sales Analytics
+      tier: 3
+      depends_on:
+        - checkout
+      estimated_agents: 2
+      estimated_waves: 1
+      key_outputs:
+        - pkg/analytics/
+      status: pending
 tiers:
-  - number: 1
-    description: "Foundation — catalog and accounts, no cross-dependencies"
-    impls: [catalog-service, user-accounts]
-
-  - number: 2
-    description: "Commerce — cart and checkout built on Tier 1 contracts"
-    impls: [cart-service, checkout]
-
-  - number: 3
-    description: "Post-purchase — fulfillment and analytics"
-    impls: [fulfillment, analytics]
-
+    - number: 1
+      impls:
+        - catalog-service
+        - user-accounts
+      description: Foundation — catalog and accounts, no cross-dependencies
+    - number: 2
+      impls:
+        - cart-service
+        - checkout
+      description: Commerce — cart and checkout built on Tier 1 contracts
+    - number: 3
+      impls:
+        - fulfillment
+        - analytics
+      description: Post-purchase — fulfillment and analytics
 tier_gates:
-  - type: build
-    command: "go build ./..."
-    description: "Full build must pass"
-  - type: test
-    command: "go test ./..."
-    description: "All tests must pass"
-
+    - type: build
+      command: go build ./...
+      required: false
+      description: Full build must pass
+    - type: test
+      command: go test ./...
+      required: false
+      description: All tests must pass
 completion:
-  tiers_complete: 0
-  tiers_total: 3
-  impls_complete: 0
-  impls_total: 6
-  total_agents: 17
-  total_waves: 11
+    tiers_complete: 0
+    tiers_total: 3
+    impls_complete: 0
+    impls_total: 6
+    total_agents: 17
+    total_waves: 11

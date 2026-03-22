@@ -34,11 +34,11 @@ scout-and-wave-app/      Wails desktop app (future)
 
 **Protocol & engine** — Core protocol (I1–I6 invariants, E1–E23 execution rules), Go orchestration engine, E16 validator, scaffold build verification (E22), per-agent context extraction (E23), engine extraction complete (`scout-and-wave-go` standalone module), cross-repo wave support, single-agent rerun (`RunSingleAgent`), unified tool system (`pkg/tools` Workshop — 7 tools, backend adapters, middleware support), markdown system fully removed (YAML-only manifests), base commit tracking for post-merge verification, duplicate completion report detection.
 
-**Web UI** — 3-column layout, Scout launcher, ReviewScreen (15+ panels), WaveBoard (failure-type action buttons, notes callout, scope-hint reruns), RevisePanel, GitActivity, CommandPalette, Settings, ThemePicker, SVG dep graph, wave gate, cancellation, desktop notifications, ManifestValidation panel, WorktreePanel (modal overlay with batch delete).
+**Web UI** — 3-column layout, Scout launcher, ReviewScreen (15+ panels), WaveBoard (failure-type action buttons, notes callout, scope-hint reruns), RevisePanel, GitActivity, CommandPalette, Settings, ThemePicker, SVG dep graph (animated during execution — pulsing/complete/failed node states, edge animations), wave gate, cancellation, desktop notifications, ManifestValidation panel, WorktreePanel (modal overlay with batch delete), QualityGatesPanel (required/optional display with command table), per-agent context toggle in ReviewScreen, timeout failure type with distinct badge and rerun action.
 
 **Streaming** — PTY + `--output-format stream-json` pipeline, JSON fragment reassembly, SSE broker (2048-channel).
 
-**API** — 30+ routes covering scout (+ rerun), wave, single-agent rerun, merge, test, diff, worktree (+ cleanup), chat, config, context, scaffold rerun, manifest validate/load/wave/completion. All endpoints YAML-only (markdown format removed v0.53.0).
+**API** — 30+ routes covering scout (+ rerun), wave, single-agent rerun, merge, test, diff, worktree (+ cleanup), chat, config, context, scaffold rerun, manifest validate/load/wave/completion, per-agent context extraction. All endpoints YAML-only (markdown format removed v0.53.0).
 
 See CHANGELOG.md for full version history.
 
@@ -80,9 +80,9 @@ See CHANGELOG.md for full version history.
 
 ---
 
-### v0.18.0-C — Persistent Memory Viewer
+### v0.18.0-C — Persistent Memory Viewer (remaining)
 
-**Why:** Engine v0.33.0 adds persistent memory system (`docs/MEMORY.md`) with pattern/pitfall/preference learning. The UI should show what memories were applied and allow editing.
+**Why:** Engine v0.33.0 adds persistent memory system (`docs/MEMORY.md`) with pattern/pitfall/preference learning. Basic view/edit exists via ContextViewerPanel — remaining work adds structured browsing and memory provenance.
 
 **Scope:**
 - Settings screen: "Project Memory" tab
@@ -96,89 +96,45 @@ See CHANGELOG.md for full version history.
 
 **Success criteria:**
 - User sees which past learnings influenced the current Scout run
-- Memory system is transparent and editable
+- Memory system is transparent and editable beyond raw text
 
 ---
 
-### v0.18.0-D — Wave Timeout Status
+### v0.18.0-D — Wave Timeout Status (remaining)
 
-**Why:** Engine v0.32.0 adds wave timeout enforcement. Timed-out agents need visual distinction from failures.
+**Why:** Timeout failure type exists with distinct badge and rerun button. Remaining work adds richer timeout diagnostics and per-project configuration.
 
 **Scope:**
-- WaveBoard: timeout status badge (orange with clock icon)
-- Agent card: show timeout duration when exceeded ("30 min timeout exceeded")
 - Completion report: "Agent timed out" section with:
   - Last known file being edited
   - Partial progress percentage
-  - "Rerun Agent" button (single-agent rerun API)
 - Settings: configure default timeout per project (overridable per IMPL)
 
 **Success criteria:**
-- Timeout is visually distinct from logical failure
 - User can identify what agent was doing when timeout occurred
+- Timeout duration is configurable without editing IMPL docs
 
 ---
 
-### v0.18.0-E2 — Animated Dep Graph During Execution
+### v0.18.0-J — Pre-Wave Quality Gates Preview (remaining)
 
-**Why:** The dependency graph SVG is static — it shows the planned structure but doesn't reflect live execution state. During wave runs, users have no visual indicator of which agents are running, complete, or failed without switching to the WaveBoard.
-
-**Scope:**
-- Pass agent status map (agent ID → `pending`/`running`/`complete`/`failed`) into `DependencyGraphPanel`
-- Derive status from SSE events via `useWaveEvents` hook
-- Node animations: pending (muted), running (pulsing glow via CSS `@keyframes`), complete (solid green + checkmark), failed (red + X)
-- Edge animations: grey when pending, colored when source agent completes (dependency satisfied)
-- Wave column backgrounds light up as waves activate
-- Scaffold node (Wave 0) animates independently during scaffold phase
-
-**Success criteria:**
-- Dep graph tells the full execution story at a glance without checking WaveBoard
-
----
-
-### v0.18.0-F — Quality Gates Panel
-
-**Why:** Protocol E21 (v0.12.0) defines a `## Quality Gates` section written by the Scout. The UI can show configured gates and their results after waves run.
+**Why:** QualityGatesPanel shows gate configuration during review. Remaining work adds inline editing so users can adjust gates before approving.
 
 **Scope:**
-- ReviewScreen: parse `## Quality Gates` section (level + gates array) and display as a configuration panel
-- After wave completes: show gate results alongside the wave card (pass/fail badge per gate, command + exit code)
-- Gates configured `required: true` show as blocking (red); `required: false` as advisory (yellow)
-- API: `GET|PUT /api/impl/{slug}/raw` + client-side parse, or new `GET /api/impl/{slug}/gates` endpoint
-- Settings screen exposes default gate config; per-IMPL gates override
-
-**Success criteria:**
-- Quality gate results visible in UI without reading IMPL doc raw markdown
-
----
-
-### v0.18.0-J — Pre-Wave Quality Gates Preview
-
-**Why:** v0.18.0-F shows quality gate *results* after wave completion. But Scout writes the `## Quality Gates` section at planning time — the gates are configured before any agent launches. Surfacing them during review gives the user a chance to adjust gate configuration before approving.
-
-**Scope:**
-- ReviewScreen: parse `## Quality Gates` section from IMPL doc during the pre-wave review step
-- Show "Quality Gates" panel in the review sidebar: level badge (`quick`/`standard`/`full`), list of gates with command and required/advisory status
-- Required gates shown with lock icon — "merge will block if this fails"
-- Advisory gates shown with warning icon — "informational only"
 - "Edit Gates" inline: toggle required/optional per gate, add/remove gates — writes back via `PUT /api/impl/{slug}/raw`
 - Panel collapses to a summary line when gates are default/standard: "3 gates configured (2 required)"
-- API: `GET /api/impl/{slug}/raw` — client-side parse, no new endpoint needed
 
 **Success criteria:**
-- User sees exactly what will run before approving — no surprises at merge time
 - Gate configuration adjustable in one click without opening a text editor
 
 ---
 
-### v0.18.0-K — Large IMPL Doc Scalability
+### v0.18.0-K — Large IMPL Doc Scalability (remaining)
 
-**Why:** Phase 1+2 together produce 14-agent IMPL docs. Every Wave agent launched receives the full doc as context — token waste that scales O(N²) with agent count.
+**Why:** Per-agent context API exists (`GET /api/impl/{slug}/agent/{letter}/context`) and AgentContextToggle shows trimmed payloads in ReviewScreen. Remaining work wires per-agent context into the wave launch path and adds lazy loading.
 
 **Scope:**
-- `GET /api/impl/{slug}/agent/{letter}/context` — serve the trimmed per-agent context payload: that agent's prompt section + interface contracts + file ownership table + scaffolds + quality gates. Used by the orchestrator at launch time.
 - Wave launch path: pass per-agent context payload instead of full IMPL doc when invoking Wave agents via `/api/wave/{slug}/start`
-- ReviewScreen: "Agent Context" toggle on each agent card — shows the trimmed payload that agent received at launch (debugging: "why did agent B miss the contract?")
 - Lazy-load IMPL doc sections in ReviewScreen: fetch and parse only the active panel, not the full doc on every view switch
 
 **Success criteria:**
@@ -262,10 +218,12 @@ GitHub App that posts IMPL doc reviews as PR comments. Approval workflow in GitH
 ## Current Focus
 
 **Now:** Phase 2 intelligence features (remaining items)
-- v0.18.0-E2 — Animated dep graph during execution (pulsing nodes, live status)
-- v0.18.0-F — Quality Gates Panel (test results inline)
-- v0.18.0-J — Pre-wave quality gates preview (edit gates before approval)
-- v0.18.0-K — Large IMPL doc scalability (per-agent context trimming)
+- v0.18.0-A — Verification loop / retry chain UI
+- v0.18.0-B — Enhanced agent progress indicators (current file + action, progress bars)
+- v0.18.0-C — Persistent memory viewer (structured table, memories applied count)
+- v0.18.0-D — Wave timeout diagnostics (last known file, settings config)
+- v0.18.0-J — Pre-wave quality gates editing (inline toggle required/optional)
+- v0.18.0-K — Large IMPL scalability (per-agent context in wave launch, lazy-load panels)
 
 **Then:** v0.19.5 — Wails desktop app. Engine extraction complete — import `scout-and-wave-go`, replace HTTP/SSE with Wails bindings, React frontend unchanged. Ships as native cross-platform app.
 

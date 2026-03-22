@@ -9,6 +9,10 @@ interface DependencyGraphPanelProps {
   dependencyGraphText?: string
   impl?: { waves: WaveInfo[]; file_ownership: FileOwnershipEntry[] }
   executionState?: ExecutionSyncState
+  programSlug?: string
+  programTitle?: string
+  programTier?: number
+  programTiersTotal?: number
 }
 
 interface ParsedAgent {
@@ -182,7 +186,7 @@ function layoutNodes(waves: ParsedWave[]): { nodes: NodePos[]; width: number; he
   return { nodes, width, height }
 }
 
-export default function DependencyGraphPanel({ dependencyGraphText, impl, executionState }: DependencyGraphPanelProps): JSX.Element {
+export default function DependencyGraphPanel({ dependencyGraphText, impl, executionState, programSlug, programTitle, programTier, programTiersTotal }: DependencyGraphPanelProps): JSX.Element {
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; agent: ParsedAgent } | null>(null)
@@ -256,7 +260,12 @@ export default function DependencyGraphPanel({ dependencyGraphText, impl, execut
     )
   }
 
-  const { nodes, width, height } = layoutNodes(parsed)
+  const { nodes, width: contentW, height: contentH } = layoutNodes(parsed)
+  // Add extra padding when program context frame is shown
+  const FRAME_PAD = programSlug ? 48 : 0
+  const FRAME_LABEL_H = programSlug ? 20 : 0
+  const width = contentW + FRAME_PAD * 2
+  const height = contentH + FRAME_PAD * 2 + FRAME_LABEL_H
   const nodeMap = new Map(nodes.map(n => [n.agent.letter, n]))
 
   // Find scaffold node (Wave 0)
@@ -367,6 +376,38 @@ export default function DependencyGraphPanel({ dependencyGraphText, impl, execut
               </filter>
             </defs>
 
+            {/* Program context frame — dashed border with program name + tier */}
+            {programSlug && (
+              <g>
+                <rect
+                  x={8}
+                  y={FRAME_LABEL_H + 4}
+                  width={width - 16}
+                  height={height - FRAME_LABEL_H - 12}
+                  rx={12}
+                  fill="none"
+                  stroke="#6b728040"
+                  strokeWidth={1.5}
+                  strokeDasharray="8 4"
+                />
+                <text
+                  x={width / 2}
+                  y={FRAME_LABEL_H - 2}
+                  textAnchor="middle"
+                  fill="#6b7280"
+                  fontSize={10}
+                  fontWeight={600}
+                  fontFamily="ui-monospace, monospace"
+                  letterSpacing={0.5}
+                >
+                  {programTitle || programSlug}{programTier ? ` · Tier ${programTier}${programTiersTotal ? `/${programTiersTotal}` : ''}` : ''}
+                </text>
+              </g>
+            )}
+
+            {/* Content group — offset when program frame is present */}
+            <g transform={programSlug ? `translate(${FRAME_PAD}, ${FRAME_PAD + FRAME_LABEL_H})` : undefined}>
+
             {/* Wave row backgrounds */}
             {parsed.map((_wave, wi) => {
               const y = PAD_Y + wi * WAVE_GAP - 16
@@ -377,7 +418,7 @@ export default function DependencyGraphPanel({ dependencyGraphText, impl, execut
                   key={`bg-${wi}`}
                   x={PAD_X - 12}
                   y={y}
-                  width={width - PAD_X + 8}
+                  width={contentW - PAD_X + 8}
                   height={rowH + 4}
                   rx={12}
                   fill={color}
@@ -590,6 +631,7 @@ export default function DependencyGraphPanel({ dependencyGraphText, impl, execut
                 </g>
               )
             })}
+            </g>{/* end content group */}
           </svg>
 
           {/* Tooltip - render outside scrollable container */}

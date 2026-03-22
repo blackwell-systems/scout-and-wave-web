@@ -1,0 +1,617 @@
+completion_date: "2026-03-22"
+title: Nested Program Dependency Graph
+feature_slug: nested-program-graph
+verdict: SUITABLE
+suitability_assessment: |
+    1. File decomposition: 6 files across 3 repos (Go backend, TS types, React components,
+       tests, shared layout utility). Clean decomposition into 4 agents across 2 waves.
+       No file conflicts — each agent owns disjoint files.
+
+    2. Investigation-first: No unknowns. Both graph renderers exist and are well-understood.
+       The composition pattern (embedding agent layout inside IMPL containers) is a pure
+       rendering concern with no runtime mysteries.
+
+    3. Interface discoverability: Yes. The API response shape (ImplTierStatus extended with
+       waves/agents) can be fully specified. The shared layout utility signature is deterministic
+       from the existing DependencyGraphPanel code.
+
+    4. Pre-implementation status: All files are TODO — this is a new feature composing two
+       existing renderers.
+
+    5. Parallelization value: High. Build/test cycle is >30s (Go build + vitest). Wave 1 has
+       3 parallel agents (backend API, types, shared layout util). Wave 2 has 1 agent doing
+       the main component rewrite consuming all Wave 1 outputs.
+
+    Estimated times:
+    - Scout phase: ~8 min
+    - Agent execution: ~15 min (3 parallel W1 agents x 10 min + 1 W2 agent x 12 min)
+    - Merge & verification: ~5 min
+    Total SAW time: ~28 min
+    Sequential baseline: ~45 min (4 agents x ~11 min avg)
+    Time savings: ~17 min (38% faster)
+    Recommendation: Clear speedup. Proceed.
+test_command: go test ./... && cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run
+lint_command: go vet ./...
+file_ownership:
+    - file: web/src/types/program.ts
+      agent: A
+      wave: 1
+      action: modify
+    - file: pkg/api/program_handler.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: web/src/lib/graphLayout.ts
+      agent: C
+      wave: 1
+      action: new
+    - file: web/src/lib/graphLayout.test.ts
+      agent: C
+      wave: 1
+      action: new
+    - file: web/src/components/ProgramDependencyGraph.tsx
+      agent: D
+      wave: 2
+      action: modify
+    - file: web/src/components/__tests__/ProgramDependencyGraph.test.tsx
+      agent: D
+      wave: 2
+      action: modify
+interface_contracts:
+    - name: ImplWaveInfo
+      description: Wave topology for an IMPL, surfaced in program status API response
+      definition: |
+        // Go (program_tier_types.go) — new type
+        type ImplWaveInfo struct {
+          Number int              `json:"number"`
+          Agents []ImplAgentInfo  `json:"agents"`
+        }
+
+        // TypeScript (program.ts) — new type
+        export interface ImplWaveInfo {
+          number: number
+          agents: ImplAgentInfo[]
+        }
+      location: pkg/protocol (Go SDK) + web/src/types/program.ts
+    - name: ImplAgentInfo
+      description: Agent node within an IMPL wave, for nested graph rendering
+      definition: |
+        // Go (program_tier_types.go) — new type
+        type ImplAgentInfo struct {
+          ID           string   `json:"id"`
+          Status       string   `json:"status"`
+          Dependencies []string `json:"dependencies,omitempty"`
+        }
+
+        // TypeScript (program.ts) — new type
+        export interface ImplAgentInfo {
+          id: string
+          status: string
+          dependencies?: string[]
+        }
+      location: pkg/protocol (Go SDK) + web/src/types/program.ts
+    - name: ImplTierStatus.Waves
+      description: Extended ImplTierStatus with nested wave/agent topology
+      definition: |
+        // Go — add field to ImplTierStatus
+        type ImplTierStatus struct {
+          Slug   string         `json:"slug"`
+          Status string         `json:"status"`
+          Waves  []ImplWaveInfo `json:"waves,omitempty"`
+        }
+
+        // TypeScript — extend ImplTierStatus
+        export interface ImplTierStatus extends ImplReference {
+          wave_progress?: string
+          waves?: ImplWaveInfo[]
+        }
+      location: pkg/protocol/program_tier_types.go + web/src/types/program.ts
+    - name: layoutAgentWaves
+      description: Shared layout function that positions agent nodes in wave rows, used by both DependencyGraphPanel and nested graph
+      definition: |
+        // web/src/lib/graphLayout.ts
+        export interface AgentNode {
+          id: string
+          wave: number
+          dependencies: string[]
+        }
+
+        export interface PositionedAgent {
+          x: number
+          y: number
+          agent: AgentNode
+        }
+
+        export interface AgentLayoutResult {
+          nodes: PositionedAgent[]
+          edges: Array<{ from: PositionedAgent; to: PositionedAgent }>
+          width: number
+          height: number
+        }
+
+        export function layoutAgentWaves(
+          waves: Array<{ number: number; agents: AgentNode[] }>,
+          opts: {
+            nodeSize: number      // diameter of agent circle
+            waveGap: number       // vertical gap between wave rows
+            agentGap: number      // horizontal gap between agents
+            padX: number          // horizontal padding
+            padY: number          // vertical padding
+          }
+        ): AgentLayoutResult
+      location: web/src/lib/graphLayout.ts
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Agent A — TypeScript Types for Nested Graph Data
+
+            **What to implement:**
+            Extend `web/src/types/program.ts` to add nested wave/agent types that the
+            program status API will return.
+
+            **Changes to web/src/types/program.ts:**
+
+            1. Add new interfaces after the existing `ImplTierStatus`:
+
+            ```typescript
+            export interface ImplAgentInfo {
+              id: string
+              status: string  // 'pending' | 'running' | 'complete' | 'failed'
+              dependencies?: string[]
+            }
+
+            export interface ImplWaveInfo {
+              number: number
+              agents: ImplAgentInfo[]
+            }
+            ```
+
+            2. Extend `ImplTierStatus` with an optional `waves` field:
+
+            ```typescript
+            export interface ImplTierStatus extends ImplReference {
+              wave_progress?: string
+              waves?: ImplWaveInfo[]
+            }
+            ```
+
+            **Interface contracts (binding):**
+            - `ImplAgentInfo` must have fields: `id: string`, `status: string`, `dependencies?: string[]`
+            - `ImplWaveInfo` must have fields: `number: number`, `agents: ImplAgentInfo[]`
+            - `ImplTierStatus.waves` must be `ImplWaveInfo[] | undefined`
+
+            **Tests:** No test file for types — type correctness verified by TypeScript compiler.
+
+            **Verification gate:**
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+            ```
+
+            **Constraints:**
+            - Do NOT modify any other type files
+            - Keep the `extends ImplReference` inheritance
+            - The `wave_progress` field must remain (backward compatible)
+          files:
+            - web/src/types/program.ts
+        - id: B
+          task: |
+            ## Agent B — Backend API: Surface Wave/Agent Topology
+
+            **What to implement:**
+            Extend the program status API handler to include wave/agent data for each IMPL
+            in the tier status response.
+
+            **Changes to pkg/api/program_handler.go:**
+
+            In `handleGetProgramStatus`, after building tier statuses, enrich each
+            `ImplTierStatus` with wave/agent topology by loading the IMPL doc from disk.
+
+            The Go SDK already has these types available:
+            - `protocol.ImplTierStatus` — add `Waves []ImplWaveInfo` field
+            - Need new types: `ImplWaveInfo{Number int, Agents []ImplAgentInfo}`
+              and `ImplAgentInfo{ID string, Status string, Dependencies []string}`
+
+            **Implementation approach:**
+
+            1. Add new Go types to program_handler.go (or a new file in pkg/api/):
+
+            ```go
+            type ImplWaveDetail struct {
+              Number int               `json:"number"`
+              Agents []ImplAgentDetail `json:"agents"`
+            }
+
+            type ImplAgentDetail struct {
+              ID           string   `json:"id"`
+              Status       string   `json:"status"`
+              Dependencies []string `json:"dependencies,omitempty"`
+            }
+            ```
+
+            2. Create an `enrichImplWithWaves` function that:
+               - Takes an IMPL slug and repo path
+               - Calls `service.ResolveIMPLPathForProgram(implSlug, repoPath)` to find the IMPL file
+               - Calls `protocol.Load(path)` to load the full IMPL manifest
+               - Extracts `manifest.Waves` and maps each `protocol.Wave` to `ImplWaveDetail`
+               - For each agent, maps `protocol.Agent` to `ImplAgentDetail`
+               - Agent status should be derived from completion reports if available,
+                 otherwise "pending"
+
+            3. In `handleGetProgramStatus`, after building `resp.TierStatuses`, iterate
+               through each tier's ImplStatuses and call enrichImplWithWaves to add wave data.
+
+            4. Extend the `ProgramStatusResponse` struct to use a new type that includes waves:
+
+            ```go
+            type ImplTierStatusWithWaves struct {
+              Slug   string           `json:"slug"`
+              Title  string           `json:"title,omitempty"`
+              Status string           `json:"status"`
+              Waves  []ImplWaveDetail `json:"waves,omitempty"`
+            }
+            ```
+
+            Note: The existing `protocol.TierStatusDetail` uses `protocol.ImplTierStatus`
+            which only has Slug+Status. You need to create a web-specific response type
+            that adds the Waves field, similar to how `ProgramStatusResponse` already wraps
+            `protocol.ProgramStatusResult`.
+
+            **Interface contracts (binding):**
+            - JSON field names: `waves[].number`, `waves[].agents[].id`, `waves[].agents[].status`
+            - `waves` is omitted from JSON when nil/empty (backward compatible)
+            - Agent status values: "pending", "running", "complete", "failed"
+
+            **Tests:**
+            Add a test in `pkg/api/program_handler_test.go` (if exists) or verify manually that
+            GET /api/program/{slug} returns waves data when IMPL docs are available.
+
+            **Verification gate:**
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./... && go vet ./...
+            ```
+
+            **Constraints:**
+            - Do NOT modify files in the Go SDK repo (scout-and-wave-go)
+            - Keep backward compatibility — waves field is optional/omitempty
+            - Handle missing IMPL docs gracefully (just omit waves for that IMPL)
+            - Do NOT load IMPL docs synchronously in a hot path — this handler is not latency-critical
+              but should still avoid loading 50+ IMPL docs. Only load for IMPLs in the current response.
+          files:
+            - pkg/api/program_handler.go
+        - id: C
+          task: |
+            ## Agent C — Shared Agent-Wave Layout Utility
+
+            **What to implement:**
+            Extract the wave-based agent layout algorithm into a shared utility that can be
+            used by both the existing DependencyGraphPanel and the new nested program graph.
+
+            **New file: web/src/lib/graphLayout.ts**
+
+            Study the existing layout logic in `web/src/components/review/DependencyGraphPanel.tsx`:
+            - `layoutNodes()` function (lines 154-183)
+            - The transitive reduction logic (lines 266-304)
+            - Edge building (lines 307-321)
+
+            Extract a generalized version:
+
+            ```typescript
+            export interface AgentNode {
+              id: string
+              wave: number
+              dependencies: string[]
+            }
+
+            export interface PositionedAgent {
+              x: number
+              y: number
+              agent: AgentNode
+            }
+
+            export interface AgentLayoutResult {
+              nodes: PositionedAgent[]
+              edges: Array<{ from: PositionedAgent; to: PositionedAgent }>
+              width: number
+              height: number
+            }
+
+            export interface LayoutOptions {
+              nodeSize: number
+              waveGap: number
+              agentGap: number
+              padX: number
+              padY: number
+            }
+
+            /**
+             * Layout agent nodes in wave rows with transitive-reduced dependency edges.
+             * Groups agents by wave number, centers each row horizontally, computes
+             * cross-wave edges with transitive reduction.
+             */
+            export function layoutAgentWaves(
+              waves: Array<{ number: number; agents: AgentNode[] }>,
+              opts: LayoutOptions
+            ): AgentLayoutResult {
+              // ... port from DependencyGraphPanel.layoutNodes + edge building
+            }
+            ```
+
+            The function must:
+            1. Accept configurable node size, gaps, and padding (so nested graph can use smaller nodes)
+            2. Group agents by wave, lay out each wave as a horizontal row
+            3. Center agents within each row
+            4. Build cross-wave dependency edges with transitive reduction
+            5. Return positioned nodes, edges, total width and height
+
+            Also extract the transitive reduction helper:
+            ```typescript
+            export function transitiveReduce(
+              nodes: PositionedAgent[],
+              rawEdges: Array<{ from: string; to: string }>
+            ): Array<{ from: string; to: string }>
+            ```
+
+            **New file: web/src/lib/graphLayout.test.ts**
+
+            Write tests covering:
+            - Single wave with multiple agents (all in one row)
+            - Two waves with dependencies (edges created correctly)
+            - Transitive reduction removes redundant edges
+            - Empty waves array returns empty result
+            - Configurable sizing produces correct dimensions
+
+            **Interface contracts (binding):**
+            - Function signature: `layoutAgentWaves(waves, opts) => AgentLayoutResult`
+            - All position values are numbers (SVG coordinates)
+            - Edges reference PositionedAgent objects from the nodes array
+
+            **Verification gate:**
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run src/lib/graphLayout.test.ts
+            ```
+
+            **Constraints:**
+            - Do NOT modify DependencyGraphPanel.tsx (that refactor can happen later)
+            - Pure functions only — no React, no DOM, no side effects
+            - Must handle degenerate cases: 0 waves, 1 agent, no dependencies
+          files:
+            - web/src/lib/graphLayout.ts
+            - web/src/lib/graphLayout.test.ts
+      base_commit: d1cddc1133d3303f8e6d22b780d832e029c63db2
+    - number: 2
+      agents:
+        - id: D
+          task: |
+            ## Agent D — Nested Program Dependency Graph Component
+
+            **What to implement:**
+            Major rewrite of `ProgramDependencyGraph.tsx` to render three-level nested
+            visualization: Tier containers > IMPL containers > Agent/Wave nodes.
+
+            **Dependencies from Wave 1:**
+            - Agent A: `ImplWaveInfo` and `ImplAgentInfo` types in `web/src/types/program.ts`
+            - Agent B: Backend API now returns `waves` field on each `ImplTierStatus`
+            - Agent C: `layoutAgentWaves()` from `web/src/lib/graphLayout.ts`
+
+            **Changes to web/src/components/ProgramDependencyGraph.tsx:**
+
+            1. **Import the shared layout utility:**
+            ```typescript
+            import { layoutAgentWaves, type AgentNode } from '../lib/graphLayout'
+            ```
+
+            2. **Update ImplNode interface** to include wave data:
+            ```typescript
+            interface ImplNode {
+              slug: string
+              tier: number
+              dependencies: string[]
+              status: string
+              waves?: ImplWaveInfo[]  // from types/program.ts
+            }
+            ```
+
+            3. **Update buildImplGraph()** to pass through wave data from the API response.
+               The `ImplTierStatus` now has an optional `waves` field.
+
+            4. **New IMPL container sizing logic:**
+            ```typescript
+            // Constants for nested layout
+            const AGENT_NODE_SIZE = 28    // small circles for agents
+            const AGENT_GAP = 40          // horizontal gap between agent nodes
+            const WAVE_ROW_HEIGHT = 50    // vertical gap between wave rows inside IMPL
+            const IMPL_PAD_X = 16         // padding inside IMPL container
+            const IMPL_PAD_Y = 24         // padding (top includes slug label)
+            const IMPL_MIN_W = 120        // minimum IMPL width
+            const IMPL_MIN_H = 60         // minimum IMPL height (no waves)
+
+            function computeImplSize(waves: ImplWaveInfo[]): { w: number; h: number } {
+              if (!waves || waves.length === 0) return { w: IMPL_MIN_W, h: IMPL_MIN_H }
+              const maxAgentsPerWave = Math.max(...waves.map(w => w.agents.length))
+              const w = Math.max(IMPL_MIN_W, IMPL_PAD_X * 2 + maxAgentsPerWave * AGENT_GAP)
+              const h = IMPL_PAD_Y + waves.length * WAVE_ROW_HEIGHT + 16
+              return { w, h }
+            }
+            ```
+
+            5. **Rewrite layoutNodes()** to handle variable-size IMPL containers:
+            - Each IMPL node now has a computed width/height based on its wave/agent count
+            - Tier row height = max IMPL height in that tier + padding
+            - Horizontal spacing must account for variable IMPL widths
+            - Center IMPLs within their tier row
+
+            6. **Render nested agent nodes inside each IMPL container:**
+            For each IMPL node that has `waves` data:
+            - Use `layoutAgentWaves()` with small node size (28px) to get positioned agents
+            - Render agent circles inside the IMPL container's SVG group
+            - Color agents by status using `getAgentColor()` from entityColors
+            - Add agent letter labels (fontSize 10)
+            - Render intra-IMPL dependency edges as thin bezier curves
+
+            7. **Agent status indicators (carry over from DependencyGraphPanel):**
+            - Running agents: pulsing animation (reuse exec-node-running CSS class)
+            - Complete agents: green fill + small checkmark overlay
+            - Failed agents: red border
+            - Pending agents: muted fill
+
+            8. **Flowing particle animations on intra-IMPL edges:**
+            - Active edges (source complete, target running): 3 flowing circles, 2s duration
+            - Failed edges: red particles, 3s duration
+            - Use smaller particle radius (1.5px) than DependencyGraphPanel (2.5px)
+            - Create a `particle-glow` SVG filter def (this component only has `impl-glow` at line 366 — copy the particle-glow pattern from DependencyGraphPanel.tsx)
+
+            9. **Wave row labels inside IMPL containers:**
+            - Small "W1", "W2" labels on the left side of each wave row
+            - fontSize 7, muted color, monospace
+
+            10. **Inter-tier edges** remain as before (cubic bezier between IMPL containers),
+                but connect from bottom-center of source IMPL to top-center of target IMPL.
+                Adjust connection points for variable-height containers.
+
+            11. **Tooltip enhancement:**
+            When hovering an IMPL container, show:
+            - IMPL slug, tier, status (existing)
+            - Agent count and wave count (new)
+            - Per-wave agent summary (new): "W1: A, B, C | W2: D, E"
+
+            12. **Degenerate cases:**
+            - IMPL with no wave data: render as current fixed-size rectangle (fallback)
+            - Single-tier single-IMPL: render correctly without tier backgrounds
+            - IMPL with 1 wave, 1 agent: small container, no intra-edges
+
+            **Changes to web/src/components/__tests__/ProgramDependencyGraph.test.tsx:**
+
+            Update the mock `ProgramStatus` data to include `waves` on ImplTierStatus entries:
+            ```typescript
+            impl_statuses: [
+              {
+                slug: 'impl-alpha',
+                title: 'Alpha',
+                status: 'complete',
+                waves: [
+                  { number: 1, agents: [
+                    { id: 'A', status: 'complete' },
+                    { id: 'B', status: 'complete' },
+                  ]},
+                  { number: 2, agents: [
+                    { id: 'C', status: 'complete', dependencies: ['A', 'B'] },
+                  ]},
+                ],
+              },
+            ]
+            ```
+
+            Add tests for:
+            - Nested agent nodes render inside IMPL containers
+            - IMPL containers have variable sizes based on agent/wave count
+            - Fallback rendering when waves data is missing
+            - Tooltip shows agent summary
+
+            **Verification gate:**
+            ```bash
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit && node_modules/.bin/vitest run src/components/__tests__/ProgramDependencyGraph.test.tsx
+            ```
+
+            **Constraints:**
+            - Keep pure SVG approach — no new libraries (no D3, no react-flow)
+            - Maintain existing onSelectImpl click handler on IMPL containers
+            - Support SSE-driven updates — component re-renders when programStatus prop changes
+            - Responsive to container width (existing ResizeObserver pattern)
+            - Must maintain backward compatibility: if API returns no waves, render old-style nodes
+          files:
+            - web/src/components/ProgramDependencyGraph.tsx
+            - web/src/components/__tests__/ProgramDependencyGraph.test.tsx
+          dependencies:
+            - A
+            - B
+            - C
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: go build ./...
+          required: true
+        - type: lint
+          command: go vet ./...
+          required: true
+        - type: test
+          command: go test ./pkg/api/...
+          required: true
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && node_modules/.bin/vitest run
+          required: true
+completion_reports:
+    A:
+        status: complete
+        branch: saw/nested-program-graph/wave1-agent-A
+        commit: "3042561"
+        files_changed:
+            - web/src/types/program.ts
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/nested-program-graph/wave1-agent-B
+        commit: 5f063e1
+        files_changed:
+            - pkg/api/program_handler.go
+        verification: PASS
+    C:
+        status: complete
+        branch: saw/nested-program-graph/wave1-agent-C
+        commit: 70e371b
+        files_changed:
+            - web/src/lib/graphLayout.ts
+            - web/src/lib/graphLayout.test.ts
+        files_created:
+            - web/src/lib/graphLayout.ts
+            - web/src/lib/graphLayout.test.ts
+        tests_added:
+            - returns empty result for zero waves
+            - lays out single wave with multiple agents
+            - lays out two waves with dependencies
+            - handles single agent
+            - configurable sizing dimensions
+            - only creates cross-wave edges
+            - removes redundant edges
+            - preserves edges when no redundancy
+            - handles empty edges
+            - handles diamond dependency pattern
+        verification: PASS
+    D:
+        status: complete
+        branch: main
+        commit: 90ac7ea
+        files_changed:
+            - web/src/components/ProgramDependencyGraph.tsx
+            - web/src/components/__tests__/ProgramDependencyGraph.test.tsx
+        tests_added:
+            - renders agent circles inside IMPL containers with waves
+            - renders agent circles for executing IMPL
+            - renders wave row labels
+            - IMPL with waves has larger container
+            - renders old-style status badge when IMPL has no waves
+            - does not render nested agents group for IMPL without waves
+            - tooltip shows agent count and wave summary on hover
+        verification: PASS
+pre_mortem:
+    overall_risk: medium
+    rows:
+        - scenario: IMPL container sizing causes overlapping nodes when many agents per wave
+          likelihood: medium
+          impact: medium
+          mitigation: computeImplSize uses Math.max with minimum dimensions; layout function centers within available space. Agent D should test with 6+ agents in a single wave.
+        - scenario: Backend IMPL doc loading adds latency to program status endpoint
+          likelihood: low
+          impact: medium
+          mitigation: Agent B only loads IMPL docs for IMPLs already in the response (bounded by tier size, typically 2-5 IMPLs). protocol.Load is fast for YAML parsing.
+        - scenario: Particle animations on many intra-IMPL edges cause performance issues
+          likelihood: medium
+          impact: low
+          mitigation: Only animate edges for active/failed states (not all edges). Programs typically have 2-5 IMPLs visible, each with 2-4 waves — bounded particle count.
+        - scenario: Go SDK ImplTierStatus type change needed but owned by different repo
+          likelihood: high
+          impact: medium
+          mitigation: Agent B creates web-specific response types in pkg/api/ instead of modifying the Go SDK. The web handler already wraps SDK types (ProgramStatusResponse pattern).
+state: WAVE_PENDING
