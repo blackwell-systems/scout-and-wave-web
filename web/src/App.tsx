@@ -115,7 +115,7 @@ export default function App() {
     setActiveRepoIndex(index)
   }, [setActiveRepoIndex])
 
-  const { leftWidthPx, dividerProps } = useResizableDivider({ initialWidthPx: Math.round(window.innerWidth * 0.15) - 20, minWidthPx: 140, maxFraction: 0.15 })
+  const { leftWidthPx, isDragging: sidebarDragging, dividerProps } = useResizableDivider({ initialWidthPx: Math.round(window.innerWidth * 0.15) - 20, minWidthPx: 140, maxFraction: 0.15 })
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
 
   const [rightWidthPx, setRightWidthPx] = useState(() => Math.min(680, Math.round(window.innerWidth * 0.60)))
@@ -413,6 +413,7 @@ export default function App() {
         onToggleSidebar={() => setSidebarCollapsed(c => !c)}
         sidebarWidth={leftWidthPx}
         sidebarDividerProps={dividerProps}
+        sidebarDragging={sidebarDragging}
       />
 
       {settingsModal.isOpen && createPortal(

@@ -1,0 +1,507 @@
+completion_date: "2026-03-21"
+title: High-Contrast Mode
+feature_slug: high-contrast-mode
+verdict: SUITABLE
+suitability_assessment: |
+    All five suitability questions resolve cleanly.
+
+    1. File decomposition: 5 distinct files change across 3 independent concerns:
+       CSS variables (index.css), frontend hook (useContrast.ts), UI toggle
+       (HighContrastToggle.tsx + AppHeader.tsx), and config types
+       (types.ts + pkg/service/config_service.go). File ownership is naturally
+       disjoint per concern.
+
+    2. No investigation-first items: implementation approach is fully specified.
+       The .high-contrast class mechanism mirrors the existing .dark pattern exactly.
+
+    3. Interface discoverability: the cross-agent contract is a single hook return
+       type — [boolean, () => void] — mirroring useDarkMode. Fully specifiable
+       before agents start.
+
+    4. Pre-implementation status check: contrast field does not exist in
+       AppearConfig (Go) or SAWConfig (TypeScript). No prior implementation found.
+       All items are TODO.
+
+    5. Parallelization value: build+test cycle is ~30s (tsc + vitest). Three
+       independent workstreams (CSS, hook+types, UI) with 2-3 files each provide
+       clear parallelization benefit, especially since the Go and TypeScript
+       concerns are completely isolated.
+
+    Estimated times:
+    - Scout phase: ~10 min
+    - Agent execution: ~3 agents x ~15 min avg, 2 parallel in Wave 1 = ~20 min
+    - Merge and verification: ~5 min
+    Total SAW time: ~35 min
+
+    Sequential baseline: 3 agents x 15 min = ~45 min
+    Time savings: ~10 min (22% faster)
+
+    Recommendation: Clear speedup. Proceed.
+test_command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm test -- --run
+lint_command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+file_ownership:
+    - file: web/src/index.css
+      agent: A
+      wave: 1
+      action: modify
+    - file: web/src/hooks/useContrast.ts
+      agent: B
+      wave: 1
+      action: new
+    - file: web/src/types.ts
+      agent: B
+      wave: 1
+      action: modify
+    - file: pkg/service/config_service.go
+      agent: B
+      wave: 1
+      action: modify
+    - file: web/src/components/HighContrastToggle.tsx
+      agent: C
+      wave: 2
+      action: new
+      depends_on:
+        - B
+    - file: web/src/components/layout/AppHeader.tsx
+      agent: C
+      wave: 2
+      action: modify
+      depends_on:
+        - B
+interface_contracts:
+    - name: useContrast
+      description: |-
+        React hook that mirrors useDarkMode. Loads contrast preference from
+        config on mount, toggles .high-contrast class on document.documentElement,
+        and persists the preference via saveConfig.
+      definition: |
+        // web/src/hooks/useContrast.ts
+        export function useContrast(): [boolean, () => void]
+        // Returns: [isHighContrast, toggle]
+        // - isHighContrast: true when .high-contrast class is present on <html>
+        // - toggle: flips between normal and high-contrast, persists to config
+      location: web/src/hooks/useContrast.ts
+    - name: SAWConfig.appearance.contrast
+      description: |-
+        New optional field on the appearance config persisted to saw.config.json.
+        Backend Go struct and frontend TypeScript interface must both be extended.
+      definition: |
+        // TypeScript (web/src/types.ts) — extend the appearance field of SAWConfig:
+        appearance: {
+          theme: 'system' | 'light' | 'dark'
+          contrast?: 'normal' | 'high'
+          color_theme?: string
+          color_theme_dark?: string
+          color_theme_light?: string
+          favorite_themes_dark?: string[]
+          favorite_themes_light?: string[]
+        }
+
+        // Go (pkg/service/config_service.go) — extend AppearConfig:
+        type AppearConfig struct {
+          Theme               string   `json:"theme"`
+          Contrast            string   `json:"contrast,omitempty"`  // "normal" | "high"
+          ColorTheme          string   `json:"color_theme,omitempty"`
+          ColorThemeDark      string   `json:"color_theme_dark,omitempty"`
+          ColorThemeLight     string   `json:"color_theme_light,omitempty"`
+          FavoriteThemesDark  []string `json:"favorite_themes_dark,omitempty"`
+          FavoriteThemesLight []string `json:"favorite_themes_light,omitempty"`
+        }
+      location: web/src/types.ts
+    - name: HighContrastToggle
+      description: |-
+        Button component placed in AppHeader alongside DarkModeToggle. Calls
+        useContrast() and renders a toggle icon. Same pattern as DarkModeToggle.
+      definition: |
+        // web/src/components/HighContrastToggle.tsx
+        export default function HighContrastToggle(): JSX.Element
+        // Renders a button with aria-label, uses useContrast() hook,
+        // shows an accessibility/contrast icon (lucide: Contrast or Eye).
+      location: web/src/components/HighContrastToggle.tsx
+waves:
+    - number: 1
+      agents:
+        - id: A
+          task: |
+            ## Agent A — CSS Variables for High-Contrast Mode
+
+            ### What to implement
+            Add a `.high-contrast` CSS selector block to
+            `web/src/index.css` that overrides the semantic CSS variables
+            to meet WCAG AA contrast ratios. This block must work on top of
+            both light and dark base themes (i.e., it is additive, not
+            replacing the existing `:root` or `.dark` blocks).
+
+            ### CSS variable overrides required
+            Add the following block after the existing `.dark { ... }` block
+            inside `@layer base`:
+
+            ```css
+            .high-contrast {
+              --background: 0 0% 100%;
+              --foreground: 0 0% 0%;
+              --muted: 0 0% 85%;
+              --muted-foreground: 0 0% 15%;
+              --border: 0 0% 0%;
+              --input: 0 0% 85%;
+              --ring: 240 100% 40%;
+              --primary: 240 100% 35%;
+              --primary-foreground: 0 0% 100%;
+              --secondary: 0 0% 0%;
+              --secondary-foreground: 0 0% 100%;
+              --accent: 240 100% 35%;
+              --accent-foreground: 0 0% 100%;
+              --destructive: 0 100% 30%;
+              --destructive-foreground: 0 0% 100%;
+              --card: 0 0% 95%;
+              --card-foreground: 0 0% 0%;
+              --popover: 0 0% 95%;
+              --popover-foreground: 0 0% 0%;
+            }
+
+            .dark.high-contrast {
+              --background: 0 0% 0%;
+              --foreground: 0 0% 100%;
+              --muted: 0 0% 15%;
+              --muted-foreground: 0 0% 90%;
+              --border: 0 0% 100%;
+              --input: 0 0% 15%;
+              --ring: 60 100% 60%;
+              --primary: 60 100% 60%;
+              --primary-foreground: 0 0% 0%;
+              --secondary: 0 0% 100%;
+              --secondary-foreground: 0 0% 0%;
+              --accent: 60 100% 60%;
+              --accent-foreground: 0 0% 0%;
+              --destructive: 0 100% 60%;
+              --destructive-foreground: 0 0% 0%;
+              --card: 0 0% 10%;
+              --card-foreground: 0 0% 100%;
+              --popover: 0 0% 10%;
+              --popover-foreground: 0 0% 100%;
+            }
+            ```
+
+            The rationale: `.high-contrast` (without `.dark`) targets light-mode
+            high-contrast. `.dark.high-contrast` targets dark-mode high-contrast.
+            Both selectors have higher specificity than `:root` and `.dark`
+            respectively, so they win when both classes are present.
+
+            Also add a body background-image override so the dot-grid texture
+            is disabled in high-contrast mode (noise reduces readability):
+
+            ```css
+            .high-contrast body {
+              background-image: none;
+            }
+            ```
+
+            ### Constraints
+            - Do NOT touch the `:root` or `.dark` blocks.
+            - Do NOT modify `base16-themes.ts` (auto-generated, off-limits).
+            - These CSS vars must use the same HSL channel format ("H S% L%")
+              as all existing vars in this file.
+
+            ### Verification gate
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && tsc --noEmit
+            ```
+            (TypeScript compile verifies no import errors from index.css changes.)
+          files:
+            - web/src/index.css
+        - id: B
+          task: |
+            ## Agent B — Hook, Type Contracts, and Backend Config
+
+            ### What to implement
+            Three closely related changes: a new React hook, TypeScript type
+            extension, and Go backend struct extension. These are grouped because
+            they define the shared contract that Agent C (Wave 2) depends on.
+
+            ### 1. Create web/src/hooks/useContrast.ts
+
+            Mirror the structure of `web/src/hooks/useDarkMode.ts` exactly.
+
+            ```typescript
+            import { useState, useEffect } from 'react'
+            import { getConfig } from '../api'
+
+            export function useContrast(): [boolean, () => void] {
+              const [isHighContrast, setIsHighContrast] = useState<boolean>(false)
+
+              // Load contrast preference from config on mount
+              useEffect(() => {
+                getConfig().then(config => {
+                  const contrast = config.appearance?.contrast ?? 'normal'
+                  setIsHighContrast(contrast === 'high')
+                }).catch(() => {})
+              }, [])
+
+              // Apply .high-contrast class to <html>
+              useEffect(() => {
+                if (isHighContrast) {
+                  document.documentElement.classList.add('high-contrast')
+                } else {
+                  document.documentElement.classList.remove('high-contrast')
+                }
+              }, [isHighContrast])
+
+              function toggle() {
+                const next = !isHighContrast
+                setIsHighContrast(next)
+
+                // Persist in background
+                getConfig().then(async config => {
+                  const { saveConfig } = await import('../api')
+                  await saveConfig({
+                    ...config,
+                    appearance: {
+                      ...config.appearance,
+                      contrast: next ? 'high' : 'normal'
+                    }
+                  })
+                }).catch(() => {})
+              }
+
+              return [isHighContrast, toggle]
+            }
+            ```
+
+            ### 2. Modify web/src/types.ts — extend SAWConfig.appearance
+
+            Find the `appearance` field definition in the `SAWConfig` interface
+            (around line 269) and add `contrast?: 'normal' | 'high'`:
+
+            ```typescript
+            appearance: {
+              theme: 'system' | 'light' | 'dark'
+              contrast?: 'normal' | 'high'          // ADD THIS LINE
+              color_theme?: string
+              color_theme_dark?: string
+              color_theme_light?: string
+              favorite_themes_dark?: string[]
+              favorite_themes_light?: string[]
+            }
+            ```
+
+            ### 3. Modify pkg/service/config_service.go — extend AppearConfig
+
+            Add the `Contrast` field to the `AppearConfig` struct (around line 59):
+
+            ```go
+            type AppearConfig struct {
+              Theme               string   `json:"theme"`
+              Contrast            string   `json:"contrast,omitempty"`  // ADD: "normal" | "high"
+              ColorTheme          string   `json:"color_theme,omitempty"`
+              ColorThemeDark      string   `json:"color_theme_dark,omitempty"`
+              ColorThemeLight     string   `json:"color_theme_light,omitempty"`
+              FavoriteThemesDark  []string `json:"favorite_themes_dark,omitempty"`
+              FavoriteThemesLight []string `json:"favorite_themes_light,omitempty"`
+            }
+            ```
+
+            No other Go files need to change — the config is a passthrough JSON
+            object. The API handler already serializes/deserializes the whole struct.
+
+            ### Verification gate
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && tsc --noEmit && npm test -- --run
+            cd /Users/dayna.blackwell/code/scout-and-wave-web && go build ./...
+            ```
+          files:
+            - web/src/hooks/useContrast.ts
+            - web/src/types.ts
+            - pkg/service/config_service.go
+      base_commit: 9fa72538f25a936597dd9cc2fbc85614cadf9040
+    - number: 2
+      agents:
+        - id: C
+          task: |
+            ## Agent C — High-Contrast Toggle UI Component
+
+            ### Dependencies
+            This wave runs after Agent B (Wave 1) completes.
+            `useContrast` hook is available at `../hooks/useContrast`.
+            `SAWConfig.appearance.contrast` field is available in types.ts.
+
+            ### What to implement
+
+            #### 1. Create web/src/components/HighContrastToggle.tsx
+
+            Mirror the structure of `web/src/components/DarkModeToggle.tsx`.
+            Use the `useContrast` hook. Use a lucide icon — `Contrast` (from
+            lucide-react) if available, otherwise use `Eye` or compose a simple
+            SVG. The button should match the existing DarkModeToggle styling:
+            same padding, same hover states, same border treatment.
+
+            ```tsx
+            import { useContrast } from '../hooks/useContrast'
+
+            export default function HighContrastToggle(): JSX.Element {
+              const [isHighContrast, toggle] = useContrast()
+
+              return (
+                <button
+                  onClick={toggle}
+                  aria-label={isHighContrast ? 'Switch to normal contrast' : 'Switch to high contrast'}
+                  title={isHighContrast ? 'High contrast: on' : 'High contrast: off'}
+                  className="flex items-center justify-center px-4 border-l border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+                >
+                  {/* Use lucide Contrast icon or a simple SVG */}
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    className={`w-5 h-5 ${isHighContrast ? 'text-primary' : ''}`}
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                  >
+                    <circle cx="12" cy="12" r="9" />
+                    <path d="M12 3v18" />
+                    <path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor" stroke="none" />
+                  </svg>
+                </button>
+              )
+            }
+            ```
+
+            If `lucide-react` exports a `Contrast` icon (check the import at
+            runtime — lucide versions vary), prefer that over the inline SVG above.
+
+            #### 2. Modify web/src/components/layout/AppHeader.tsx
+
+            Import `HighContrastToggle` and place it adjacent to `DarkModeToggle`
+            in the right-side header controls. The import goes at the top of the
+            file alongside the existing DarkModeToggle import:
+
+            ```tsx
+            import DarkModeToggle from '../DarkModeToggle'
+            import HighContrastToggle from '../HighContrastToggle'  // ADD
+            import ThemePicker from '../ThemePicker'
+            ```
+
+            In the JSX, insert `<HighContrastToggle />` immediately after
+            `<DarkModeToggle />` (around line 136):
+
+            ```tsx
+            <ThemePicker />
+            <DarkModeToggle />
+            <HighContrastToggle />   {/* ADD */}
+            <button onClick={onSettingsClick} ...>
+            ```
+
+            ### Constraints
+            - Do NOT modify `ThemePicker.tsx` — high-contrast is a class override
+              on top of existing Base16 themes, not a separate theme mode.
+            - Do NOT modify `useDarkMode.ts` — the two hooks are independent.
+            - The toggle should not reset the dark/light mode state.
+
+            ### Verification gate
+            ```
+            cd /Users/dayna.blackwell/code/scout-and-wave-web/web && tsc --noEmit && npm test -- --run
+            ```
+          files:
+            - web/src/components/HighContrastToggle.tsx
+            - web/src/components/layout/AppHeader.tsx
+quality_gates:
+    level: standard
+    gates:
+        - type: build
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npx tsc --noEmit
+          required: true
+        - type: test
+          command: cd /Users/dayna.blackwell/code/scout-and-wave-web/web && npm test -- --run
+          required: true
+post_merge_checklist:
+    groups:
+        - title: Binary and server
+          items:
+            - description: Rebuild the saw binary after Go changes
+              command: cd /Users/dayna.blackwell/code/scout-and-wave-web && go build -o saw ./cmd/saw
+            - description: Restart the server
+              command: pkill -f "saw serve"; cd /Users/dayna.blackwell/code/scout-and-wave-web && ./saw serve
+        - title: Manual end-to-end verification
+          items:
+            - description: Toggle high-contrast on, reload page, verify .high-contrast class re-applies from persisted config
+            - description: Toggle high-contrast while in dark mode, verify .dark.high-contrast overrides apply correctly
+            - description: Verify CSS specificity — Base16 theme vars must not override .high-contrast variables
+        - title: Accessibility
+          items:
+            - description: Verify WCAG AA contrast ratios (4.5:1 for normal text) using browser DevTools or axe extension
+completion_reports:
+    A:
+        status: complete
+        branch: saw/high-contrast-mode/wave1-agent-A
+        commit: 62da921
+        files_changed:
+            - web/src/index.css
+        verification: PASS
+    B:
+        status: complete
+        branch: saw/high-contrast-mode/wave1-agent-B
+        commit: b30b043
+        files_changed:
+            - web/src/hooks/useContrast.ts
+            - web/src/types.ts
+            - pkg/service/config_service.go
+        files_created:
+            - web/src/hooks/useContrast.ts
+        verification: 'PASS: tsc --noEmit clean, 481 frontend tests pass, go vet clean on config_service'
+    C:
+        status: complete
+        branch: main
+        commit: 7cd177c
+        files_changed:
+            - web/src/components/HighContrastToggle.tsx
+            - web/src/components/layout/AppHeader.tsx
+        files_created:
+            - web/src/components/HighContrastToggle.tsx
+        verification: PASS
+pre_mortem:
+    overall_risk: low
+    rows:
+        - scenario: |-
+            CSS specificity conflict — .high-contrast overrides are outcompeted by
+            Base16 theme vars injected at runtime via injectThemeStyles(), since those
+            use .dark.theme-X and .theme-X selectors which may have higher specificity
+            than .high-contrast in some combinations.
+          likelihood: medium
+          impact: medium
+          mitigation: |-
+            Agent A should verify selector specificity. If Base16 theme selectors win,
+            add .high-contrast overrides inside a higher-specificity wrapper or use
+            :is(.high-contrast, .dark.high-contrast) with !important as a last resort.
+            Alternatively, the useContrast hook can inject a <style> tag with even higher
+            specificity overrides after injectThemeStyles() runs, similar to how
+            injectThemeStyles itself works.
+        - scenario: |-
+            Go backend config_service.go change is isolated but the saw binary must
+            be rebuilt for the contrast field to round-trip through the API. If the
+            agent only tests the TypeScript side, the contrast value will silently
+            be dropped on save.
+          likelihood: low
+          impact: medium
+          mitigation: |-
+            Agent B's verification gate includes `go build ./...` to catch compile errors.
+            End-to-end test (save contrast=high, reload page, verify class is re-applied)
+            should be done manually after merge or noted in post-merge checklist.
+        - scenario: |-
+            lucide-react version in web/package.json may not export a `Contrast` icon.
+            Agent C would need to fall back to an inline SVG or pick an alternative icon.
+          likelihood: medium
+          impact: low
+          mitigation: |-
+            Agent C task already includes an inline SVG fallback and instructs the agent
+            to check at runtime. The feature is not blocked — any accessible icon works.
+        - scenario: |-
+            Dot-grid background-image defined in index.css uses .dark body selector.
+            If Agent A adds .high-contrast body { background-image: none } but the
+            selector order in the file puts it before .dark body, specificity may not
+            override correctly in dark high-contrast mode.
+          likelihood: low
+          impact: low
+          mitigation: |-
+            Agent A should place the .high-contrast body rule after both body and
+            .dark body rules so cascade order ensures it wins. Both have the same
+            specificity (one class + element), so source order is the tiebreaker.
+state: WAVE_PENDING

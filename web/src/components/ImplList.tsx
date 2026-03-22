@@ -137,7 +137,7 @@ function EntryRow({ e, selectedSlug, loading, onSelect, onRequestDelete, registe
   }
 
   return (
-    <div className="group relative flex items-center" ref={setRef} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+    <div className="group relative flex items-center hover:bg-muted/40 transition-colors" ref={setRef} onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
       {showCard && <HoverCard slug={e.slug} anchorRef={rowRef} />}
       <Button
         variant="ghost"
@@ -180,7 +180,7 @@ function EntryRow({ e, selectedSlug, loading, onSelect, onRequestDelete, registe
       </Button>
       <button
         onClick={(ev) => { ev.stopPropagation(); onRequestDelete(e.slug) }}
-        className="absolute right-1 opacity-0 group-hover:opacity-100 p-0.5 rounded-none text-muted-foreground hover:text-destructive transition-opacity"
+        className="absolute right-1 z-[2] opacity-0 group-hover:opacity-100 p-0.5 rounded-none text-muted-foreground hover:text-destructive transition-opacity"
         title="Delete"
       >
         ✕

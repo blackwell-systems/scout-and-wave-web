@@ -7,6 +7,7 @@ export default function DarkModeToggle(): JSX.Element {
     <button
       onClick={toggle}
       aria-label={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
+      title={isDark ? 'Light mode' : 'Dark mode'}
       className="flex items-center justify-center px-4 border-l border-border text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
     >
       {isDark ? (

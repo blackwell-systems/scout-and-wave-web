@@ -1,0 +1,44 @@
+title: "Web App Wiring Gaps — FinalizeIMPLEngine (C3) and RunSingleWave/RunSingleAgent (C10)"
+feature_slug: web-wiring-gaps
+verdict: NOT_SUITABLE
+state: NOT_SUITABLE
+suitability_assessment: |
+  Both wiring gaps (C3 and C10) are ALREADY RESOLVED in the web application.
+  No implementation work is needed.
+
+  ## C3: FinalizeIMPLEngine — ALREADY WIRED
+
+  engine.FinalizeIMPLEngine is called in two locations:
+  - pkg/service/scout_service.go:158 — after Scout agent completes, the service
+    calls engine.FinalizeIMPLEngine(ctx, implOut, repoRoot) to validate + populate
+    gates + re-validate. This replaced any earlier direct protocol.Validate +
+    protocol.PopulateGates calls.
+  - pkg/api/bootstrap_handler.go:160 — the bootstrap (greenfield) flow also calls
+    engine.FinalizeIMPLEngine after its Scout run completes.
+
+  Both call sites properly handle errors and emit SSE events (scout_finalize,
+  scout_failed, scout_complete) for UI feedback.
+
+  ## C10: RunSingleWave / RunSingleAgent — ALREADY WIRED
+
+  engine.RunSingleWave is called in three locations:
+  - pkg/api/wave_runner.go:236 — the main runWaveLoop calls RunSingleWave for
+    each wave during automated execution.
+  - pkg/service/wave_service.go:348 — the service-layer wave loop also calls
+    RunSingleWave.
+  - cmd/saw/commands.go:47 — the CLI run-wave command calls RunSingleWave.
+
+  engine.RunSingleAgent is called in two locations:
+  - pkg/service/wave_service.go:121 — the RerunAgent service function launches
+    a single agent rerun via engine.RunSingleAgent in a background goroutine.
+  - pkg/api/resume_action.go:206 — the resume flow also calls RunSingleAgent
+    for individual agent re-execution.
+
+  ## Conclusion
+
+  The web app is fully consistent with the CLI's code paths for both engine
+  functions. The wiring audit findings (C3, C10) were likely documented before
+  these integrations were completed, or were based on an older snapshot of the
+  web app codebase.
+
+  Recommendation: Close these audit items as resolved. No IMPL execution needed.

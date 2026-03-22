@@ -8,6 +8,7 @@ interface ResizableDividerOptions {
 
 interface ResizableDividerResult {
   leftWidthPx: number
+  isDragging: boolean
   dividerProps: {
     onMouseDown: (e: React.MouseEvent) => void
     style: React.CSSProperties
@@ -21,6 +22,7 @@ export function useResizableDivider(options?: ResizableDividerOptions): Resizabl
   const maxFraction = options?.maxFraction ?? 0.40
 
   const [leftWidthPx, setLeftWidthPx] = useState<number>(initialWidthPx)
+  const [isDragging, setIsDragging] = useState(false)
 
   const mouseMoveRef = useRef<((e: MouseEvent) => void) | null>(null)
   const mouseUpRef = useRef<(() => void) | null>(null)
@@ -38,6 +40,7 @@ export function useResizableDivider(options?: ResizableDividerOptions): Resizabl
 
   function onMouseDown(e: React.MouseEvent) {
     e.preventDefault()
+    setIsDragging(true)
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       setLeftWidthPx(
@@ -46,6 +49,7 @@ export function useResizableDivider(options?: ResizableDividerOptions): Resizabl
     }
 
     const handleMouseUp = () => {
+      setIsDragging(false)
       document.removeEventListener('mousemove', handleMouseMove)
       document.removeEventListener('mouseup', handleMouseUp)
       mouseMoveRef.current = null
@@ -61,6 +65,7 @@ export function useResizableDivider(options?: ResizableDividerOptions): Resizabl
 
   return {
     leftWidthPx,
+    isDragging,
     dividerProps: {
       onMouseDown,
       style: { width: '4px', flexShrink: 0, alignSelf: 'stretch' },

@@ -73,3 +73,5 @@ lint_command: go vet ./...
   - IMPL doc: docs/IMPL/complete/IMPL-model-role-consolidation.yaml
 - **webapp-api-parity**: completed 2026-03-21, 2 waves, 8 agents
   - IMPL doc: docs/IMPL/complete/IMPL-webapp-api-parity.yaml
+- **high-contrast-mode**: completed 2026-03-21, 2 waves, 3 agents
+  - IMPL doc: docs/IMPL/complete/IMPL-high-contrast-mode.yaml
