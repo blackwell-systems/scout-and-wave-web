@@ -1,4 +1,4 @@
-import React, { useRef } from 'react'
+import React, { useState } from 'react'
 import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 export interface AppLayoutProps {
@@ -12,6 +12,7 @@ export interface AppLayoutProps {
   onToggleSidebar?: () => void
   sidebarWidth?: number
   sidebarDividerProps?: Record<string, any>
+  sidebarDragging?: boolean
   rightPanelCollapsed?: boolean
   onToggleRightPanel?: () => void
   rightPanelCollapsedContent?: React.ReactNode
@@ -29,22 +30,23 @@ export function AppLayout(props: AppLayoutProps): JSX.Element {
     onToggleSidebar,
     sidebarWidth,
     sidebarDividerProps,
+    sidebarDragging = false,
     rightPanelCollapsed = false,
     onToggleRightPanel,
     rightPanelCollapsedContent,
   } = props
 
-  const draggingRight = useRef(false)
+  const [rightDragging, setRightDragging] = useState(false)
 
   const rightDividerMouseDown = (e: React.MouseEvent) => {
     if (!onRightPanelResize) return
     e.preventDefault()
-    draggingRight.current = true
+    setRightDragging(true)
     const onMove = (mv: MouseEvent) => {
       onRightPanelResize(Math.max(240, Math.min(window.innerWidth - mv.clientX, window.innerWidth * 0.30)))
     }
     const onUp = () => {
-      draggingRight.current = false
+      setRightDragging(false)
       document.removeEventListener('mousemove', onMove)
       document.removeEventListener('mouseup', onUp)
     }
@@ -58,7 +60,7 @@ export function AppLayout(props: AppLayoutProps): JSX.Element {
       <div className="flex flex-1 min-h-0">
         {/* Left sidebar — single container, animated width */}
         <div
-          className={`shrink-0 flex flex-col border-r bg-muted overflow-hidden transition-[width] duration-200 ease-in-out ${sidebarCollapsed ? 'cursor-pointer hover:bg-muted/60' : ''}`}
+          className={`shrink-0 flex flex-col border-r bg-muted overflow-hidden ${!sidebarDragging ? 'transition-[width] duration-200 ease-in-out' : ''} ${sidebarCollapsed ? 'cursor-pointer hover:bg-muted/60' : ''}`}
           style={{ width: sidebarCollapsed ? 40 : sidebarWidth }}
           onClick={sidebarCollapsed ? onToggleSidebar : undefined}
           title={sidebarCollapsed ? 'Expand sidebar' : undefined}
@@ -100,7 +102,7 @@ export function AppLayout(props: AppLayoutProps): JSX.Element {
             {rightPanelCollapsedContent}
           </div>
         ) : rightPanel != null ? (
-          <div className="shrink-0 overflow-hidden border-l transition-[width] duration-200 ease-in-out" style={{ width: rightPanelWidth }}>
+          <div className={`shrink-0 overflow-hidden border-l ${!rightDragging ? 'transition-[width] duration-200 ease-in-out' : ''}`} style={{ width: rightPanelWidth }}>
             {rightPanel}
           </div>
         ) : null}
