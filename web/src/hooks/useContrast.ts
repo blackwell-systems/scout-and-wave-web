@@ -4,26 +4,20 @@ import { getConfig } from '../api'
 // High-contrast CSS variable overrides, injected as a <style> tag so they
 // beat theme variables (which are also injected as unlayered <style> tags).
 // @layer base rules lose to unlayered rules regardless of source order.
+// Only override readability variables — backgrounds, foregrounds, borders.
+// Do NOT touch --primary/--accent/--secondary/--destructive/--ring so the
+// user's selected theme colors are preserved.
 const HC_LIGHT = `
 .high-contrast {
   --background: 0 0% 100%;
   --foreground: 0 0% 0%;
-  --muted: 0 0% 85%;
-  --muted-foreground: 0 0% 15%;
+  --muted: 0 0% 88%;
+  --muted-foreground: 0 0% 10%;
   --border: 0 0% 0%;
-  --input: 0 0% 85%;
-  --ring: 240 100% 40%;
-  --primary: 240 100% 35%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 0 0% 0%;
-  --secondary-foreground: 0 0% 100%;
-  --accent: 240 100% 35%;
-  --accent-foreground: 0 0% 100%;
-  --destructive: 0 100% 30%;
-  --destructive-foreground: 0 0% 100%;
-  --card: 0 0% 95%;
+  --input: 0 0% 88%;
+  --card: 0 0% 96%;
   --card-foreground: 0 0% 0%;
-  --popover: 0 0% 95%;
+  --popover: 0 0% 96%;
   --popover-foreground: 0 0% 0%;
 }`
 
@@ -31,22 +25,13 @@ const HC_DARK = `
 .dark.high-contrast {
   --background: 0 0% 0%;
   --foreground: 0 0% 100%;
-  --muted: 0 0% 15%;
-  --muted-foreground: 0 0% 90%;
+  --muted: 0 0% 12%;
+  --muted-foreground: 0 0% 92%;
   --border: 0 0% 100%;
-  --input: 0 0% 15%;
-  --ring: 60 100% 60%;
-  --primary: 60 100% 60%;
-  --primary-foreground: 0 0% 0%;
-  --secondary: 0 0% 100%;
-  --secondary-foreground: 0 0% 0%;
-  --accent: 60 100% 60%;
-  --accent-foreground: 0 0% 0%;
-  --destructive: 0 100% 60%;
-  --destructive-foreground: 0 0% 0%;
-  --card: 0 0% 10%;
+  --input: 0 0% 12%;
+  --card: 0 0% 8%;
   --card-foreground: 0 0% 100%;
-  --popover: 0 0% 10%;
+  --popover: 0 0% 8%;
   --popover-foreground: 0 0% 100%;
 }
 .high-contrast body { background-image: none; }`
