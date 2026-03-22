@@ -24,13 +24,17 @@ saw --help
 | `extract-context` | Context | Extract agent-specific context as JSON |
 | `set-completion` | Status | Register completion report for an agent |
 | `render` | Format | Render YAML manifest as markdown |
-| `migrate` | Format | Convert markdown IMPL doc to YAML |
 | `mark-complete` | Status | Write SAW:COMPLETE marker to IMPL doc |
 | `run-gates` | Quality | Run quality gate checks for a wave |
 | `check-conflicts` | Quality | Detect file ownership conflicts |
 | `update-agent-prompt` | Maintenance | Update agent's task prompt in manifest |
 | `validate-scaffolds` | Quality | Validate scaffold file status |
 | `freeze-check` | Quality | Check for interface freeze violations |
+| `analyze-deps` | Analysis | Analyze Go repository dependencies |
+| `analyze-suitability` | Analysis | Scan codebase for pre-implementation status |
+| `detect-cascades` | Analysis | Detect cascade candidates from type renames |
+| `detect-scaffolds` | Analysis | Detect shared types needing scaffold files |
+| `extract-commands` | Analysis | Extract build/test/lint commands from CI configs |
 
 ---
 
@@ -45,10 +49,10 @@ saw serve [flags]
 ```
 
 **Flags:**
-- `--addr string` — Listen address (default: `localhost:7432`)
-- `--impl-dir string` — IMPL doc directory (default: `<repo>/docs/IMPL`)
-- `--repo string` — Repository root (default: auto-detect from cwd)
-- `--no-browser` — Skip opening browser automatically
+- `--addr string` -- Listen address (default: `localhost:7432`)
+- `--impl-dir string` -- IMPL doc directory (default: `<repo>/docs/IMPL`)
+- `--repo string` -- Repository root (default: auto-detect from cwd)
+- `--no-browser` -- Skip opening browser automatically
 
 **Behavior:**
 - Serves web UI on specified address
@@ -84,15 +88,15 @@ saw scout --feature "description" [flags]
 ```
 
 **Flags:**
-- `--feature string` — One-line feature description (required)
-- `--backend string` — Backend to use: `api`, `cli`, or `auto` (default: `auto`; env: `SAW_BACKEND`)
-- `--impl string` — Output path for IMPL doc (optional; default: auto-generated in `docs/IMPL/`)
-- `--repo string` — Repository root (optional; default: auto-detect from cwd)
+- `--feature string` -- One-line feature description (required)
+- `--backend string` -- Backend to use: `api`, `cli`, or `auto` (default: `auto`; env: `SAW_BACKEND`)
+- `--impl string` -- Output path for IMPL doc (optional; default: auto-generated in `docs/IMPL/`)
+- `--repo string` -- Repository root (optional; default: auto-detect from cwd)
 
 **Backend Selection:**
-- `api` — Use Anthropic API directly (requires `ANTHROPIC_API_KEY`)
-- `cli` — Use Claude CLI (`claude --print`; requires Claude Max plan)
-- `auto` — Use `api` if `ANTHROPIC_API_KEY` set, else `cli` (default)
+- `api` -- Use Anthropic API directly (requires `ANTHROPIC_API_KEY`)
+- `cli` -- Use Claude CLI (`claude --print`; requires Claude Max plan)
+- `auto` -- Use `api` if `ANTHROPIC_API_KEY` set, else `cli` (default)
 
 **Output:**
 - Creates YAML IMPL manifest at specified or auto-generated path
@@ -127,9 +131,9 @@ saw scaffold --impl <path> [flags]
 ```
 
 **Flags:**
-- `--impl string` — Path to IMPL doc (required)
-- `--backend string` — Backend to use: `api`, `cli`, or `auto` (default: `auto`; env: `SAW_BACKEND`)
-- `--repo string` — Repository root (optional; default: auto-detect from cwd)
+- `--impl string` -- Path to IMPL doc (required)
+- `--backend string` -- Backend to use: `api`, `cli`, or `auto` (default: `auto`; env: `SAW_BACKEND`)
+- `--repo string` -- Repository root (optional; default: auto-detect from cwd)
 
 **Behavior:**
 - Reads `interface_contracts` section from IMPL manifest
@@ -159,9 +163,9 @@ saw wave --impl <path> [flags]
 ```
 
 **Flags:**
-- `--impl string` — Path to IMPL doc (required)
-- `--wave int` — Wave number to execute (default: `1`)
-- `--auto` — Skip inter-wave approval prompts (default: `false`)
+- `--impl string` -- Path to IMPL doc (required)
+- `--wave int` -- Wave number to execute (default: `1`)
+- `--auto` -- Skip inter-wave approval prompts (default: `false`)
 
 **Behavior:**
 - Creates git worktrees for each agent in the wave
@@ -198,8 +202,8 @@ saw merge --impl <path> --wave <n>
 ```
 
 **Flags:**
-- `--impl string` — Path to IMPL doc (required)
-- `--wave int` — Wave number to merge (default: `1`)
+- `--impl string` -- Path to IMPL doc (required)
+- `--wave int` -- Wave number to merge (default: `1`)
 
 **Behavior:**
 - Validates all agents in wave have commits (I5)
@@ -234,9 +238,9 @@ saw status --impl <path> [flags]
 ```
 
 **Flags:**
-- `--impl string` — Path to IMPL doc (required)
-- `--json` — Output JSON instead of human-readable text (default: `false`)
-- `--missing` — List only agents missing completion reports (default: `false`)
+- `--impl string` -- Path to IMPL doc (required)
+- `--json` -- Output JSON instead of human-readable text (default: `false`)
+- `--missing` -- List only agents missing completion reports (default: `false`)
 
 **Output (human-readable):**
 ```
@@ -245,13 +249,13 @@ Feature: Add OAuth 2.0 authentication
 Status: In Progress
 
 Wave 1: Complete (3/3 agents)
-  ✓ Agent A: OAuth client implementation
-  ✓ Agent B: Token storage layer
-  ✓ Agent C: Redirect handler
+  A: OAuth client implementation
+  B: Token storage layer
+  C: Redirect handler
 
 Wave 2: In Progress (1/2 agents)
-  ✓ Agent D: User profile endpoint
-  ✗ Agent E: Token refresh logic (pending)
+  D: User profile endpoint
+  E: Token refresh logic (pending)
 ```
 
 **Output (JSON):**
@@ -294,7 +298,7 @@ saw current-wave <manifest-path>
 ```
 
 **Arguments:**
-- `manifest-path` — Path to YAML IMPL manifest (required)
+- `manifest-path` -- Path to YAML IMPL manifest (required)
 
 **Output:**
 - Prints wave number (e.g., `2`) if incomplete waves remain
@@ -332,8 +336,8 @@ saw merge-wave <manifest-path> <wave-number>
 ```
 
 **Arguments:**
-- `manifest-path` — Path to YAML IMPL manifest (required)
-- `wave-number` — Wave number to check (required)
+- `manifest-path` -- Path to YAML IMPL manifest (required)
+- `wave-number` -- Wave number to check (required)
 
 **Output:** JSON object with `ready` (bool), `reason` (string if not ready), `agents` (array of agent IDs).
 
@@ -361,7 +365,7 @@ saw validate <manifest-path>
 ```
 
 **Arguments:**
-- `manifest-path` — Path to YAML IMPL manifest (required)
+- `manifest-path` -- Path to YAML IMPL manifest (required)
 
 **Output:** JSON object with `valid` (bool), `errors` (array of `{code, message, line?}`).
 
@@ -395,7 +399,7 @@ saw check-conflicts <manifest-path>
 ```
 
 **Arguments:**
-- `manifest-path` — Path to YAML IMPL manifest (required)
+- `manifest-path` -- Path to YAML IMPL manifest (required)
 
 **Output:** JSON array of conflicts (empty if none). Each conflict includes `file`, `agents` (array of agent IDs claiming the file).
 
@@ -430,8 +434,8 @@ saw run-gates --wave <n> [flags]
 ```
 
 **Flags:**
-- `--wave int` — Wave number (required)
-- `--repo-dir string` — Repository directory (default: `.`)
+- `--wave int` -- Wave number (required)
+- `--repo-dir string` -- Repository directory (default: `.`)
 
 **Behavior:**
 - Reads quality gates from IMPL manifest
@@ -457,7 +461,7 @@ saw validate-scaffolds <manifest-path>
 ```
 
 **Arguments:**
-- `manifest-path` — Path to YAML IMPL manifest (required)
+- `manifest-path` -- Path to YAML IMPL manifest (required)
 
 **Output:** JSON object with `valid` (bool), `missing` (array of missing file paths).
 
@@ -489,7 +493,7 @@ saw freeze-check <manifest-path>
 ```
 
 **Arguments:**
-- `manifest-path` — Path to YAML IMPL manifest (required)
+- `manifest-path` -- Path to YAML IMPL manifest (required)
 
 **Behavior:**
 - Verifies `frozen: true` interfaces are not modified after Wave 1
@@ -506,6 +510,128 @@ saw freeze-check docs/IMPL/IMPL-oauth.yaml
 
 ---
 
+## Analysis
+
+### analyze-deps
+
+Analyze Go repository dependencies and produce a dependency graph.
+
+```bash
+saw analyze-deps [flags]
+```
+
+**Flags:**
+- `--repo-dir string` -- Repository root directory (default: `.`)
+
+**Behavior:**
+- Parses Go module and import structure
+- Produces dependency graph for use in IMPL planning
+- Helps identify which packages are tightly coupled
+
+**Examples:**
+```bash
+saw analyze-deps
+saw analyze-deps --repo-dir /path/to/go/project
+```
+
+---
+
+### analyze-suitability
+
+Scan codebase for pre-implementation status of requirements.
+
+```bash
+saw analyze-suitability [flags]
+```
+
+**Flags:**
+- `--repo-dir string` -- Repository root directory (default: `.`)
+
+**Behavior:**
+- Scans the codebase to determine what already exists
+- Reports which features/requirements are partially or fully implemented
+- Useful for Scout to avoid duplicating existing work
+
+**Examples:**
+```bash
+saw analyze-suitability
+saw analyze-suitability --repo-dir /path/to/project
+```
+
+---
+
+### detect-cascades
+
+Detect cascade candidates from type renames via AST analysis.
+
+```bash
+saw detect-cascades [flags]
+```
+
+**Flags:**
+- `--repo-dir string` -- Repository root directory (default: `.`)
+
+**Behavior:**
+- Performs AST analysis on Go source files
+- Identifies type renames that would cause cascading changes
+- Helps avoid breaking changes during wave execution
+
+**Examples:**
+```bash
+saw detect-cascades
+saw detect-cascades --repo-dir /path/to/project
+```
+
+---
+
+### detect-scaffolds
+
+Detect shared types that need scaffold files from interface contracts.
+
+```bash
+saw detect-scaffolds [flags]
+```
+
+**Flags:**
+- `--repo-dir string` -- Repository root directory (default: `.`)
+
+**Behavior:**
+- Analyzes interface contracts in IMPL manifests
+- Identifies shared types referenced by multiple agents
+- Suggests which files should be scaffolded before wave execution
+
+**Examples:**
+```bash
+saw detect-scaffolds
+saw detect-scaffolds --repo-dir /path/to/project
+```
+
+---
+
+### extract-commands
+
+Extract build/test/lint/format commands from CI configs and project manifests.
+
+```bash
+saw extract-commands [flags]
+```
+
+**Flags:**
+- `--repo-dir string` -- Repository root directory (default: `.`)
+
+**Behavior:**
+- Scans CI configuration files (GitHub Actions, Makefile, etc.)
+- Extracts build, test, lint, and format commands
+- Used to populate quality gates in IMPL manifests
+
+**Examples:**
+```bash
+saw extract-commands
+saw extract-commands --repo-dir /path/to/project
+```
+
+---
+
 ## Context & Maintenance
 
 ### extract-context
@@ -517,14 +643,14 @@ saw extract-context --impl <path> --agent <id>
 ```
 
 **Flags:**
-- `--impl string` — Path to IMPL manifest (required)
-- `--agent string` — Agent ID to extract context for (required)
+- `--impl string` -- Path to IMPL manifest (required)
+- `--agent string` -- Agent ID to extract context for (required)
 
 **Output:** JSON object containing:
-- `task` — Agent's task description
-- `files` — Array of files owned by agent
-- `dependencies` — Array of agent IDs this agent depends on
-- `impl_doc_path` — Path to IMPL manifest
+- `task` -- Agent's task description
+- `files` -- Array of files owned by agent
+- `dependencies` -- Array of agent IDs this agent depends on
+- `impl_doc_path` -- Path to IMPL manifest
 
 **Examples:**
 ```bash
@@ -552,15 +678,15 @@ saw set-completion <manifest-path> <agent-id> < completion-report.yaml
 ```
 
 **Arguments:**
-- `manifest-path` — Path to YAML IMPL manifest (required)
-- `agent-id` — Agent ID (e.g., `A`, `B`) (required)
+- `manifest-path` -- Path to YAML IMPL manifest (required)
+- `agent-id` -- Agent ID (e.g., `A`, `B`) (required)
 
 **Input:** Reads completion report YAML from stdin with fields:
-- `status` — `complete`, `blocked`, or `partial`
-- `summary` — Brief completion summary
-- `files_modified` — Array of file paths
-- `tests_added` — Number of tests added
-- `notes` — Additional notes (optional)
+- `status` -- `complete`, `blocked`, or `partial`
+- `summary` -- Brief completion summary
+- `files_modified` -- Array of file paths
+- `tests_added` -- Number of tests added
+- `notes` -- Additional notes (optional)
 
 **Examples:**
 ```bash
@@ -588,7 +714,7 @@ saw update-agent-prompt --agent <id> < manifest.yaml > updated.yaml
 ```
 
 **Flags:**
-- `--agent string` — Agent ID (required)
+- `--agent string` -- Agent ID (required)
 
 **Behavior:**
 - Reads manifest from stdin
@@ -601,7 +727,7 @@ saw update-agent-prompt --agent B < docs/IMPL/IMPL-oauth.yaml > /tmp/updated.yam
 mv /tmp/updated.yaml docs/IMPL/IMPL-oauth.yaml
 ```
 
-**See also:** `render`, `migrate`
+**See also:** `render`
 
 ---
 
@@ -632,37 +758,6 @@ saw render < docs/IMPL/IMPL-oauth.yaml
 saw render < docs/IMPL/IMPL-oauth.yaml > /tmp/IMPL-oauth.md
 ```
 
-**See also:** `migrate` (reverse operation)
-
----
-
-### migrate
-
-Convert a markdown IMPL doc to YAML manifest format.
-
-```bash
-saw migrate < input.md > output.yaml
-```
-
-**Input:** Reads markdown IMPL doc from stdin
-**Output:** Writes YAML manifest to stdout
-
-**Behavior:**
-- Parses markdown IMPL doc using protocol parser
-- Converts to structured YAML manifest
-- Validates against schema during conversion
-
-**Examples:**
-```bash
-# Convert to stdout
-saw migrate < docs/IMPL/IMPL-oauth.md
-
-# Save to YAML
-saw migrate < docs/IMPL/IMPL-oauth.md > docs/IMPL/IMPL-oauth.yaml
-```
-
-**See also:** `render` (reverse operation)
-
 ---
 
 ### mark-complete
@@ -674,7 +769,7 @@ saw mark-complete --date <YYYY-MM-DD> < manifest.yaml > updated.yaml
 ```
 
 **Flags:**
-- `--date string` — Completion date in `YYYY-MM-DD` format (default: today)
+- `--date string` -- Completion date in `YYYY-MM-DD` format (default: today)
 
 **Input:** Reads manifest from stdin
 **Output:** Writes updated manifest to stdout with completion marker
@@ -695,8 +790,9 @@ saw mark-complete --date 2026-03-15 < docs/IMPL/IMPL-oauth.yaml > /tmp/complete.
 ## Global Flags
 
 All commands support:
-- `--version` — Print version and exit
-- `--help` — Print help and exit
+- `--repo-dir string` -- Repository root directory (default: `.`)
+- `--version` -- Print version and exit
+- `--help` -- Print help and exit
 
 ---
 
@@ -711,13 +807,13 @@ All commands support:
 
 ## Exit Codes
 
-- `0` — Success
-- `1` — Error (validation failure, missing arguments, command failure)
+- `0` -- Success
+- `1` -- Error (validation failure, missing arguments, command failure)
 
 ---
 
 ## See Also
 
-- [API Reference](api-reference.md) — HTTP endpoints for web UI
-- [Configuration Reference](configuration.md) — `saw.config.json` structure
-- [Protocol Specification](https://github.com/blackwell-systems/scout-and-wave) — SAW protocol invariants
+- [API Reference](api-reference.md) -- HTTP endpoints for web UI
+- [Configuration Reference](configuration.md) -- `saw.config.json` structure
+- [Protocol Specification](https://github.com/blackwell-systems/scout-and-wave) -- SAW protocol invariants
