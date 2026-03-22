@@ -29,17 +29,45 @@ const (
 	ProgramEventImplBranchMerged = "impl_branch_merged"
 )
 
+// ImplWaveInfo represents wave topology for an IMPL, surfaced in program status API response.
+type ImplWaveInfo struct {
+	Number int             `json:"number"`
+	Agents []ImplAgentInfo `json:"agents"`
+}
+
+// ImplAgentInfo represents an agent node within an IMPL wave.
+type ImplAgentInfo struct {
+	ID           string   `json:"id"`
+	Status       string   `json:"status"`
+	Dependencies []string `json:"dependencies,omitempty"`
+}
+
+// ImplTierStatusWithWaves extends protocol.ImplTierStatus with nested wave/agent topology.
+type ImplTierStatusWithWaves struct {
+	Slug   string         `json:"slug"`
+	Status string         `json:"status"`
+	Waves  []ImplWaveInfo `json:"waves,omitempty"`
+}
+
+// TierStatusDetailWithWaves extends protocol.TierStatusDetail with wave-enriched IMPL statuses.
+type TierStatusDetailWithWaves struct {
+	Number       int                       `json:"number"`
+	Description  string                    `json:"description,omitempty"`
+	ImplStatuses []ImplTierStatusWithWaves `json:"impl_statuses"`
+	Complete     bool                      `json:"complete"`
+}
+
 // ProgramStatusResponse wraps protocol.ProgramStatusResult with web-specific fields.
 type ProgramStatusResponse struct {
-	ProgramSlug      string                       `json:"program_slug"`
-	Title            string                       `json:"title"`
-	State            string                       `json:"state"`
-	CurrentTier      int                          `json:"current_tier"`
-	TierStatuses     []protocol.TierStatusDetail  `json:"tier_statuses"`
-	ContractStatuses []protocol.ContractStatus    `json:"contract_statuses"`
-	Completion       protocol.ProgramCompletion   `json:"completion"`
-	IsExecuting      bool                         `json:"is_executing"`
-	ValidationErrors []string                     `json:"validation_errors,omitempty"`
+	ProgramSlug      string                      `json:"program_slug"`
+	Title            string                      `json:"title"`
+	State            string                      `json:"state"`
+	CurrentTier      int                         `json:"current_tier"`
+	TierStatuses     []TierStatusDetailWithWaves `json:"tier_statuses"`
+	ContractStatuses []protocol.ContractStatus   `json:"contract_statuses"`
+	Completion       protocol.ProgramCompletion  `json:"completion"`
+	IsExecuting      bool                        `json:"is_executing"`
+	ValidationErrors []string                    `json:"validation_errors,omitempty"`
 }
 
 // ProgramListResponse is the JSON response for GET /api/programs.
@@ -217,6 +245,76 @@ func buildPipelineData(repos []RepoEntry, activeRuns *sync.Map) ([]PipelineEntry
 	return entries, metrics
 }
 
+// enrichImplWithWaves loads an IMPL doc from disk and extracts wave/agent topology.
+// Returns nil if the IMPL doc cannot be found or loaded (graceful degradation).
+func enrichImplWithWaves(implSlug, repoPath string) []ImplWaveInfo {
+	implPath, err := service.ResolveIMPLPathForProgram(implSlug, repoPath)
+	if err != nil {
+		return nil
+	}
+
+	manifest, err := protocol.Load(implPath)
+	if err != nil {
+		return nil
+	}
+
+	if len(manifest.Waves) == 0 {
+		return nil
+	}
+
+	waves := make([]ImplWaveInfo, 0, len(manifest.Waves))
+	for _, w := range manifest.Waves {
+		agents := make([]ImplAgentInfo, 0, len(w.Agents))
+		for _, a := range w.Agents {
+			agentStatus := "pending"
+			if manifest.CompletionReports != nil {
+				if report, ok := manifest.CompletionReports[a.ID]; ok {
+					switch report.Status {
+					case "complete":
+						agentStatus = "complete"
+					case "partial", "blocked":
+						agentStatus = "failed"
+					}
+				}
+			}
+			agents = append(agents, ImplAgentInfo{
+				ID:           a.ID,
+				Status:       agentStatus,
+				Dependencies: a.Dependencies,
+			})
+		}
+		waves = append(waves, ImplWaveInfo{
+			Number: w.Number,
+			Agents: agents,
+		})
+	}
+
+	return waves
+}
+
+// enrichTierStatuses converts protocol tier statuses to web-specific types with wave data.
+func enrichTierStatuses(tierStatuses []protocol.TierStatusDetail, repoPath string) []TierStatusDetailWithWaves {
+	result := make([]TierStatusDetailWithWaves, 0, len(tierStatuses))
+	for _, tier := range tierStatuses {
+		enrichedImpls := make([]ImplTierStatusWithWaves, 0, len(tier.ImplStatuses))
+		for _, impl := range tier.ImplStatuses {
+			enriched := ImplTierStatusWithWaves{
+				Slug:   impl.Slug,
+				Status: impl.Status,
+				Waves:  enrichImplWithWaves(impl.Slug, repoPath),
+			}
+			enrichedImpls = append(enrichedImpls, enriched)
+		}
+		result = append(result, TierStatusDetailWithWaves{
+			Number:       tier.Number,
+			Description:  tier.Description,
+			ImplStatuses: enrichedImpls,
+			Complete:     tier.Complete,
+		})
+	}
+	return result
+}
+
 // handleGetProgramStatus handles GET /api/program/{slug}.
 // Returns comprehensive status for a PROGRAM manifest including execution state.
 func (s *Server) handleGetProgramStatus(w http.ResponseWriter, r *http.Request) {
@@ -259,7 +357,7 @@ func (s *Server) handleGetProgramStatus(w http.ResponseWriter, r *http.Request) 
 		Title:            status.Title,
 		State:            string(status.State),
 		CurrentTier:      status.CurrentTier,
-		TierStatuses:     status.TierStatuses,
+		TierStatuses:     enrichTierStatuses(status.TierStatuses, repoPath),
 		ContractStatuses: status.ContractStatuses,
 		Completion:       status.Completion,
 		IsExecuting:      isExecuting,
