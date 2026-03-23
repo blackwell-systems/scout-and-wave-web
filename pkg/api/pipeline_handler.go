@@ -13,6 +13,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/autonomy"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/queue"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // implProgramInfo holds the parent program identifiers for a given IMPL slug.
@@ -156,8 +157,8 @@ func (s *Server) handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 				slug := strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".yaml")
 				title := slug
 				fullPath := filepath.Join(completeDir, name)
-				if m, err := protocol.Load(fullPath); err == nil && m.Title != "" {
-					title = m.Title
+				if r := loadManifestResult(fullPath); r.IsSuccess() && r.GetData().Title != "" {
+					title = r.GetData().Title
 				}
 				e := PipelineEntry{
 					Slug:   slug,
@@ -186,8 +187,8 @@ func (s *Server) handleGetPipeline(w http.ResponseWriter, r *http.Request) {
 				slug := strings.TrimSuffix(strings.TrimPrefix(name, "IMPL-"), ".yaml")
 				title := slug
 				fullPath := filepath.Join(activeDir, name)
-				if m, err := protocol.Load(fullPath); err == nil && m.Title != "" {
-					title = m.Title
+				if r := loadManifestResult(fullPath); r.IsSuccess() && r.GetData().Title != "" {
+					title = r.GetData().Title
 				}
 
 				status := "queued"
@@ -283,4 +284,21 @@ func entryExists(entries []PipelineEntry, slug string) bool {
 		}
 	}
 	return false
+}
+
+// loadManifestResult wraps protocol.Load into a Result[protocol.IMPLManifest],
+// providing unified success-checking via .IsSuccess() across pipeline handler callsites.
+func loadManifestResult(path string) result.Result[protocol.IMPLManifest] {
+	m, err := protocol.Load(path)
+	if err != nil || m == nil {
+		return result.NewFailure[protocol.IMPLManifest]([]result.StructuredError{
+			{
+				Code:     "E001",
+				Message:  "failed to load IMPL manifest",
+				Severity: "fatal",
+				File:     path,
+			},
+		})
+	}
+	return result.NewSuccess(*m)
 }
