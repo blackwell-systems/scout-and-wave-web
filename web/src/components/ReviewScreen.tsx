@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { IMPLDocResponse } from '../types'
 import { useCriticState } from '../hooks/useCriticState'
 import { listWorktrees, batchDeleteWorktrees, fetchDiskWaveStatus, DiskWaveStatus } from '../api'
+import { sawClient } from '../lib/apiClient'
 import { useExecutionSync, ExecutionSyncState, AgentExecStatus } from '../hooks/useExecutionSync'
 import { useGlobalEvents } from '../hooks/useGlobalEvents'
 import ActionButtons from './ActionButtons'
@@ -201,6 +202,23 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
   useGlobalEvents({ impl_updated: handleImplUpdated })
 
   // Worktree presence detection
+  // Detect all-waves-complete but IMPL not marked complete
+  const allWavesMerged = (diskStatus?.waves_merged?.length ?? 0) >= impl.waves.length && impl.waves.length > 0
+  const needsCompletion = allWavesMerged && impl.doc_status !== 'complete'
+  const [markingComplete, setMarkingComplete] = useState(false)
+
+  async function handleMarkComplete() {
+    setMarkingComplete(true)
+    try {
+      await sawClient.wave.forceMarkComplete(slug)
+      onRefreshImpl?.(slug)
+    } catch (err) {
+      console.error('Failed to mark complete:', err)
+    } finally {
+      setMarkingComplete(false)
+    }
+  }
+
   const [worktreeCount, setWorktreeCount] = useState(0)
   const [worktreeWarning, setWorktreeWarning] = useState(false)
   const [cleaningWorktrees, setCleaningWorktrees] = useState(false)
@@ -298,6 +316,11 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
                 <span className="text-green-600 dark:text-green-400">✓</span> Complete
               </span>
             )}
+            {needsCompletion && (
+              <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-amber-700 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/50 px-3 py-1 rounded-full">
+                All waves merged
+              </span>
+            )}
           </h1>
           {involvedRepos.length >= 2 && (
             <p className="text-sm text-muted-foreground mt-2">
@@ -305,6 +328,25 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
             </p>
           )}
         </div>
+
+        {/* Completion banner — all waves merged but IMPL not closed */}
+        {needsCompletion && (
+          <div className="mb-4 flex items-center justify-between gap-3 bg-green-50 dark:bg-green-950/40 border border-green-200 dark:border-green-800 rounded-lg px-4 py-3">
+            <div className="flex items-center gap-2">
+              <span className="text-green-600 dark:text-green-400 text-lg">✓</span>
+              <p className="text-sm text-green-800 dark:text-green-300">
+                All {impl.waves.length} wave{impl.waves.length !== 1 ? 's' : ''} merged successfully. Mark this plan as complete to archive it.
+              </p>
+            </div>
+            <button
+              onClick={handleMarkComplete}
+              disabled={markingComplete}
+              className="shrink-0 px-3 py-1.5 text-sm font-medium rounded-md bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 transition-colors"
+            >
+              {markingComplete ? 'Completing...' : 'Mark Complete'}
+            </button>
+          </div>
+        )}
 
         {/* Guidance banner */}
         <div className="mb-6 flex items-start gap-3 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-lg px-4 py-3">
