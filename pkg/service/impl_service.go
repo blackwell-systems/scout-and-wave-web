@@ -162,19 +162,13 @@ func RejectImpl(deps Deps, slug string) error {
 // DeleteImpl removes an IMPL file from disk. Searches both active and complete
 // directories under deps.IMPLDir.
 func DeleteImpl(deps Deps, slug string) error {
-	dirs := []string{
-		deps.IMPLDir,
-		filepath.Join(deps.IMPLDir, "complete"),
+	// Use FindImplPath to search across all configured repos
+	implPath, _, err := FindImplPath(deps, slug)
+	if err != nil {
+		return err
 	}
 
-	for _, dir := range dirs {
-		yamlPath := filepath.Join(dir, "IMPL-"+slug+".yaml")
-		if _, err := os.Stat(yamlPath); err == nil {
-			return os.Remove(yamlPath)
-		}
-	}
-
-	return fmt.Errorf("IMPL doc not found for slug: %s", slug)
+	return os.Remove(implPath)
 }
 
 // ArchiveImpl moves an IMPL file from the active directory to complete/.
