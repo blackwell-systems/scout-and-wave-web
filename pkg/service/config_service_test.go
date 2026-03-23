@@ -257,17 +257,17 @@ func TestValidateOpenAICredentials_EmptyKey(t *testing.T) {
 }
 
 func TestValidateBedrockCredentials_MissingFields(t *testing.T) {
-	_, err := ValidateBedrockCredentials("", "AKIA", "secret", "")
+	_, err := ValidateBedrockCredentials("", "AKIA", "secret", "", "")
 	if err == nil {
 		t.Fatal("expected error for empty region")
 	}
 
-	_, err = ValidateBedrockCredentials("us-east-1", "", "secret", "")
+	_, err = ValidateBedrockCredentials("us-east-1", "", "secret", "", "")
 	if err == nil {
 		t.Fatal("expected error for empty access key")
 	}
 
-	_, err = ValidateBedrockCredentials("us-east-1", "AKIA", "", "")
+	_, err = ValidateBedrockCredentials("us-east-1", "AKIA", "", "", "")
 	if err == nil {
 		t.Fatal("expected error for empty secret key")
 	}
