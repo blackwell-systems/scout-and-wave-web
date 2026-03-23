@@ -3,10 +3,16 @@ import { createPortal } from 'react-dom'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
 import { getAgentColor, resetThemeCache } from '../../lib/entityColors'
 import { ExecutionSyncState, AgentExecStatus } from '../../hooks/useExecutionSync'
+import { WaveInfo, FileOwnershipEntry } from '../../types'
 
 interface DependencyGraphPanelProps {
   dependencyGraphText?: string
+  impl?: { waves: WaveInfo[]; file_ownership: FileOwnershipEntry[] }
   executionState?: ExecutionSyncState
+  programSlug?: string
+  programTitle?: string
+  programTier?: number
+  programTiersTotal?: number
 }
 
 interface ParsedAgent {
@@ -78,12 +84,43 @@ function parseDependencyGraph(text: string): ParsedWave[] {
   return waves
 }
 
+function buildWavesFromImpl(impl: { waves: WaveInfo[]; file_ownership: FileOwnershipEntry[] }): ParsedWave[] {
+  return impl.waves.map(wave => ({
+    number: wave.number,
+    agents: wave.agents.map(agentId => {
+      // Find files owned by this agent in this wave
+      const ownedFiles = impl.file_ownership
+        .filter(f => f.agent === agentId && f.wave === wave.number)
+        .map(f => f.file)
+
+      // Dependencies: agents from prior waves that this wave depends on
+      const deps: string[] = []
+      if (wave.dependencies && wave.dependencies.length > 0) {
+        for (const depWaveNum of wave.dependencies) {
+          const depWave = impl.waves.find(w => w.number === depWaveNum)
+          if (depWave) {
+            deps.push(...depWave.agents)
+          }
+        }
+      }
+
+      return {
+        letter: agentId,
+        description: ownedFiles.length > 0 ? ownedFiles.join(', ') : `Agent ${agentId}`,
+        dependencies: deps,
+        wave: wave.number,
+      }
+    }),
+  }))
+}
+
 const NODE_W = 48
 const NODE_H = 48
 const WAVE_GAP = 160
 const AGENT_GAP = 72
-const PAD_X = 60
+const PAD_X = 100
 const PAD_Y = 40
+const LABEL_X = 44 // center of the left label column (outside the row bands)
 
 function getAgentFill(letter: string): { bg: string; border: string; text: string; dashed?: boolean } {
   if (letter === 'Scaffold') {
@@ -122,28 +159,34 @@ function layoutNodes(waves: ParsedWave[]): { nodes: NodePos[]; width: number; he
   const nodes: NodePos[] = []
   const maxAgents = Math.max(...waves.map(w => w.agents.length))
 
+  // The row band area runs from bandLeft to bandRight; center agents within it.
+  const bandLeft = PAD_X - 12
+  const agentAreaWidth = (maxAgents - 1) * AGENT_GAP + NODE_W
+  const width = bandLeft + agentAreaWidth + PAD_X
+  const bandRight = width - 4
+  const bandCenter = (bandLeft + bandRight) / 2
+
   for (let wi = 0; wi < waves.length; wi++) {
     const wave = waves[wi]
-    const x = PAD_X + wi * WAVE_GAP
-    const totalHeight = (wave.agents.length - 1) * AGENT_GAP
-    const startY = PAD_Y + (maxAgents - 1) * AGENT_GAP / 2 - totalHeight / 2
+    const y = PAD_Y + wi * WAVE_GAP
+    const totalWidth = (wave.agents.length - 1) * AGENT_GAP + NODE_W
+    const startX = bandCenter - totalWidth / 2
 
     for (let ai = 0; ai < wave.agents.length; ai++) {
       nodes.push({
-        x,
-        y: startY + ai * AGENT_GAP,
+        x: startX + ai * AGENT_GAP,
+        y,
         agent: wave.agents[ai],
       })
     }
   }
 
-  const width = PAD_X * 2 + (waves.length - 1) * WAVE_GAP + NODE_W
-  const height = PAD_Y * 2 + (maxAgents - 1) * AGENT_GAP + NODE_H
+  const height = PAD_Y * 2 + (waves.length - 1) * WAVE_GAP + NODE_H
 
   return { nodes, width, height }
 }
 
-export default function DependencyGraphPanel({ dependencyGraphText, executionState }: DependencyGraphPanelProps): JSX.Element {
+export default function DependencyGraphPanel({ dependencyGraphText, impl, executionState, programSlug, programTitle, programTier, programTiersTotal }: DependencyGraphPanelProps): JSX.Element {
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [tooltip, setTooltip] = useState<{ x: number; y: number; agent: ParsedAgent } | null>(null)
@@ -170,11 +213,22 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
 
   // Helper to look up agent execution status
   function getExecStatus(letter: string, wave: number): AgentExecStatus | undefined {
-    if (!executionState?.isLive) return undefined
+    if (!executionState) return undefined
+    // Scaffold node uses separate scaffoldStatus field — check before agents map
+    // guard because scaffold runs while agents map is still empty
+    if (letter === 'Scaffold' && wave === 0) {
+      const s = executionState.scaffoldStatus
+      if (s === 'idle') return undefined
+      return { status: s === 'complete' ? 'complete' : s === 'failed' ? 'failed' : 'running' } as AgentExecStatus
+    }
+    if (executionState.agents.size === 0) return undefined
     return executionState.agents.get(`${wave}:${letter}`)
   }
 
-  if (!dependencyGraphText || dependencyGraphText.trim() === '') {
+  const hasText = dependencyGraphText && dependencyGraphText.trim() !== ''
+  const hasImplWaves = impl?.waves && impl.waves.length > 0
+
+  if (!hasText && !hasImplWaves) {
     return (
       <Card>
         <CardHeader>
@@ -187,7 +241,9 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
     )
   }
 
-  const parsed = parseDependencyGraph(dependencyGraphText)
+  const parsed = hasText
+    ? parseDependencyGraph(dependencyGraphText!)
+    : buildWavesFromImpl(impl!)
 
   if (parsed.length === 0) {
     return (
@@ -204,7 +260,12 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
     )
   }
 
-  const { nodes, width, height } = layoutNodes(parsed)
+  const { nodes, width: contentW, height: contentH } = layoutNodes(parsed)
+  // Add extra padding when program context frame is shown
+  const FRAME_PAD = programSlug ? 48 : 0
+  const FRAME_LABEL_H = programSlug ? 20 : 0
+  const width = contentW + FRAME_PAD * 2
+  const height = contentH + FRAME_PAD * 2 + FRAME_LABEL_H
   const nodeMap = new Map(nodes.map(n => [n.agent.letter, n]))
 
   // Find scaffold node (Wave 0)
@@ -270,13 +331,26 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
 
   const isLive = !!(executionState?.isLive)
 
+  // Classify each edge for animation purposes
+  type EdgeState = 'static' | 'active' | 'waiting' | 'failed'
+  function getEdgeState(edge: { from: NodePos; to: NodePos }): EdgeState {
+    if (!isLive) return 'static'
+    const sourceExec = getExecStatus(edge.from.agent.letter, edge.from.agent.wave)
+    const targetExec = getExecStatus(edge.to.agent.letter, edge.to.agent.wave)
+    if (sourceExec?.status === 'failed') return 'failed'
+    if (sourceExec?.status === 'complete' && targetExec?.status === 'running') return 'active'
+    if (sourceExec?.status === 'complete') return 'active'
+    if (sourceExec?.status === 'running') return 'waiting'
+    return 'waiting'
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle>Dependency Graph</CardTitle>
       </CardHeader>
       <CardContent>
-        <div ref={containerRef} className="overflow-x-auto relative">
+        <div ref={containerRef} className="overflow-y-auto relative">
           <svg
             ref={svgRef}
             width={width}
@@ -285,18 +359,67 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
             className="block"
             onMouseLeave={handleMouseLeave}
           >
-            {/* Wave column backgrounds */}
+            <defs>
+              <filter id="particle-glow" x="-100%" y="-100%" width="300%" height="300%">
+                <feGaussianBlur stdDeviation="2" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+              <filter id="particle-glow-red" x="-100%" y="-100%" width="300%" height="300%">
+                <feGaussianBlur stdDeviation="2" result="blur" />
+                <feMerge>
+                  <feMergeNode in="blur" />
+                  <feMergeNode in="SourceGraphic" />
+                </feMerge>
+              </filter>
+            </defs>
+
+            {/* Program context frame — dashed border with program name + tier */}
+            {programSlug && (
+              <g>
+                <rect
+                  x={8}
+                  y={FRAME_LABEL_H + 4}
+                  width={width - 16}
+                  height={height - FRAME_LABEL_H - 12}
+                  rx={12}
+                  fill="none"
+                  stroke="#6b728040"
+                  strokeWidth={1.5}
+                  strokeDasharray="8 4"
+                />
+                <text
+                  x={width / 2}
+                  y={FRAME_LABEL_H - 2}
+                  textAnchor="middle"
+                  fill="#6b7280"
+                  fontSize={10}
+                  fontWeight={600}
+                  fontFamily="ui-monospace, monospace"
+                  letterSpacing={0.5}
+                >
+                  {programTitle || programSlug}{programTier ? ` · Tier ${programTier}${programTiersTotal ? `/${programTiersTotal}` : ''}` : ''}
+                </text>
+              </g>
+            )}
+
+            {/* Content group — offset when program frame is present */}
+            <g transform={programSlug ? `translate(${FRAME_PAD}, ${FRAME_PAD + FRAME_LABEL_H})` : undefined}>
+
+            {/* Wave row backgrounds */}
             {parsed.map((_wave, wi) => {
-              const x = PAD_X + wi * WAVE_GAP - 16
-              const colW = NODE_W + 32
+              const y = PAD_Y + wi * WAVE_GAP - 16
+              const rowH = NODE_H + 32
               const color = WAVE_COLORS[wi % WAVE_COLORS.length]
               return (
                 <rect
                   key={`bg-${wi}`}
-                  x={x}
-                  y={24}
-                  width={colW}
-                  height={height - 28}
+                  x={PAD_X - 12}
+                  y={y}
+                  width={contentW - PAD_X + 8}
+                  height={rowH + 4}
                   rx={12}
                   fill={color}
                   opacity={0.08}
@@ -304,35 +427,62 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
               )
             })}
 
-            {/* Wave labels */}
-            {parsed.map((wave, wi) => (
-              <text
-                key={`label-${wave.number}`}
-                x={PAD_X + wi * WAVE_GAP + NODE_W / 2}
-                y={16}
-                textAnchor="middle"
-                className="fill-muted-foreground"
-                fontSize={11}
-                fontWeight={600}
-              >
-                Wave {wave.number}
-              </text>
-            ))}
+            {/* Wave labels — spelled out, left of row bands */}
+            {parsed.map((wave, wi) => {
+              const cy = PAD_Y + wi * WAVE_GAP + NODE_H / 2
+              const color = WAVE_COLORS[wi % WAVE_COLORS.length]
+              return (
+                <g key={`label-${wave.number}`}>
+                  <text
+                    x={LABEL_X}
+                    y={cy - 7}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill={color}
+                    fontSize={10}
+                    fontWeight={600}
+                    letterSpacing={2.5}
+                    style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', textTransform: 'uppercase' }}
+                  >
+                    WAVE
+                  </text>
+                  <text
+                    x={LABEL_X}
+                    y={cy + 10}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    fill={color}
+                    fontSize={20}
+                    fontWeight={800}
+                    style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace' }}
+                  >
+                    {wave.number}
+                  </text>
+                </g>
+              )
+            })}
 
-            {/* Edges */}
+            {/* Edges + particles */}
             {edges.map((edge, i) => {
-              const x1 = edge.from.x + NODE_W
-              const y1 = edge.from.y + NODE_H / 2
-              const x2 = edge.to.x
-              const y2 = edge.to.y + NODE_H / 2
+              const x1 = edge.from.x + NODE_W / 2
+              const y1 = edge.from.y + NODE_H
+              const x2 = edge.to.x + NODE_W / 2
+              const y2 = edge.to.y
+              const edgeState = getEdgeState(edge)
 
-              // Determine edge class based on source node exec status
-              const sourceExec = getExecStatus(edge.from.agent.letter, edge.from.agent.wave)
+              // Build a cubic bezier path for smooth curves + animateMotion
+              const midY = (y1 + y2) / 2
+              const pathD = `M${x1},${y1} C${x1},${midY} ${x2},${midY} ${x2},${y2}`
+
               let edgeClassName: string | undefined
               let edgeOpacity: number | undefined
+              let strokeW = 2
 
               if (isLive) {
-                if (sourceExec?.status === 'complete') {
+                if (edgeState === 'active') {
+                  edgeClassName = 'exec-edge-active'
+                  strokeW = 2.5
+                } else if (edgeState === 'failed') {
                   edgeClassName = 'exec-edge-active'
                 } else {
                   edgeClassName = 'exec-edge-inactive'
@@ -341,49 +491,52 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
                 edgeOpacity = 0.6
               }
 
-              return (
-                <line
-                  key={i}
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke={edge.color}
-                  strokeWidth={2}
-                  opacity={edgeOpacity}
-                  className={edgeClassName}
-                />
-              )
-            })}
-
-            {/* Arrow markers at edge endpoints */}
-            {edges.map((edge, i) => {
-              const x2 = edge.to.x
-              const y2 = edge.to.y + NODE_H / 2
-
-              // Mirror edge class onto arrow tip
-              const sourceExec = getExecStatus(edge.from.agent.letter, edge.from.agent.wave)
-              let arrowClassName: string | undefined
-              let arrowOpacity: number | undefined
-
-              if (isLive) {
-                if (sourceExec?.status === 'complete') {
-                  arrowClassName = 'exec-edge-active'
-                } else {
-                  arrowClassName = 'exec-edge-inactive'
-                }
-              } else {
-                arrowOpacity = 0.6
-              }
+              const edgeColor = edgeState === 'failed' ? '#f85149' : edge.color
 
               return (
-                <polygon
-                  key={`arrow-${i}`}
-                  points={`${x2},${y2} ${x2 - 6},${y2 - 3} ${x2 - 6},${y2 + 3}`}
-                  fill={edge.color}
-                  opacity={arrowOpacity}
-                  className={arrowClassName}
-                />
+                <g key={`edge-group-${i}`}>
+                  {/* Edge line — curved bezier matching particle path */}
+                  <path
+                    d={pathD}
+                    stroke={edgeColor}
+                    strokeWidth={strokeW}
+                    fill="none"
+                    opacity={edgeOpacity}
+                    className={edgeClassName}
+                  />
+
+                  {/* Arrow marker */}
+                  <polygon
+                    points={`${x2},${y2} ${x2 - 5},${y2 - 10} ${x2 + 5},${y2 - 10}`}
+                    fill={edgeColor}
+                    opacity={edgeOpacity}
+                    className={edgeClassName}
+                  />
+
+                  {/* Flowing particles — 3 evenly-spaced dots on active edges */}
+                  {edgeState === 'active' && (<>
+                    <circle r="2.5" fill={edge.color} filter="url(#particle-glow)" opacity="0.6">
+                      <animateMotion dur="2.5s" begin="0s" repeatCount="indefinite" path={pathD} />
+                    </circle>
+                    <circle r="2.5" fill={edge.color} filter="url(#particle-glow)" opacity="0.6">
+                      <animateMotion dur="2.5s" begin="0.833s" repeatCount="indefinite" path={pathD} />
+                    </circle>
+                    <circle r="2.5" fill={edge.color} filter="url(#particle-glow)" opacity="0.6">
+                      <animateMotion dur="2.5s" begin="1.667s" repeatCount="indefinite" path={pathD} />
+                    </circle>
+                  </>)}
+                  {edgeState === 'failed' && (<>
+                    <circle r="2" fill="#f85149" filter="url(#particle-glow-red)" opacity="0.5">
+                      <animateMotion dur="4s" begin="0s" repeatCount="indefinite" path={pathD} />
+                    </circle>
+                    <circle r="2" fill="#f85149" filter="url(#particle-glow-red)" opacity="0.5">
+                      <animateMotion dur="4s" begin="1.333s" repeatCount="indefinite" path={pathD} />
+                    </circle>
+                    <circle r="2" fill="#f85149" filter="url(#particle-glow-red)" opacity="0.5">
+                      <animateMotion dur="4s" begin="2.667s" repeatCount="indefinite" path={pathD} />
+                    </circle>
+                  </>)}
+                </g>
               )
             })}
 
@@ -457,18 +610,28 @@ export default function DependencyGraphPanel({ dependencyGraphText, executionSta
                   </text>
                   {exec?.status === 'complete' && (
                     <g className="exec-check-overlay">
+                      <circle
+                        cx={node.x + NODE_W - 4}
+                        cy={node.y + NODE_H - 4}
+                        r={7}
+                        fill="#22c55e"
+                        opacity={0.9}
+                      />
                       <path
                         d="M-4,0 L-1,3 L4,-3"
-                        stroke="currentColor"
-                        strokeWidth={2}
+                        stroke="white"
+                        strokeWidth={1.5}
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
                         fill="none"
-                        transform={`translate(${cx}, ${cy})`}
+                        transform={`translate(${node.x + NODE_W - 4}, ${node.y + NODE_H - 4})`}
                       />
                     </g>
                   )}
                 </g>
               )
             })}
+            </g>{/* end content group */}
           </svg>
 
           {/* Tooltip - render outside scrollable container */}

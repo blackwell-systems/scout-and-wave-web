@@ -71,7 +71,7 @@ export function ReviewLayout(props: ReviewLayoutProps): JSX.Element {
           )}
           {activePanels.includes('dependency-graph') && (
             <Suspense fallback={<PanelFallback />}>
-              <LazyDependencyGraphPanel dependencyGraphText={(impl as any).dependency_graph_text} {...(executionState ? { executionState } : {})} />
+              <LazyDependencyGraphPanel dependencyGraphText={(impl as any).dependency_graph_text} programSlug={(impl as any).program_slug} programTitle={(impl as any).program_title} programTier={(impl as any).program_tier} programTiersTotal={(impl as any).program_tiers_total} {...(executionState ? { executionState } : {})} />
             </Suspense>
           )}
         </div>
