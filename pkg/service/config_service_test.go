@@ -157,6 +157,122 @@ func TestGetConfiguredRepos_Fallback(t *testing.T) {
 	}
 }
 
+func TestSaveConfig_ProvidersRoundTrip(t *testing.T) {
+	deps := testDeps(t)
+
+	cfg := &SAWConfig{
+		Repos: []RepoEntry{{Name: "test", Path: "/test/path"}},
+		Providers: ProvidersConfig{
+			Anthropic: AnthropicProviderConfig{APIKey: "sk-ant-test"},
+			OpenAI:    OpenAIProviderConfig{APIKey: "sk-openai-test"},
+			Bedrock: BedrockProviderConfig{
+				Region:         "us-east-1",
+				AccessKeyID:    "AKIATEST",
+				SecretAccessKey: "secret123",
+				SessionToken:   "token456",
+			},
+		},
+	}
+
+	if err := SaveConfig(deps, cfg); err != nil {
+		t.Fatalf("SaveConfig failed: %v", err)
+	}
+
+	loaded, err := GetConfig(deps)
+	if err != nil {
+		t.Fatalf("GetConfig failed: %v", err)
+	}
+
+	if loaded.Providers.Anthropic.APIKey != "sk-ant-test" {
+		t.Errorf("expected anthropic key sk-ant-test, got %s", loaded.Providers.Anthropic.APIKey)
+	}
+	if loaded.Providers.OpenAI.APIKey != "sk-openai-test" {
+		t.Errorf("expected openai key sk-openai-test, got %s", loaded.Providers.OpenAI.APIKey)
+	}
+	if loaded.Providers.Bedrock.Region != "us-east-1" {
+		t.Errorf("expected bedrock region us-east-1, got %s", loaded.Providers.Bedrock.Region)
+	}
+	if loaded.Providers.Bedrock.AccessKeyID != "AKIATEST" {
+		t.Errorf("expected bedrock access key AKIATEST, got %s", loaded.Providers.Bedrock.AccessKeyID)
+	}
+	if loaded.Providers.Bedrock.SecretAccessKey != "secret123" {
+		t.Errorf("expected bedrock secret key, got %s", loaded.Providers.Bedrock.SecretAccessKey)
+	}
+	if loaded.Providers.Bedrock.SessionToken != "token456" {
+		t.Errorf("expected bedrock session token, got %s", loaded.Providers.Bedrock.SessionToken)
+	}
+}
+
+func TestSaveConfig_EmptyProviders_OmittedFromJSON(t *testing.T) {
+	deps := testDeps(t)
+
+	cfg := &SAWConfig{
+		Repos: []RepoEntry{{Name: "test", Path: "/test/path"}},
+	}
+
+	if err := SaveConfig(deps, cfg); err != nil {
+		t.Fatalf("SaveConfig failed: %v", err)
+	}
+
+	// Read raw JSON and verify providers is omitted when empty
+	data, err := os.ReadFile(deps.ConfigPath(deps.RepoPath))
+	if err != nil {
+		t.Fatalf("failed to read config: %v", err)
+	}
+
+	var raw map[string]interface{}
+	if err := json.Unmarshal(data, &raw); err != nil {
+		t.Fatalf("failed to parse JSON: %v", err)
+	}
+
+	// Empty providers should still be present but with empty sub-objects
+	// (omitempty on individual fields means empty strings are omitted)
+	loaded, err := GetConfig(deps)
+	if err != nil {
+		t.Fatalf("GetConfig failed: %v", err)
+	}
+	if loaded.Providers.Anthropic.APIKey != "" {
+		t.Errorf("expected empty anthropic key, got %q", loaded.Providers.Anthropic.APIKey)
+	}
+}
+
+func TestValidateAnthropicCredentials_EmptyKey(t *testing.T) {
+	err := ValidateAnthropicCredentials("")
+	if err == nil {
+		t.Fatal("expected error for empty key")
+	}
+	if err.Error() != "API key is required" {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateOpenAICredentials_EmptyKey(t *testing.T) {
+	err := ValidateOpenAICredentials("")
+	if err == nil {
+		t.Fatal("expected error for empty key")
+	}
+	if err.Error() != "API key is required" {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func TestValidateBedrockCredentials_MissingFields(t *testing.T) {
+	_, err := ValidateBedrockCredentials("", "AKIA", "secret", "")
+	if err == nil {
+		t.Fatal("expected error for empty region")
+	}
+
+	_, err = ValidateBedrockCredentials("us-east-1", "", "secret", "")
+	if err == nil {
+		t.Fatal("expected error for empty access key")
+	}
+
+	_, err = ValidateBedrockCredentials("us-east-1", "AKIA", "", "")
+	if err == nil {
+		t.Fatal("expected error for empty secret key")
+	}
+}
+
 func TestGetConfiguredRepos_FromFile(t *testing.T) {
 	deps := testDeps(t)
 

@@ -230,13 +230,46 @@ type RepoConfig struct {
 	Path string `json:"path"`
 }
 
+// ProvidersConfig holds credential configuration for all supported LLM providers.
+type ProvidersConfig struct {
+	Anthropic AnthropicProviderConfig `json:"anthropic"`
+	OpenAI    OpenAIProviderConfig    `json:"openai"`
+	Bedrock   BedrockProviderConfig   `json:"bedrock"`
+}
+
+// AnthropicProviderConfig holds Anthropic API credentials.
+type AnthropicProviderConfig struct {
+	APIKey string `json:"api_key,omitempty"`
+}
+
+// OpenAIProviderConfig holds OpenAI API credentials.
+type OpenAIProviderConfig struct {
+	APIKey string `json:"api_key,omitempty"`
+}
+
+// BedrockProviderConfig holds AWS Bedrock credentials.
+type BedrockProviderConfig struct {
+	Region         string `json:"region,omitempty"`
+	AccessKeyID    string `json:"access_key_id,omitempty"`
+	SecretAccessKey string `json:"secret_access_key,omitempty"`
+	SessionToken   string `json:"session_token,omitempty"`
+}
+
+// ProviderValidationResponse is the response from POST /api/config/providers/{provider}/validate.
+type ProviderValidationResponse struct {
+	Valid    bool   `json:"valid"`
+	Error    string `json:"error,omitempty"`
+	Identity string `json:"identity,omitempty"`
+}
+
 // SAWConfig is the shape of saw.config.json and the GET/POST /api/config body.
 type SAWConfig struct {
-	Repos   []RepoEntry   `json:"repos,omitempty"`   // authoritative registry
-	Repo    RepoConfig    `json:"repo,omitempty"`     // legacy, read-only for migration
-	Agent   AgentConfig   `json:"agent"`
-	Quality QualityConfig `json:"quality"`
-	Appear  AppearConfig  `json:"appearance"`
+	Repos     []RepoEntry     `json:"repos,omitempty"`   // authoritative registry
+	Repo      RepoConfig      `json:"repo,omitempty"`     // legacy, read-only for migration
+	Agent     AgentConfig     `json:"agent"`
+	Quality   QualityConfig   `json:"quality"`
+	Appear    AppearConfig    `json:"appearance"`
+	Providers ProvidersConfig `json:"providers,omitempty"`
 }
 
 type AgentConfig struct {

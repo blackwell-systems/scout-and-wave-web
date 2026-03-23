@@ -1,11 +1,17 @@
 package service
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"regexp"
+	"time"
+
+	"github.com/aws/aws-sdk-go-v2/credentials"
+	"github.com/aws/aws-sdk-go-v2/service/sts"
 )
 
 // RepoEntry is one named repository in the repo registry.
@@ -19,13 +25,39 @@ type RepoConfig struct {
 	Path string `json:"path"`
 }
 
+// ProvidersConfig holds credential configuration for all supported LLM providers.
+type ProvidersConfig struct {
+	Anthropic AnthropicProviderConfig `json:"anthropic"`
+	OpenAI    OpenAIProviderConfig    `json:"openai"`
+	Bedrock   BedrockProviderConfig   `json:"bedrock"`
+}
+
+// AnthropicProviderConfig holds Anthropic API credentials.
+type AnthropicProviderConfig struct {
+	APIKey string `json:"api_key,omitempty"`
+}
+
+// OpenAIProviderConfig holds OpenAI API credentials.
+type OpenAIProviderConfig struct {
+	APIKey string `json:"api_key,omitempty"`
+}
+
+// BedrockProviderConfig holds AWS Bedrock credentials.
+type BedrockProviderConfig struct {
+	Region         string `json:"region,omitempty"`
+	AccessKeyID    string `json:"access_key_id,omitempty"`
+	SecretAccessKey string `json:"secret_access_key,omitempty"`
+	SessionToken   string `json:"session_token,omitempty"`
+}
+
 // SAWConfig is the shape of saw.config.json and the GET/POST /api/config body.
 type SAWConfig struct {
-	Repos   []RepoEntry   `json:"repos,omitempty"`
-	Repo    RepoConfig    `json:"repo,omitempty"`
-	Agent   AgentConfig   `json:"agent"`
-	Quality QualityConfig `json:"quality"`
-	Appear  AppearConfig  `json:"appearance"`
+	Repos     []RepoEntry     `json:"repos,omitempty"`
+	Repo      RepoConfig      `json:"repo,omitempty"`
+	Agent     AgentConfig     `json:"agent"`
+	Quality   QualityConfig   `json:"quality"`
+	Appear    AppearConfig    `json:"appearance"`
+	Providers ProvidersConfig `json:"providers,omitempty"`
 }
 
 // AgentConfig holds model names for each agent type.
@@ -163,6 +195,104 @@ func SaveConfig(deps Deps, cfg *SAWConfig) error {
 	}
 
 	return nil
+}
+
+// validationTimeout is the maximum time allowed for credential validation calls.
+const validationTimeout = 5 * time.Second
+
+// ValidateAnthropicCredentials validates an Anthropic API key by calling
+// GET /v1/models. Returns nil if the key is valid.
+func ValidateAnthropicCredentials(apiKey string) error {
+	if apiKey == "" {
+		return fmt.Errorf("API key is required")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), validationTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.anthropic.com/v1/models", nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("invalid API key")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// ValidateOpenAICredentials validates an OpenAI API key by calling
+// GET /v1/models. Returns nil if the key is valid.
+func ValidateOpenAICredentials(apiKey string) error {
+	if apiKey == "" {
+		return fmt.Errorf("API key is required")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), validationTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.openai.com/v1/models", nil)
+	if err != nil {
+		return fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("invalid API key")
+	}
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status: %d", resp.StatusCode)
+	}
+	return nil
+}
+
+// ValidateBedrockCredentials validates AWS credentials by calling STS
+// GetCallerIdentity. Returns the caller identity ARN on success.
+func ValidateBedrockCredentials(region, accessKeyID, secretKey, sessionToken string) (string, error) {
+	if region == "" {
+		return "", fmt.Errorf("region is required")
+	}
+	if accessKeyID == "" || secretKey == "" {
+		return "", fmt.Errorf("access key ID and secret key are required")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), validationTimeout)
+	defer cancel()
+
+	creds := credentials.NewStaticCredentialsProvider(accessKeyID, secretKey, sessionToken)
+	stsClient := sts.New(sts.Options{
+		Region:           region,
+		Credentials:      creds,
+		RetryMaxAttempts: 1,
+	})
+
+	result, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	if err != nil {
+		return "", fmt.Errorf("invalid credentials: %w", err)
+	}
+
+	arn := ""
+	if result.Arn != nil {
+		arn = *result.Arn
+	}
+	return arn, nil
 }
 
 // GetConfiguredRepos reads the config and returns the repo list.

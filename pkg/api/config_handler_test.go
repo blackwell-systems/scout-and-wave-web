@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -56,6 +57,165 @@ func TestConfigMigration_LegacyRepoPath(t *testing.T) {
 	// Assert the legacy "repo" field is cleared (empty/zero-value) in the response.
 	if got.Repo.Path != "" {
 		t.Errorf("expected legacy repo.path to be empty in response, got %q", got.Repo.Path)
+	}
+}
+
+// TestConfigGetSave_ProvidersRoundTrip verifies that saving a config with
+// providers and then loading it returns the providers intact.
+func TestConfigGetSave_ProvidersRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+
+	configJSON := `{
+		"repos":[{"name":"main","path":"/home/user/project"}],
+		"providers":{
+			"anthropic":{"api_key":"sk-ant-123"},
+			"openai":{"api_key":"sk-openai-456"},
+			"bedrock":{"region":"us-west-2","access_key_id":"AKIA789"}
+		}
+	}`
+	configPath := filepath.Join(dir, "saw.config.json")
+	if err := os.WriteFile(configPath, []byte(configJSON), 0644); err != nil {
+		t.Fatalf("failed to write config: %v", err)
+	}
+
+	s := New(Config{
+		Addr:     "localhost:0",
+		IMPLDir:  dir,
+		RepoPath: dir,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/config", nil)
+	rr := httptest.NewRecorder()
+	s.handleGetConfig(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+
+	var got SAWConfig
+	if err := json.NewDecoder(rr.Body).Decode(&got); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+
+	if got.Providers.Anthropic.APIKey != "sk-ant-123" {
+		t.Errorf("expected anthropic key sk-ant-123, got %q", got.Providers.Anthropic.APIKey)
+	}
+	if got.Providers.OpenAI.APIKey != "sk-openai-456" {
+		t.Errorf("expected openai key sk-openai-456, got %q", got.Providers.OpenAI.APIKey)
+	}
+	if got.Providers.Bedrock.Region != "us-west-2" {
+		t.Errorf("expected bedrock region us-west-2, got %q", got.Providers.Bedrock.Region)
+	}
+	if got.Providers.Bedrock.AccessKeyID != "AKIA789" {
+		t.Errorf("expected bedrock access key AKIA789, got %q", got.Providers.Bedrock.AccessKeyID)
+	}
+}
+
+// TestValidateProvider_UnknownProvider verifies that an unknown provider returns 400.
+func TestValidateProvider_UnknownProvider(t *testing.T) {
+	dir := t.TempDir()
+
+	s := New(Config{
+		Addr:     "localhost:0",
+		IMPLDir:  dir,
+		RepoPath: dir,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/config/providers/unknown/validate", strings.NewReader(`{}`))
+	req.SetPathValue("provider", "unknown")
+	rr := httptest.NewRecorder()
+	s.handleValidateProvider(rr, req)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected status 400 for unknown provider, got %d; body: %s", rr.Code, rr.Body.String())
+	}
+}
+
+// TestValidateProvider_AnthropicEmptyKey verifies that empty anthropic key returns valid=false.
+func TestValidateProvider_AnthropicEmptyKey(t *testing.T) {
+	dir := t.TempDir()
+
+	s := New(Config{
+		Addr:     "localhost:0",
+		IMPLDir:  dir,
+		RepoPath: dir,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/config/providers/anthropic/validate", strings.NewReader(`{"api_key":""}`))
+	req.SetPathValue("provider", "anthropic")
+	rr := httptest.NewRecorder()
+	s.handleValidateProvider(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var resp ProviderValidationResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Valid {
+		t.Error("expected valid=false for empty key")
+	}
+	if resp.Error == "" {
+		t.Error("expected non-empty error message")
+	}
+}
+
+// TestValidateProvider_OpenAIEmptyKey verifies that empty openai key returns valid=false.
+func TestValidateProvider_OpenAIEmptyKey(t *testing.T) {
+	dir := t.TempDir()
+
+	s := New(Config{
+		Addr:     "localhost:0",
+		IMPLDir:  dir,
+		RepoPath: dir,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/config/providers/openai/validate", strings.NewReader(`{"api_key":""}`))
+	req.SetPathValue("provider", "openai")
+	rr := httptest.NewRecorder()
+	s.handleValidateProvider(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var resp ProviderValidationResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Valid {
+		t.Error("expected valid=false for empty key")
+	}
+}
+
+// TestValidateProvider_BedrockMissingRegion verifies that missing bedrock region returns valid=false.
+func TestValidateProvider_BedrockMissingRegion(t *testing.T) {
+	dir := t.TempDir()
+
+	s := New(Config{
+		Addr:     "localhost:0",
+		IMPLDir:  dir,
+		RepoPath: dir,
+	})
+
+	body := `{"region":"","access_key_id":"AKIA","secret_access_key":"secret"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/config/providers/bedrock/validate", strings.NewReader(body))
+	req.SetPathValue("provider", "bedrock")
+	rr := httptest.NewRecorder()
+	s.handleValidateProvider(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d", rr.Code)
+	}
+
+	var resp ProviderValidationResponse
+	if err := json.NewDecoder(rr.Body).Decode(&resp); err != nil {
+		t.Fatalf("failed to decode response: %v", err)
+	}
+	if resp.Valid {
+		t.Error("expected valid=false for missing region")
 	}
 }
 
