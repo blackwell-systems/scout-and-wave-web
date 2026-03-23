@@ -7,14 +7,13 @@ import (
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // fakeWaveOrch is a test double for waveOrchestrator.
 // It tracks RunWave/MergeWave/RunVerification calls and drives a minimal
 // state machine so TransitionTo behaves correctly.
 type fakeWaveOrch struct {
-	doc            *types.IMPLDoc
+	doc            *protocol.IMPLManifest
 	state          protocol.ProtocolState
 	runWaveCalls   []int
 	mergeWaveCalls []int
@@ -70,21 +69,23 @@ func (f *fakeWaveOrch) UpdateIMPLStatus(waveNum int) error {
 	return nil
 }
 
-func (f *fakeWaveOrch) IMPLDoc() *types.IMPLDoc {
+func (f *fakeWaveOrch) IMPLDoc() *protocol.IMPLManifest {
 	return f.doc
 }
 
 // makeIMPLWithWaves builds a minimal IMPLDoc with the given wave numbers.
-func makeIMPLWithWaves(waveNums ...int) *types.IMPLDoc {
-	waves := make([]types.Wave, len(waveNums))
+func makeIMPLWithWaves(waveNums ...int) *protocol.IMPLManifest {
+	waves := make([]protocol.Wave, len(waveNums))
 	for i, n := range waveNums {
-		waves[i] = types.Wave{
+		waves[i] = protocol.Wave{
 			Number: n,
-			Agents: []types.AgentSpec{{Letter: "A", Prompt: "do work"}},
+			Agents: []protocol.Agent{{ID: "A", Task: "do work"}},
 		}
 	}
-	return &types.IMPLDoc{
-		FeatureName: "Test Feature",
+	return &protocol.IMPLManifest{
+		Title:       "Test Feature",
+		FeatureSlug: "test-feature",
+		Verdict:     "SUITABLE",
 		Waves:       waves,
 		TestCommand: "go test ./...",
 	}

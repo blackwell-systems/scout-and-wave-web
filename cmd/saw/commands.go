@@ -14,7 +14,6 @@ import (
 
 	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // waveOrchestrator is the minimal interface runWave needs from an Orchestrator.
@@ -25,7 +24,7 @@ type waveOrchestrator interface {
 	MergeWave(waveNum int) error
 	RunVerification(testCommand string) error
 	UpdateIMPLStatus(waveNum int) error
-	IMPLDoc() *types.IMPLDoc
+	IMPLDoc() *protocol.IMPLManifest
 }
 
 // engineOrchAdapter wraps the engine package functions to satisfy waveOrchestrator.
@@ -33,7 +32,7 @@ type waveOrchestrator interface {
 type engineOrchAdapter struct {
 	repoPath string
 	implPath string
-	doc      *types.IMPLDoc
+	doc      *protocol.IMPLManifest
 	// state tracks the current protocol state (simplified; engine handles real state).
 	state protocol.ProtocolState
 }
@@ -75,7 +74,7 @@ func (a *engineOrchAdapter) UpdateIMPLStatus(waveNum int) error {
 	for _, w := range a.doc.Waves {
 		if w.Number == waveNum {
 			for _, ag := range w.Agents {
-				letters = append(letters, ag.Letter)
+				letters = append(letters, ag.ID)
 			}
 			break
 		}
@@ -83,14 +82,14 @@ func (a *engineOrchAdapter) UpdateIMPLStatus(waveNum int) error {
 	return engine.UpdateIMPLStatus(a.implPath, letters)
 }
 
-func (a *engineOrchAdapter) IMPLDoc() *types.IMPLDoc {
+func (a *engineOrchAdapter) IMPLDoc() *protocol.IMPLManifest {
 	return a.doc
 }
 
 // orchestratorNewFunc is a seam for tests: creates a waveOrchestrator from a
 // repo path and IMPL doc path. Tests can replace this to inject a fake.
 var orchestratorNewFunc = func(repoPath, implPath string) (waveOrchestrator, error) {
-	doc, err := engine.ParseIMPLDoc(implPath)
+	doc, err := protocol.Load(implPath)
 	if err != nil {
 		return nil, fmt.Errorf("cannot parse IMPL doc: %w", err)
 	}
@@ -250,7 +249,7 @@ func runStatus(args []string) error {
 		return errors.New("status: --impl is required\nRun 'saw status --help' for usage.")
 	}
 
-	doc, err := engine.ParseIMPLDoc(*implPath)
+	doc, err := protocol.Load(*implPath)
 	if err != nil {
 		return fmt.Errorf("status: %w", err)
 	}
@@ -288,17 +287,12 @@ func runStatus(args []string) error {
 	var results []agentResult
 	for _, wave := range doc.Waves {
 		for _, ag := range wave.Agents {
-			r := agentResult{waveNum: wave.Number, letter: ag.Letter}
-			report, rptErr := engine.ParseCompletionReport(*implPath, ag.Letter)
-			if rptErr != nil {
-				if errors.Is(rptErr, engine.ErrReportNotFound) {
-					r.status = "pending"
-					r.missing = true
-				} else {
-					r.status = fmt.Sprintf("error: %v", rptErr)
-				}
+			r := agentResult{waveNum: wave.Number, letter: ag.ID}
+			if report, ok := doc.CompletionReports[ag.ID]; ok {
+				r.status = report.Status
 			} else {
-				r.status = string(report.Status)
+				r.status = "pending"
+				r.missing = true
 			}
 			results = append(results, r)
 		}
@@ -323,7 +317,7 @@ func runStatus(args []string) error {
 	if *jsonOut {
 		// Build structured JSON output.
 		out := jsonOutput{
-			Feature: doc.FeatureName,
+			Feature: doc.Title,
 			Summary: jsonSummary{
 				Total:    total,
 				Complete: complete,
@@ -350,7 +344,7 @@ func runStatus(args []string) error {
 	}
 
 	// Human-readable output.
-	fmt.Printf("IMPL: %s\n", doc.FeatureName)
+	fmt.Printf("IMPL: %s\n", doc.Title)
 	fmt.Printf("Agents: %d complete, %d pending, %d blocked\n", complete, pending, blocked)
 
 	for _, wave := range doc.Waves {

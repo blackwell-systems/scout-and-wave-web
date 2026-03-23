@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/types"
 )
 
 // minimalIMPLDoc is a minimal IMPL doc fixture used in tests that need a
@@ -230,16 +229,18 @@ func TestRunScaffold_MissingImpl(t *testing.T) {
 func TestRunWave_Auto_MultiWave_Integration(t *testing.T) {
 	// Build a two-wave fake orchestrator.
 	fake := &fakeWaveOrch{
-		doc: &types.IMPLDoc{
-			FeatureName: "Integration Test Feature",
-			Waves: []types.Wave{
+		doc: &protocol.IMPLManifest{
+			Title:       "Integration Test Feature",
+			FeatureSlug: "integration-test",
+			Verdict:     "SUITABLE",
+			Waves: []protocol.Wave{
 				{
 					Number: 1,
-					Agents: []types.AgentSpec{{Letter: "A", Prompt: "wave1 work"}},
+					Agents: []protocol.Agent{{ID: "A", Task: "wave1 work"}},
 				},
 				{
 					Number: 2,
-					Agents: []types.AgentSpec{{Letter: "B", Prompt: "wave2 work"}},
+					Agents: []protocol.Agent{{ID: "B", Task: "wave2 work"}},
 				},
 			},
 			TestCommand: "go test ./...",
@@ -413,12 +414,12 @@ func TestRunScout_PromptIncludesFeature(t *testing.T) {
 	implOut := filepath.Join(repoRoot, "docs", "IMPL", "IMPL-"+slugify(featureDesc)+".yaml")
 	prompt := string([]byte(scoutMdContent)) + "\n\n## Feature\n" + featureDesc + "\n\n## IMPL Output Path\n" + implOut + "\n"
 
-	spec := types.AgentSpec{Letter: "scout", Prompt: prompt}
-	if !strings.Contains(spec.Prompt, featureDesc) {
-		t.Errorf("expected prompt to contain feature description %q, got:\n%s", featureDesc, spec.Prompt)
+	spec := protocol.Agent{ID: "scout", Task: prompt}
+	if !strings.Contains(spec.Task, featureDesc) {
+		t.Errorf("expected prompt to contain feature description %q, got:\n%s", featureDesc, spec.Task)
 	}
-	if !strings.Contains(spec.Prompt, "Scout Agent Prompt") {
-		t.Errorf("expected prompt to contain scout.md content, got:\n%s", spec.Prompt)
+	if !strings.Contains(spec.Task, "Scout Agent Prompt") {
+		t.Errorf("expected prompt to contain scout.md content, got:\n%s", spec.Task)
 	}
 }
 
