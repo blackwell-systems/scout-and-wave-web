@@ -172,28 +172,26 @@ feature_slug: done-impl
 		t.Errorf("expected completed_count=1, got %d", resp.Metrics.CompletedCount)
 	}
 
-	// Verify standalone only contains non-program IMPLs
+	// All entries appear in standalone — program membership is metadata, not a filter
+	standaloneSlugs := make(map[string]string) // slug → program_slug
 	for _, s := range resp.Standalone {
-		if s.ProgramSlug != "" {
-			t.Errorf("standalone entry %q has program_slug=%q, expected empty", s.Slug, s.ProgramSlug)
-		}
+		standaloneSlugs[s.Slug] = s.ProgramSlug
 	}
-
-	// Verify standalone-impl and done-impl are in standalone
-	standaloneSlugs := make(map[string]bool)
-	for _, s := range resp.Standalone {
-		standaloneSlugs[s.Slug] = true
-	}
-	if !standaloneSlugs["standalone-impl"] {
+	if _, ok := standaloneSlugs["standalone-impl"]; !ok {
 		t.Error("expected 'standalone-impl' in standalone list")
 	}
-	if !standaloneSlugs["done-impl"] {
+	if _, ok := standaloneSlugs["done-impl"]; !ok {
 		t.Error("expected 'done-impl' in standalone list")
 	}
-
-	// Verify program-linked IMPL is NOT in standalone
-	if standaloneSlugs["program-impl"] {
-		t.Error("program-impl should NOT appear in standalone list")
+	// Program-linked IMPL appears in standalone with program_slug set
+	if ps, ok := standaloneSlugs["program-impl"]; !ok {
+		t.Error("expected 'program-impl' in standalone list (program membership is metadata)")
+	} else if ps != "test-program" {
+		t.Errorf("expected program-impl program_slug='test-program', got %q", ps)
+	}
+	// Non-program IMPLs should have empty program_slug
+	if ps := standaloneSlugs["standalone-impl"]; ps != "" {
+		t.Errorf("standalone-impl should have empty program_slug, got %q", ps)
 	}
 }
 
