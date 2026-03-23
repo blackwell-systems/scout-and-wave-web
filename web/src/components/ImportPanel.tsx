@@ -135,7 +135,7 @@ export default function ImportPanel({ initialProgramSlug = '' }: ImportPanelProp
               onChange={(e) => setDiscoverMode(e.target.checked)}
               className="rounded border-border accent-primary"
             />
-            <span className="text-sm">Auto-discover IMPLs from docs/IMPL/</span>
+            <span className="text-sm">Auto-discover plans from docs/IMPL/</span>
           </label>
 
           {/* Manual IMPL paths */}
@@ -169,7 +169,7 @@ export default function ImportPanel({ initialProgramSlug = '' }: ImportPanelProp
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-muted text-muted-foreground">
-                      <th className="px-3 py-2 text-left font-medium">IMPL</th>
+                      <th className="px-3 py-2 text-left font-medium">Plan</th>
                       <th className="px-3 py-2 text-left font-medium w-24">Tier</th>
                     </tr>
                   </thead>

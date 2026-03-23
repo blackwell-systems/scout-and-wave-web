@@ -69,7 +69,7 @@ export default function CreateFromImplsPanel({
   return (
     <Card className="w-[420px] max-h-[520px] flex flex-col shadow-xl border-border">
       <CardHeader className="pb-2 flex flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-sm font-semibold">Create Program from IMPLs</CardTitle>
+        <CardTitle className="text-sm font-semibold">Create Program from Plans</CardTitle>
         <button
           onClick={onClose}
           className="p-1 rounded hover:bg-muted text-muted-foreground"
@@ -87,7 +87,7 @@ export default function CreateFromImplsPanel({
             type="text"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter IMPLs..."
+            placeholder="Filter plans..."
             className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md border border-border bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring"
           />
         </div>
@@ -113,8 +113,8 @@ export default function CreateFromImplsPanel({
           {filtered.length === 0 ? (
             <p className="text-xs text-muted-foreground text-center py-4">
               {standalone.length === 0
-                ? 'No standalone IMPLs found'
-                : 'No IMPLs match filter'}
+                ? 'No plans found'
+                : 'No plans match filter'}
             </p>
           ) : (
             filtered.map((entry) => {

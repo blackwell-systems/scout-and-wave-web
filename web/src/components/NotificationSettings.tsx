@@ -15,7 +15,7 @@ const EVENT_TYPE_LABELS: Record<NotificationEventType, string> = {
   scaffold_complete: 'Scaffold Complete',
   build_verify_pass: 'Build Verification Passed',
   build_verify_fail: 'Build Verification Failed',
-  impl_complete: 'IMPL Complete',
+  impl_complete: 'Plan Complete',
   run_failed: 'Run Failed',
 }
 

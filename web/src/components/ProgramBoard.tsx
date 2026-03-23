@@ -492,7 +492,7 @@ export function UnifiedProgramsView({ onSelectImpl, onSelectProgram, createFromI
           {/* Single selection hint */}
           {programSelection.size === 1 && (
             <div className="flex items-center justify-between px-6 py-2 bg-muted/40 border-t border-border">
-              <span className="text-xs text-muted-foreground">Select at least 2 IMPLs to create a program</span>
+              <span className="text-xs text-muted-foreground">Select at least 2 plans to create a program</span>
               <button
                 onClick={() => setProgramSelection(new Set())}
                 className="text-xs text-muted-foreground hover:text-foreground transition-colors"
@@ -688,7 +688,7 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
           <div>
             <h1 className="text-2xl font-bold text-foreground">{status.title}</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              Tier {status.current_tier} active • {completion.impls_complete}/{completion.impls_total} IMPLs complete
+              Tier {status.current_tier} active • {completion.impls_complete}/{completion.impls_total} plans complete
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -733,7 +733,7 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
             )}
             <div className="text-right">
               <div className="text-sm font-semibold text-foreground">
-                {completion.impls_complete}/{completion.impls_total} IMPLs
+                {completion.impls_complete}/{completion.impls_total} plans
               </div>
               <div className="text-xs text-muted-foreground">
                 {completion.total_agents} agents • {completion.total_waves} waves
@@ -763,7 +763,7 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
               Program Complete
             </h2>
             <p className="text-sm text-muted-foreground">
-              All {completion.impls_total} IMPLs successfully implemented and verified
+              All {completion.impls_total} plans successfully implemented and verified
             </p>
           </div>
         )}
