@@ -8,6 +8,8 @@ import ModelPicker from './ModelPicker'
 import { Button } from './ui/button'
 import NotificationSettings from './NotificationSettings'
 import { useNotifications } from '../hooks/useNotifications'
+import ProviderCard from './ProviderCard'
+import type { ProviderFieldDef, ProviderValidationResponse } from './ProviderCard'
 
 interface RepoValidationResult {
   valid: boolean
@@ -20,6 +22,34 @@ interface SettingsScreenProps {
   onReposChange?: (repos: RepoEntry[]) => void
 }
 
+// Provider field definitions for each provider card
+const ANTHROPIC_FIELDS: ProviderFieldDef[] = [
+  { key: 'api_key', label: 'API Key', type: 'password' },
+]
+
+const OPENAI_FIELDS: ProviderFieldDef[] = [
+  { key: 'api_key', label: 'API Key', type: 'password' },
+]
+
+const BEDROCK_FIELDS: ProviderFieldDef[] = [
+  { key: 'region', label: 'Region', type: 'text' },
+  { key: 'access_key_id', label: 'Access Key ID', type: 'password' },
+  { key: 'secret_access_key', label: 'Secret Access Key', type: 'password' },
+  { key: 'session_token', label: 'Session Token', type: 'password', optional: true },
+]
+
+interface ProvidersConfig {
+  anthropic: Record<string, string>
+  openai: Record<string, string>
+  bedrock: Record<string, string>
+}
+
+const EMPTY_PROVIDERS: ProvidersConfig = {
+  anthropic: { api_key: '' },
+  openai: { api_key: '' },
+  bedrock: { region: '', access_key_id: '', secret_access_key: '', session_token: '' },
+}
+
 export default function SettingsScreen({ onClose, onReposChange }: SettingsScreenProps): JSX.Element {
   const { preferences, updatePreferences, browserPermission, requestPermission } = useNotifications()
 
@@ -30,6 +60,7 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
     quality: { require_tests: false, require_lint: false, block_on_failure: false },
     appearance: { theme: 'system', contrast: 'normal' },
   })
+  const [providers, setProviders] = useState<ProvidersConfig>(EMPTY_PROVIDERS)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -49,6 +80,15 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
           quality: { ...prev.quality, ...c.quality },
           appearance: { ...prev.appearance, ...c.appearance },
         }))
+        // Initialize providers from config if present
+        const p = (c as Record<string, unknown>).providers as ProvidersConfig | undefined
+        if (p) {
+          setProviders({
+            anthropic: { ...EMPTY_PROVIDERS.anthropic, ...p.anthropic },
+            openai: { ...EMPTY_PROVIDERS.openai, ...p.openai },
+            bedrock: { ...EMPTY_PROVIDERS.bedrock, ...p.bedrock },
+          })
+        }
         setLoading(false)
       })
       .catch(err => {
@@ -115,6 +155,19 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
   // Returns true if any repo has been validated and found invalid.
   const hasInvalidRepo = Object.values(repoValidation).some(v => v !== null && !v.valid)
 
+  async function validateProvider(provider: string, creds: Record<string, string>): Promise<ProviderValidationResponse> {
+    const resp = await fetch(`/api/config/providers/${encodeURIComponent(provider)}/validate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(creds),
+    })
+    if (!resp.ok) {
+      const text = await resp.text()
+      return { valid: false, error: text || `HTTP ${resp.status}` }
+    }
+    return resp.json() as Promise<ProviderValidationResponse>
+  }
+
   async function handleSave() {
     // Validate: every repo must have a non-empty path
     const hasEmptyPath = config.repos.some(r => r.path.trim() === '')
@@ -135,7 +188,7 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
       path: r.path,
     }))
 
-    const configToSave: SAWConfig = { ...config, repos: normalizedRepos }
+    const configToSave: SAWConfig & { providers: ProvidersConfig } = { ...config, repos: normalizedRepos, providers }
 
     setSaving(true)
     setError(null)
@@ -248,6 +301,43 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
         <Button type="button" onClick={addRepo} variant="outline" size="sm" className="self-start">
           + Add repo
         </Button>
+      </div>
+
+      {/* Providers section */}
+      <div className="rounded-lg border border-border bg-card p-4 flex flex-col gap-3">
+        <h3 className="text-sm font-medium">Providers</h3>
+        <p className="text-xs text-muted-foreground">Leave empty to use environment variables.</p>
+
+        <ProviderCard
+          provider="anthropic"
+          label="Anthropic"
+          fields={ANTHROPIC_FIELDS}
+          config={providers.anthropic}
+          onChange={c => setProviders(prev => ({ ...prev, anthropic: c }))}
+          onValidate={() => validateProvider('anthropic', providers.anthropic)}
+        />
+
+        <div className="border-t border-border" />
+
+        <ProviderCard
+          provider="openai"
+          label="OpenAI"
+          fields={OPENAI_FIELDS}
+          config={providers.openai}
+          onChange={c => setProviders(prev => ({ ...prev, openai: c }))}
+          onValidate={() => validateProvider('openai', providers.openai)}
+        />
+
+        <div className="border-t border-border" />
+
+        <ProviderCard
+          provider="bedrock"
+          label="AWS Bedrock"
+          fields={BEDROCK_FIELDS}
+          config={providers.bedrock}
+          onChange={c => setProviders(prev => ({ ...prev, bedrock: c }))}
+          onValidate={() => validateProvider('bedrock', providers.bedrock)}
+        />
       </div>
 
       {/* Agent section */}
