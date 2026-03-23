@@ -282,6 +282,7 @@ export default function App() {
       onSelectProgram={(programSlug) => {
         setSelectedProgramSlug(programSlug)
       }}
+      initialProgramSlug={selectedProgramSlug}
     />
   ) : (
     <>
@@ -299,7 +300,7 @@ export default function App() {
       )}
       {rejected && <p className="text-orange-600 text-sm p-4">Plan rejected.</p>}
       {!loading && impl !== null && selectedSlug !== null && (
-        <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onViewWaves={handleViewWaves} onRefreshImpl={handleRefreshImpl} repos={repos} chatModel={models.chat} refreshTick={sseRefreshTick} waveBoardExpanded={!waveBoardCollapsed && liveView === null} />
+        <ReviewScreen slug={selectedSlug} impl={impl} onApprove={handleApprove} onReject={handleReject} onViewWaves={handleViewWaves} onRefreshImpl={handleRefreshImpl} onSelectProgram={(ps) => { setSelectedSlug(null); setImpl(null); setSelectedProgramSlug(ps); setShowPrograms(true); }} repos={repos} chatModel={models.chat} refreshTick={sseRefreshTick} waveBoardExpanded={!waveBoardCollapsed && liveView === null} />
       )}
       {!loading && impl === null && !error && (
         repos.length === 0 ? (

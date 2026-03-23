@@ -150,13 +150,14 @@ export interface UnifiedProgramsViewProps {
   onSelectImpl: (slug: string) => void
   onSelectProgram: (programSlug: string) => void
   createFromImplsOpen?: boolean
+  initialProgramSlug?: string | null
 }
 
-export function UnifiedProgramsView({ onSelectImpl, onSelectProgram, createFromImplsOpen }: UnifiedProgramsViewProps): JSX.Element {
+export function UnifiedProgramsView({ onSelectImpl, onSelectProgram, createFromImplsOpen, initialProgramSlug }: UnifiedProgramsViewProps): JSX.Element {
   const [data, setData] = useState<ProgramListResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [selectedProgram, setSelectedProgram] = useState<string | null>(null)
+  const [selectedProgram, setSelectedProgram] = useState<string | null>(initialProgramSlug ?? null)
   const [showCompleted, setShowCompleted] = useState(false)
   const [programSelection, setProgramSelection] = useState<Set<string>>(new Set())
   const [repoFilters, setRepoFilters] = useState<Set<string>>(new Set())
@@ -172,6 +173,13 @@ export function UnifiedProgramsView({ onSelectImpl, onSelectProgram, createFromI
       setCreateFromImplsMode('select')
     }
   }, [createFromImplsOpen])
+
+  // Sync selectedProgram when parent navigates to a program
+  useEffect(() => {
+    if (initialProgramSlug) {
+      setSelectedProgram(initialProgramSlug)
+    }
+  }, [initialProgramSlug])
 
   const loadData = useCallback(async () => {
     try {
@@ -530,12 +538,12 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
   const [connected, setConnected] = useState(false)
   const [waveProgress, setWaveProgress] = useState<Record<string, string>>({})
   const [replanning, setReplanning] = useState(false)
-  const [viewMode, setViewMode] = useState<'list' | 'graph'>('list')
+  const [viewMode, setViewMode] = useState<'list' | 'graph'>('graph')
 
   useEffect(() => {
     // Reset wave progress and view mode when programSlug changes
     setWaveProgress({})
-    setViewMode('list')
+    setViewMode('graph')
 
     // Initial fetch
     const loadStatus = async () => {
@@ -687,17 +695,6 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
             {/* View mode toggle */}
             <div className="flex rounded-lg overflow-hidden border border-border">
               <button
-                onClick={() => setViewMode('list')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
-                  viewMode === 'list'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'bg-muted text-muted-foreground hover:text-foreground'
-                }`}
-              >
-                <List className="w-3.5 h-3.5" />
-                List
-              </button>
-              <button
                 onClick={() => setViewMode('graph')}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
                   viewMode === 'graph'
@@ -707,6 +704,17 @@ export default function ProgramBoard({ programSlug, onSelectImpl }: ProgramBoard
               >
                 <GitBranch className="w-3.5 h-3.5" />
                 Graph
+              </button>
+              <button
+                onClick={() => setViewMode('list')}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium transition-colors ${
+                  viewMode === 'list'
+                    ? 'bg-primary text-primary-foreground'
+                    : 'bg-muted text-muted-foreground hover:text-foreground'
+                }`}
+              >
+                <List className="w-3.5 h-3.5" />
+                List
               </button>
             </div>
             {(status.state === 'BLOCKED' || status.state === 'blocked') && (

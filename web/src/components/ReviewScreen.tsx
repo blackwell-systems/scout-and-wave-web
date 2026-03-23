@@ -24,6 +24,7 @@ interface ReviewScreenProps {
   onReject: () => void
   onViewWaves?: () => void
   onRefreshImpl?: (slug: string) => Promise<void>
+  onSelectProgram?: (programSlug: string) => void
   repos?: import('../types').RepoEntry[]
   chatModel?: string
   refreshTick?: number
@@ -278,6 +279,18 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
       <div className="max-w-[1800px] mx-auto px-4 py-8 pb-4">
         {/* Header */}
         <div className="mb-6">
+          {impl.program_slug && (
+            <div className="mb-1 text-sm text-muted-foreground flex items-center gap-1.5">
+              <button
+                onClick={() => props.onSelectProgram?.(impl.program_slug!)}
+                className="hover:text-primary transition-colors cursor-pointer font-mono"
+              >
+                ← {impl.program_title || impl.program_slug}
+              </button>
+              <span className="text-muted-foreground/50">·</span>
+              <span className="font-mono">Tier {impl.program_tier}{impl.program_tiers_total ? `/${impl.program_tiers_total}` : ''}</span>
+            </div>
+          )}
           <h1 className="text-2xl font-bold flex items-center gap-3">
             Plan Review: <span className="font-mono text-primary">{slug}</span>
             {impl.doc_status === 'complete' && (

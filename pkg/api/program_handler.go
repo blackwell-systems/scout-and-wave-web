@@ -96,21 +96,15 @@ func (s *Server) handleListPrograms(w http.ResponseWriter, r *http.Request) {
 	repos := s.getConfiguredRepos()
 	entries, metrics := buildPipelineData(repos, &s.activeRuns)
 
-	// Filter standalone IMPLs: those with no program association
-	var standalone []PipelineEntry
-	for _, e := range entries {
-		if e.ProgramSlug == "" {
-			standalone = append(standalone, e)
-		}
-	}
-	if standalone == nil {
-		standalone = []PipelineEntry{}
+	// Return all entries — program membership is metadata, not a filter
+	if entries == nil {
+		entries = []PipelineEntry{}
 	}
 
 	resp := ProgramListResponse{
 		Programs:   programs,
 		Metrics:    metrics,
-		Standalone: standalone,
+		Standalone: entries,
 	}
 	respondJSON(w, http.StatusOK, resp)
 }
