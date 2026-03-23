@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-web/pkg/service"
 )
 
@@ -39,12 +40,22 @@ func (s *Server) handleScoutRun(w http.ResponseWriter, r *http.Request) {
 
 	deps := s.makeDeps()
 	runID, err := service.StartScout(deps, req.Feature, req.Repo)
+	var startResult result.Result[string]
 	if err != nil {
-		respondError(w, err.Error(), http.StatusBadRequest)
+		startResult = result.NewFailure[string]([]result.StructuredError{{
+			Code:     "E001",
+			Message:  err.Error(),
+			Severity: "fatal",
+		}})
+	} else {
+		startResult = result.NewSuccess(runID)
+	}
+	if !startResult.IsSuccess() {
+		respondError(w, startResult.Errors[0].Message, http.StatusBadRequest)
 		return
 	}
 
-	respondJSON(w, http.StatusAccepted, ScoutRunResponse{RunID: runID})
+	respondJSON(w, http.StatusAccepted, ScoutRunResponse{RunID: startResult.GetData()})
 }
 
 // handleScoutEvents handles GET /api/scout/{runID}/events.
@@ -124,12 +135,22 @@ func (s *Server) handleScoutRerun(w http.ResponseWriter, r *http.Request) {
 
 	deps := s.makeDeps()
 	runID, err := service.StartScout(deps, feature, "")
+	var rerunResult result.Result[string]
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		rerunResult = result.NewFailure[string]([]result.StructuredError{{
+			Code:     "E001",
+			Message:  err.Error(),
+			Severity: "fatal",
+		}})
+	} else {
+		rerunResult = result.NewSuccess(runID)
+	}
+	if !rerunResult.IsSuccess() {
+		respondError(w, rerunResult.Errors[0].Message, http.StatusInternalServerError)
 		return
 	}
 
-	respondJSON(w, http.StatusAccepted, ScoutRunResponse{RunID: runID})
+	respondJSON(w, http.StatusAccepted, ScoutRunResponse{RunID: rerunResult.GetData()})
 }
 
 // makeDeps constructs a service.Deps from Server state.
