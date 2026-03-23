@@ -6,14 +6,15 @@ import (
 	"strconv"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 	"github.com/blackwell-systems/scout-and-wave-web/pkg/service"
 )
 
 // ValidateIntegrationResponse is the JSON response for
 // GET /api/impl/{slug}/validate-integration?wave=N.
 type ValidateIntegrationResponse struct {
-	Valid bool                    `json:"valid"`
-	Wave  int                     `json:"wave"`
+	Valid bool                      `json:"valid"`
+	Wave  int                       `json:"wave"`
 	Gaps  []protocol.IntegrationGap `json:"gaps"`
 }
 
@@ -22,6 +23,26 @@ type ValidateIntegrationResponse struct {
 type ValidateWiringResponse struct {
 	Valid bool                 `json:"valid"`
 	Gaps  []protocol.WiringGap `json:"gaps"`
+}
+
+// toIntegrationResult wraps a protocol.ValidateIntegration return into Result[T].
+func toIntegrationResult(report *protocol.IntegrationReport, err error) result.Result[protocol.IntegrationReport] {
+	if err != nil {
+		return result.NewFailure[protocol.IntegrationReport]([]result.StructuredError{
+			{Code: "E_INTEGRATION_VALIDATE", Message: err.Error(), Severity: "fatal"},
+		})
+	}
+	return result.NewSuccess(*report)
+}
+
+// toWiringResult wraps a protocol.ValidateWiringDeclarations return into Result[T].
+func toWiringResult(wr *protocol.WiringValidationResult, err error) result.Result[protocol.WiringValidationResult] {
+	if err != nil {
+		return result.NewFailure[protocol.WiringValidationResult]([]result.StructuredError{
+			{Code: "E_WIRING_VALIDATE", Message: err.Error(), Severity: "fatal"},
+		})
+	}
+	return result.NewSuccess(*wr)
 }
 
 // handleValidateIntegration serves GET /api/impl/{slug}/validate-integration?wave=N.
@@ -57,20 +78,22 @@ func (s *Server) handleValidateIntegration(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	report, err := protocol.ValidateIntegration(manifest, waveNum, repoPath)
-	if err != nil {
-		respondError(w, fmt.Sprintf("integration validation failed: %v", err), http.StatusInternalServerError)
+	integrationResult := toIntegrationResult(protocol.ValidateIntegration(manifest, waveNum, repoPath))
+	if !integrationResult.IsSuccess() {
+		msg := integrationResult.Errors[0].Message
+		respondError(w, fmt.Sprintf("integration validation failed: %s", msg), http.StatusInternalServerError)
 		return
 	}
 
-	gaps := report.Gaps
+	data := integrationResult.GetData()
+	gaps := data.Gaps
 	if gaps == nil {
 		gaps = []protocol.IntegrationGap{}
 	}
 
 	respondJSON(w, http.StatusOK, ValidateIntegrationResponse{
-		Valid: report.Valid,
-		Wave:  report.Wave,
+		Valid: data.Valid,
+		Wave:  data.Wave,
 		Gaps:  gaps,
 	})
 }
@@ -96,19 +119,21 @@ func (s *Server) handleValidateWiring(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := protocol.ValidateWiringDeclarations(manifest, repoPath)
-	if err != nil {
-		respondError(w, fmt.Sprintf("wiring validation failed: %v", err), http.StatusInternalServerError)
+	wiringResult := toWiringResult(protocol.ValidateWiringDeclarations(manifest, repoPath))
+	if !wiringResult.IsSuccess() {
+		msg := wiringResult.Errors[0].Message
+		respondError(w, fmt.Sprintf("wiring validation failed: %s", msg), http.StatusInternalServerError)
 		return
 	}
 
-	gaps := result.Gaps
+	data := wiringResult.GetData()
+	gaps := data.Gaps
 	if gaps == nil {
 		gaps = []protocol.WiringGap{}
 	}
 
 	respondJSON(w, http.StatusOK, ValidateWiringResponse{
-		Valid: result.Valid,
+		Valid: data.Valid,
 		Gaps:  gaps,
 	})
 }
