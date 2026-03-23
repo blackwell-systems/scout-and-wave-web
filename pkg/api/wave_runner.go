@@ -432,13 +432,14 @@ func runFinalizeSteps(slug string, waveNum int, implPath, repoPath, integrationM
 		_ = tracker.Start(slug, waveNum, StepVerifyCommits)
 		publishPipelineStep(publish, slug, waveNum, StepVerifyCommits, StepRunning, "")
 
-		verifyResult, err := protocol.VerifyCommits(implPath, waveNum, repoPath)
-		if err != nil {
+		verifyResult := protocol.VerifyCommits(implPath, waveNum, repoPath)
+		if verifyResult.IsFatal() {
+			err := fmt.Errorf("verify-commits fatal error")
 			_ = tracker.Fail(slug, waveNum, StepVerifyCommits, err)
 			publishPipelineStep(publish, slug, waveNum, StepVerifyCommits, StepFailed, err.Error())
-			return fmt.Errorf("verify-commits: %w", err)
+			return err
 		}
-		if !verifyResult.AllValid {
+		if !verifyResult.IsSuccess() {
 			err := fmt.Errorf("verify-commits found agents with no commits")
 			_ = tracker.Fail(slug, waveNum, StepVerifyCommits, err)
 			publishPipelineStep(publish, slug, waveNum, StepVerifyCommits, StepFailed, err.Error())
@@ -465,11 +466,11 @@ func runFinalizeSteps(slug string, waveNum int, implPath, repoPath, integrationM
 			}
 		}
 		if len(changedFiles) > 0 {
-			stubResult, err := protocol.ScanStubs(changedFiles)
-			if err != nil {
-				log.Printf("runFinalizeSteps: scan-stubs non-fatal error: %v", err)
-			} else if stubResult != nil && len(stubResult.Hits) > 0 {
-				publish("stub_report", stubResult)
+			stubResult := protocol.ScanStubs(changedFiles)
+			if stubResult.IsFatal() {
+				log.Printf("runFinalizeSteps: scan-stubs non-fatal error: fatal result")
+			} else if stubResult.Data != nil && len(stubResult.Data.Hits) > 0 {
+				publish("stub_report", stubResult.Data)
 			}
 		}
 		_ = tracker.Complete(slug, waveNum, StepScanStubs)
@@ -485,13 +486,14 @@ func runFinalizeSteps(slug string, waveNum int, implPath, repoPath, integrationM
 
 		stateDir := filepath.Join(repoPath, ".saw-state")
 		cache := gatecache.New(stateDir, 5*time.Minute)
-		gateResults, err := protocol.RunGatesWithCache(manifest, waveNum, repoPath, cache)
-		if err != nil {
+		gateResults := protocol.RunGatesWithCache(manifest, waveNum, repoPath, cache)
+		if gateResults.IsFatal() {
+			err := fmt.Errorf("run-gates fatal error")
 			_ = tracker.Fail(slug, waveNum, StepRunGates, err)
 			publishPipelineStep(publish, slug, waveNum, StepRunGates, StepFailed, err.Error())
-			return fmt.Errorf("run-gates: %w", err)
+			return err
 		}
-		for _, gate := range gateResults {
+		for _, gate := range gateResults.Data.Gates {
 			publish("quality_gate_result", gate)
 			if gate.FromCache {
 				publish("gate_cache_hit", map[string]interface{}{
@@ -518,10 +520,10 @@ func runFinalizeSteps(slug string, waveNum int, implPath, repoPath, integrationM
 				})
 				if retryErr == nil && retryResult != nil && retryResult.Fixed {
 					// Re-run all gates to confirm after fix.
-					gateResults, err = protocol.RunGatesWithCache(manifest, waveNum, repoPath, cache)
-					if err == nil {
+					gateResults = protocol.RunGatesWithCache(manifest, waveNum, repoPath, cache)
+					if gateResults.IsSuccess() {
 						allPass := true
-						for _, g := range gateResults {
+						for _, g := range gateResults.Data.Gates {
 							publish("quality_gate_result", g)
 							if g.Required && !g.Passed {
 								allPass = false
@@ -604,7 +606,7 @@ func runFinalizeSteps(slug string, waveNum int, implPath, repoPath, integrationM
 			publishPipelineStep(publish, slug, waveNum, StepMergeAgents, StepFailed, err.Error())
 			return fmt.Errorf("merge-agents: %w", err)
 		}
-		if !mergeResult.Success {
+		if !mergeResult.IsSuccess() {
 			err := fmt.Errorf("merge-agents encountered conflicts")
 			_ = tracker.Fail(slug, waveNum, StepMergeAgents, err)
 			publishPipelineStep(publish, slug, waveNum, StepMergeAgents, StepFailed, err.Error())
@@ -637,15 +639,16 @@ func runFinalizeSteps(slug string, waveNum int, implPath, repoPath, integrationM
 		_ = tracker.Start(slug, waveNum, StepVerifyBuild)
 		publishPipelineStep(publish, slug, waveNum, StepVerifyBuild, StepRunning, "")
 
-		verifyBuildResult, err := protocol.VerifyBuild(implPath, repoPath)
-		if err != nil {
+		verifyBuildResult := protocol.VerifyBuild(implPath, repoPath)
+		if verifyBuildResult.IsFatal() {
+			err := fmt.Errorf("verify-build fatal error")
 			_ = tracker.Fail(slug, waveNum, StepVerifyBuild, err)
 			publishPipelineStep(publish, slug, waveNum, StepVerifyBuild, StepFailed, err.Error())
-			return fmt.Errorf("verify-build: %w", err)
+			return err
 		}
-		if !verifyBuildResult.TestPassed || !verifyBuildResult.LintPassed {
+		if !verifyBuildResult.Data.TestPassed || !verifyBuildResult.Data.LintPassed {
 			err := fmt.Errorf("verify-build failed (test_passed=%v, lint_passed=%v)",
-				verifyBuildResult.TestPassed, verifyBuildResult.LintPassed)
+				verifyBuildResult.Data.TestPassed, verifyBuildResult.Data.LintPassed)
 			_ = tracker.Fail(slug, waveNum, StepVerifyBuild, err)
 			publishPipelineStep(publish, slug, waveNum, StepVerifyBuild, StepFailed, err.Error())
 			return err

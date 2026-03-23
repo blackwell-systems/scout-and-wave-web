@@ -45,13 +45,13 @@ func runRunGates(args []string) error {
 	}
 
 	// Run gates
-	results, err := protocol.RunGates(manifest, *waveFlag, *repoDirFlag)
-	if err != nil {
-		return fmt.Errorf("run-gates: %w", err)
+	gateResults := protocol.RunGates(manifest, *waveFlag, *repoDirFlag)
+	if gateResults.IsFatal() {
+		return fmt.Errorf("run-gates fatal error")
 	}
 
 	// Output JSON array
-	resultJSON, err := json.MarshalIndent(results, "", "  ")
+	resultJSON, err := json.MarshalIndent(gateResults.Data.Gates, "", "  ")
 	if err != nil {
 		return fmt.Errorf("run-gates: failed to marshal results: %w", err)
 	}
@@ -60,7 +60,7 @@ func runRunGates(args []string) error {
 
 	// Check if any required gates failed
 	hasFailures := false
-	for _, result := range results {
+	for _, result := range gateResults.Data.Gates {
 		if !result.Passed && result.Required {
 			hasFailures = true
 			break

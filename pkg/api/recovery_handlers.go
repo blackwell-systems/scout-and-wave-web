@@ -155,8 +155,14 @@ func (s *Server) handleStepRetry(w http.ResponseWriter, r *http.Request) {
 func executeStep(step PipelineStep, implPath, repoPath string, wave int) error {
 	switch step {
 	case StepVerifyCommits:
-		_, err := protocol.VerifyCommits(implPath, wave, repoPath)
-		return err
+		result := protocol.VerifyCommits(implPath, wave, repoPath)
+		if result.IsFatal() {
+			return fmt.Errorf("verify-commits fatal error")
+		}
+		if !result.IsSuccess() {
+			return fmt.Errorf("verify-commits found issues")
+		}
+		return nil
 
 	case StepScanStubs:
 		manifest, err := protocol.Load(implPath)
@@ -172,8 +178,11 @@ func executeStep(step PipelineStep, implPath, repoPath string, wave int) error {
 				}
 			}
 		}
-		_, err = protocol.ScanStubs(changedFiles)
-		return err
+		result := protocol.ScanStubs(changedFiles)
+		if result.IsFatal() {
+			return fmt.Errorf("scan-stubs fatal error")
+		}
+		return nil
 
 	case StepRunGates:
 		manifest, err := protocol.Load(implPath)
@@ -182,8 +191,11 @@ func executeStep(step PipelineStep, implPath, repoPath string, wave int) error {
 		}
 		stateDir := filepath.Join(repoPath, ".saw-state")
 		cache := gatecache.New(stateDir, 5*time.Minute)
-		_, err = protocol.RunGatesWithCache(manifest, wave, repoPath, cache)
-		return err
+		result := protocol.RunGatesWithCache(manifest, wave, repoPath, cache)
+		if result.IsFatal() {
+			return fmt.Errorf("run-gates fatal error")
+		}
+		return nil
 
 	case StepValidateIntegration:
 		manifest, err := protocol.Load(implPath)
@@ -202,8 +214,14 @@ func executeStep(step PipelineStep, implPath, repoPath string, wave int) error {
 		return err
 
 	case StepVerifyBuild:
-		_, err := protocol.VerifyBuild(implPath, repoPath)
-		return err
+		result := protocol.VerifyBuild(implPath, repoPath)
+		if result.IsFatal() {
+			return fmt.Errorf("verify-build fatal error")
+		}
+		if !result.IsSuccess() {
+			return fmt.Errorf("verify-build failed")
+		}
+		return nil
 
 	case StepIntegrationAgent:
 		// Integration agent retry is a no-op in executeStep — it requires
