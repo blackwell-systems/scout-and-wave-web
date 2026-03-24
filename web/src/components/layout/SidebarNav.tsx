@@ -27,7 +27,6 @@ export interface SidebarNavProps {
 
 export function SidebarNav(props: SidebarNavProps): JSX.Element {
   const {
-    showPrograms,
     programs,
     selectedProgramSlug,
     onSelectProgram,
@@ -50,7 +49,7 @@ export function SidebarNav(props: SidebarNavProps): JSX.Element {
   return (
     <>
       <ResumeBanner sessions={interruptedSessions} runningSlugs={runningSlugs} onSelect={onSelectInterrupted ?? onSelect} />
-      {showPrograms && programs.length > 0 && (
+      {programs.length > 0 && (
         <ProgramList
           programs={programs}
           selectedSlug={selectedProgramSlug}
