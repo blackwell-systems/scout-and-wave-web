@@ -3,6 +3,7 @@ package api
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -141,6 +142,52 @@ func TestValidateManifest_MissingFile(t *testing.T) {
 	_, err := ValidateManifest("/nonexistent/path/to/manifest.yaml")
 	if err == nil {
 		t.Fatal("expected error for missing file, got nil")
+	}
+}
+
+// TestValidateManifest_DetectsUnknownKeys tests that ValidateManifest catches
+// unknown top-level keys, which the old implementation missed.
+func TestValidateManifest_DetectsUnknownKeys(t *testing.T) {
+	yamlContent := `title: Test Feature
+feature_slug: test-feature
+verdict: SUITABLE
+test_command: go test ./...
+lint_command: go vet ./...
+bogus_field: true
+file_ownership:
+  - file: pkg/example/foo.go
+    agent: A
+    wave: 1
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: Implement foo
+        files:
+          - pkg/example/foo.go
+`
+	tmpFile := createTempYAML(t, yamlContent)
+	defer os.Remove(tmpFile)
+
+	validationErrs, err := ValidateManifest(tmpFile)
+	if err != nil {
+		t.Fatalf("ValidateManifest failed: %v", err)
+	}
+
+	if validationErrs == nil || len(validationErrs) == 0 {
+		t.Fatal("expected validation errors for manifest with unknown key 'bogus_field', got none")
+	}
+
+	// Verify at least one error mentions the unknown key
+	found := false
+	for _, e := range validationErrs {
+		if strings.Contains(e.Code, "UNKNOWN_KEY") || strings.Contains(e.Message, "bogus_field") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected an error about unknown key 'bogus_field', got: %+v", validationErrs)
 	}
 }
 

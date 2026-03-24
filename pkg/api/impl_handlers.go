@@ -20,18 +20,20 @@ func LoadManifest(yamlPath string) (*protocol.IMPLManifest, error) {
 // ValidateManifest validates a YAML manifest and returns structured errors.
 // Returns nil slice if validation passes, or a slice of validation errors.
 // Returns a non-nil error only if the file cannot be loaded.
+//
+// Uses protocol.FullValidate to run all validation checks (struct validation,
+// duplicate key detection, unknown key detection, typed-block validation),
+// ensuring the web app enforces the same rules as the CLI.
 func ValidateManifest(yamlPath string) ([]result.SAWError, error) {
-	manifest, err := protocol.Load(yamlPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load manifest for validation: %w", err)
+	res := protocol.FullValidate(yamlPath, protocol.FullValidateOpts{})
+	if res.IsFatal() {
+		return nil, fmt.Errorf("failed to validate manifest: %s", res.Errors[0].Message)
 	}
-
-	validationErrs := protocol.Validate(manifest)
-	if len(validationErrs) == 0 {
+	data := res.GetData()
+	if data.Valid {
 		return nil, nil
 	}
-
-	return validationErrs, nil
+	return data.Errors, nil
 }
 
 // GetManifestWave returns a specific wave from a manifest.
