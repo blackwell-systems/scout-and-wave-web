@@ -61,8 +61,8 @@ func (s *Server) handleImportIMPLs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Determine PROGRAM manifest path: docs/PROGRAM-{slug}.yaml inside repo dir.
-	programPath := filepath.Join(repoDir, "docs", "PROGRAM-"+req.ProgramSlug+".yaml")
+	// Determine PROGRAM manifest path: docs/PROGRAM/PROGRAM-{slug}.yaml inside repo dir.
+	programPath := filepath.Join(repoDir, "docs", "PROGRAM", "PROGRAM-"+req.ProgramSlug+".yaml")
 
 	// Load or initialize the PROGRAM manifest.
 	var manifest protocol.PROGRAMManifest

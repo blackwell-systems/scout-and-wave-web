@@ -51,14 +51,14 @@ func (c *implProgramCache) get(repos []config.RepoEntry) map[string]implProgramI
 	return c.data
 }
 
-// buildImplProgramMapFresh scans each repo's docs/PROGRAM-*.yaml files and returns
+// buildImplProgramMapFresh scans each repo's docs/PROGRAM/PROGRAM-*.yaml files and returns
 // a map of implSlug → implProgramInfo for use in tagging pipeline entries.
 // First-write-wins: if the same slug appears in multiple manifests, the first
 // occurrence is kept and a warning is logged.
 func buildImplProgramMapFresh(repos []config.RepoEntry) map[string]implProgramInfo {
 	result := make(map[string]implProgramInfo)
 	for _, repo := range repos {
-		docsDir := filepath.Join(repo.Path, "docs")
+		docsDir := filepath.Join(repo.Path, "docs", "PROGRAM")
 		entries, err := os.ReadDir(docsDir)
 		if err != nil {
 			continue

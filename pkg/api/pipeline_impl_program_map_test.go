@@ -9,14 +9,15 @@ import (
 	"testing"
 )
 
-// writeProgramManifest writes a PROGRAM manifest YAML file to docs/PROGRAM-{slug}.yaml
+// writeProgramManifest writes a PROGRAM manifest YAML file to docs/PROGRAM/PROGRAM-{slug}.yaml
 // under the given docsDir.
 func writeProgramManifest(t *testing.T, docsDir, slug string, content string) {
 	t.Helper()
-	if err := os.MkdirAll(docsDir, 0755); err != nil {
+	programDir := filepath.Join(docsDir, "PROGRAM")
+	if err := os.MkdirAll(programDir, 0755); err != nil {
 		t.Fatalf("writeProgramManifest: MkdirAll: %v", err)
 	}
-	path := filepath.Join(docsDir, "PROGRAM-"+slug+".yaml")
+	path := filepath.Join(programDir, "PROGRAM-"+slug+".yaml")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatalf("writeProgramManifest: WriteFile: %v", err)
 	}

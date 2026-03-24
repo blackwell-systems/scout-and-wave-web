@@ -131,7 +131,7 @@ The binary also provides a CLI for scripting and CI/CD:
 ./saw merge --impl docs/IMPL/IMPL-caching.md --wave 1
 ```
 
-See [CLI Reference](docs/cli-reference.md) for full command reference.
+See [CLI Reference](docs/reference/cli-reference.md) for full command reference.
 
 ## Web UI Features
 
@@ -309,9 +309,9 @@ Example log output:
 
 ## Documentation
 
-- **[CLI Reference](docs/cli-reference.md)** — Complete command-line interface documentation for all 18 commands
-- **[API Reference](docs/api-reference.md)** — HTTP endpoint documentation for all 42 REST/SSE endpoints
-- **[Configuration Reference](docs/configuration.md)** — `saw.config.json` structure and settings
+- **[CLI Reference](docs/reference/cli-reference.md)** — Complete command-line interface documentation for all 18 commands
+- **[API Reference](docs/reference/api-reference.md)** — HTTP endpoint documentation for all 42 REST/SSE endpoints
+- **[Configuration Reference](docs/reference/configuration.md)** — `saw.config.json` structure and settings
 
 ### Quick CLI Examples
 
