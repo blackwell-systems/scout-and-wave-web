@@ -60,7 +60,7 @@ waves:
     agents:
       - id: A
         task: Implement handler
-        owned_files:
+        files:
           - pkg/handler.go
 `)
 
@@ -102,7 +102,7 @@ waves:
     agents:
       - id: A
         task: Implement handler
-        owned_files:
+        files:
           - pkg/handler.go
         completion_reports:
           A:
@@ -164,7 +164,7 @@ waves:
     agents:
       - id: A
         task: task
-        owned_files: [pkg/f.go]
+        files: [pkg/f.go]
 `)
 	s := newValidationTestServer(t, tmpDir)
 
@@ -210,7 +210,7 @@ waves:
     agents:
       - id: A
         task: Implement handler
-        owned_files:
+        files:
           - pkg/handler.go
 `)
 
@@ -258,7 +258,7 @@ waves:
     agents:
       - id: A
         task: Implement routes
-        owned_files:
+        files:
           - pkg/api/routes.go
 `)
 

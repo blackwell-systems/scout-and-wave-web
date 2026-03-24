@@ -21,7 +21,7 @@ waves:
   - number: 1
     agents:
       - id: A
-        owned_files:
+        files:
           - file1.go
 `
 	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0644); err != nil {
@@ -81,12 +81,17 @@ func TestHandleValidateManifest(t *testing.T) {
 title: Test Feature
 feature_slug: test
 verdict: SUITABLE
+file_ownership:
+  - file: file1.go
+    agent: A
+    wave: 1
+    action: new
 waves:
   - number: 1
     agents:
       - id: A
         task: Implement file1.go
-        owned_files:
+        files:
           - file1.go
 `
 	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0644); err != nil {
@@ -127,12 +132,12 @@ waves:
   - number: 1
     agents:
       - id: A
-        owned_files:
+        files:
           - file1.go
   - number: 2
     agents:
       - id: B
-        owned_files:
+        files:
           - file2.go
 `
 	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0644); err != nil {
@@ -174,7 +179,7 @@ waves:
   - number: 1
     agents:
       - id: A
-        owned_files:
+        files:
           - file1.go
 `
 	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0644); err != nil {
@@ -207,7 +212,7 @@ waves:
   - number: 1
     agents:
       - id: A
-        owned_files:
+        files:
           - file1.go
 `
 	if err := os.WriteFile(manifestPath, []byte(manifestYAML), 0644); err != nil {

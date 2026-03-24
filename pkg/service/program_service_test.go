@@ -343,6 +343,13 @@ waves:
 }
 
 func TestCreateProgramFromIMPLs_NoRepoPath(t *testing.T) {
+	// With config.LoadOrDefault, empty RepoPath resolves via cwd walk-up.
+	// Use a truly isolated dir with no config ancestors to test the fallback.
+	isolated := t.TempDir()
+	origDir, _ := os.Getwd()
+	os.Chdir(isolated)
+	defer os.Chdir(origDir)
+
 	deps := Deps{
 		RepoPath: "",
 		ConfigPath: func(repoPath string) string {
