@@ -158,6 +158,33 @@ export interface AgentFailedData {
   message: string
 }
 
+export interface SAWError {
+  code: string
+  message: string
+  severity: 'fatal' | 'error' | 'warning' | 'info'
+  file?: string
+  line?: number
+  field?: string
+  tool?: string
+  suggestion?: string
+  context?: Record<string, string>
+}
+
+export interface GateResult {
+  type: string
+  command: string
+  exit_code: number
+  stdout: string
+  stderr: string
+  required: boolean
+  passed: boolean
+  skipped?: boolean
+  skip_reason?: string
+  from_cache?: boolean
+  parsed_errors?: SAWError[]
+}
+
+/** @deprecated Use GateResult instead. Kept for backward compatibility with SSE event consumers. */
 export interface GateResultData {
   gate: string
   passed: boolean
