@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 )
 
@@ -121,13 +122,10 @@ func (s *Server) runImplChatAgent(ctx context.Context, runID, slug, message stri
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
 
-	// Read saw.config.json fresh so model changes in Settings take effect immediately.
+	// Read config fresh so model changes in Settings take effect immediately.
 	chatModel := ""
-	if cfgData, err := os.ReadFile(filepath.Join(s.cfg.RepoPath, "saw.config.json")); err == nil {
-		var sawCfg SAWConfig
-		if json.Unmarshal(cfgData, &sawCfg) == nil {
-			chatModel = sawCfg.Agent.ChatModel
-		}
+	if sawCfg := config.LoadOrDefault(s.cfg.RepoPath); sawCfg != nil {
+		chatModel = sawCfg.Agent.ChatModel
 	}
 
 	log.Printf("[chat] Launching RunChat: runID=%s implPath=%s repoPath=%s historyLen=%d chatModel=%q", runID, implPath, s.cfg.RepoPath, len(engineHistory), chatModel)

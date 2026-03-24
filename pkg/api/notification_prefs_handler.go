@@ -5,13 +5,15 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 )
 
 // configWithNotifications wraps the full config including notifications.
 // This is used locally to read/write the notifications field without
-// modifying the main SAWConfig type until integration.
+// modifying the main config.SAWConfig type until integration.
 type configWithNotifications struct {
-	SAWConfig
+	config.SAWConfig
 	Notifications NotificationPreferences `json:"notifications"`
 }
 

@@ -2,7 +2,6 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 )
 
@@ -102,13 +102,10 @@ func (s *Server) runBootstrapAgent(ctx context.Context, runID, description, repo
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
 
-	// Read saw.config.json to pick up the configured scout model.
+	// Read config to pick up the configured scout model.
 	scoutModel := ""
-	if cfgData, err := os.ReadFile(filepath.Join(repoRoot, "saw.config.json")); err == nil {
-		var sawCfg SAWConfig
-		if json.Unmarshal(cfgData, &sawCfg) == nil {
-			scoutModel = sawCfg.Agent.ScoutModel
-		}
+	if sawCfg := config.LoadOrDefault(repoRoot); sawCfg != nil {
+		scoutModel = sawCfg.Agent.ScoutModel
 	}
 
 	onChunk := func(chunk string) {

@@ -40,7 +40,7 @@ var implProgramCacheTTL = 15 * time.Second
 var implProgramCacheInstance = &implProgramCache{ttl: implProgramCacheTTL}
 
 // get returns cached data if fresh, otherwise rebuilds from repos.
-func (c *implProgramCache) get(repos []RepoEntry) map[string]implProgramInfo {
+func (c *implProgramCache) get(repos []config.RepoEntry) map[string]implProgramInfo {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.data != nil && c.ttl > 0 && time.Since(c.builtAt) < c.ttl {
@@ -55,7 +55,7 @@ func (c *implProgramCache) get(repos []RepoEntry) map[string]implProgramInfo {
 // a map of implSlug → implProgramInfo for use in tagging pipeline entries.
 // First-write-wins: if the same slug appears in multiple manifests, the first
 // occurrence is kept and a warning is logged.
-func buildImplProgramMapFresh(repos []RepoEntry) map[string]implProgramInfo {
+func buildImplProgramMapFresh(repos []config.RepoEntry) map[string]implProgramInfo {
 	result := make(map[string]implProgramInfo)
 	for _, repo := range repos {
 		docsDir := filepath.Join(repo.Path, "docs")

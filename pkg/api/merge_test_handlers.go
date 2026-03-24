@@ -3,17 +3,15 @@ package api
 import (
 	"bufio"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
-	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"syscall"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/agent/backend"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
@@ -450,13 +448,10 @@ func (s *Server) handleFixBuild(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Read chat model from saw.config.json
+	// Read chat model from config.
 	chatModel := ""
-	if cfgData, readErr := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); readErr == nil {
-		var sawCfg SAWConfig
-		if json.Unmarshal(cfgData, &sawCfg) == nil {
-			chatModel = sawCfg.Agent.ChatModel
-		}
+	if sawCfg := config.LoadOrDefault(repoPath); sawCfg != nil {
+		chatModel = sawCfg.Agent.ChatModel
 	}
 
 	publish := s.makePublisher(slug)

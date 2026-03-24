@@ -15,13 +15,11 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
-	"os"
-	"path/filepath"
 
 	codereview "github.com/blackwell-systems/scout-and-wave-go/pkg/codereview"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 )
 
 // runCodeReviewStep executes the AI code review gate as pipeline Step 7.5.
@@ -36,19 +34,16 @@ func runCodeReviewStep(
 	publish func(string, interface{}),
 ) error {
 	var reviewCfg codereview.CodeReviewConfig
-	if cfgData, err := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); err == nil {
-		var sawCfg SAWConfig
-		if json.Unmarshal(cfgData, &sawCfg) == nil {
-			cr := sawCfg.Quality.CodeReview
-			reviewCfg = codereview.CodeReviewConfig{
-				Enabled:   cr.Enabled,
-				Blocking:  cr.Blocking,
-				Model:     cr.Model,
-				Threshold: cr.Threshold,
-			}
-			if reviewCfg.Model == "" {
-				reviewCfg.Model = sawCfg.Agent.ReviewModel
-			}
+	if sawCfg := config.LoadOrDefault(repoPath); sawCfg != nil {
+		cr := sawCfg.Quality.CodeReview
+		reviewCfg = codereview.CodeReviewConfig{
+			Enabled:   cr.Enabled,
+			Blocking:  cr.Blocking,
+			Model:     cr.Model,
+			Threshold: cr.Threshold,
+		}
+		if reviewCfg.Model == "" {
+			reviewCfg.Model = sawCfg.Agent.ReviewModel
 		}
 	}
 

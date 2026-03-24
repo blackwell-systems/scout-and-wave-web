@@ -55,10 +55,8 @@ func TestConfigMigration_LegacyRepoPath(t *testing.T) {
 		t.Errorf("expected repos[0].path = %q, got %q", "/tmp/testrepo", got.Repos[0].Path)
 	}
 
-	// Assert the legacy "repo" field is cleared (empty/zero-value) in the response.
-	if got.Repo.Path != "" {
-		t.Errorf("expected legacy repo.path to be empty in response, got %q", got.Repo.Path)
-	}
+	// Legacy "repo" field no longer exists on config.SAWConfig; migration
+	// is handled inside config.Load so there's nothing to assert here.
 }
 
 // TestConfigGetSave_ProvidersRoundTrip verifies that saving a config with

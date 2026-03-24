@@ -2,12 +2,10 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/resume"
@@ -151,12 +149,9 @@ func (s *Server) handleResumeExecution(w http.ResponseWriter, r *http.Request) {
 	// Read model config (same pattern as handleWaveAgentRerun).
 	waveModel := ""
 	integrationModel := ""
-	if cfgData, cfgErr := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); cfgErr == nil {
-		var sawCfg SAWConfig
-		if json.Unmarshal(cfgData, &sawCfg) == nil {
-			waveModel = sawCfg.Agent.WaveModel
-			integrationModel = sawCfg.Agent.IntegrationModel
-		}
+	if sawCfg := config.LoadOrDefault(repoPath); sawCfg != nil {
+		waveModel = sawCfg.Agent.WaveModel
+		integrationModel = sawCfg.Agent.IntegrationModel
 	}
 	if fallbackSAWConfig != nil {
 		if waveModel == "" {

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/queue"
@@ -111,7 +112,7 @@ func (s *Server) handleListPrograms(w http.ResponseWriter, r *http.Request) {
 
 // buildPipelineData builds pipeline entries and metrics from configured repos.
 // This is the shared logic used by both handleListPrograms and handleGetPipeline.
-func buildPipelineData(repos []RepoEntry, activeRuns *sync.Map) ([]PipelineEntry, PipelineMetrics) {
+func buildPipelineData(repos []config.RepoEntry, activeRuns *sync.Map) ([]PipelineEntry, PipelineMetrics) {
 	implProgramMap := implProgramCacheInstance.get(repos)
 
 	var entries []PipelineEntry

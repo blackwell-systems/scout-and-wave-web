@@ -123,22 +123,8 @@ func (s *Server) HandleSetManifestCompletion(w http.ResponseWriter, r *http.Requ
 func (s *Server) resolveManifestPath(slug string) string {
 	filename := "IMPL-" + slug + ".yaml"
 
-	// Read saw.config.json to get repos
-	configPath := filepath.Join(s.cfg.RepoPath, "saw.config.json")
-	configData, _ := os.ReadFile(configPath)
-
-	var repos []RepoEntry
-	if configData != nil {
-		var cfg SAWConfig
-		if json.Unmarshal(configData, &cfg) == nil && len(cfg.Repos) > 0 {
-			repos = cfg.Repos
-		}
-	}
-
-	// Fallback to startup repo
-	if len(repos) == 0 {
-		repos = []RepoEntry{{Path: s.cfg.RepoPath}}
-	}
+	// Read config to get repos
+	repos := s.getConfiguredRepos()
 
 	// Scan each repo's IMPL directories
 	for _, repo := range repos {

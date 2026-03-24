@@ -98,16 +98,12 @@ func (a *ssoServiceAdapter) PollSSODeviceAuth(ctx context.Context, req SSOPollRe
 // getConfiguredRepos reads saw.config.json using the SDK config package and
 // returns the list of configured repos. Falls back to a single entry using
 // s.cfg.RepoPath if no config or no repos are configured.
-func (s *Server) getConfiguredRepos() []RepoEntry {
+func (s *Server) getConfiguredRepos() []config.RepoEntry {
 	sdkCfg := config.LoadOrDefault(s.cfg.RepoPath)
 	if len(sdkCfg.Repos) > 0 {
-		entries := make([]RepoEntry, len(sdkCfg.Repos))
-		for i, r := range sdkCfg.Repos {
-			entries[i] = RepoEntry{Name: r.Name, Path: r.Path}
-		}
-		return entries
+		return sdkCfg.Repos
 	}
-	return []RepoEntry{{
+	return []config.RepoEntry{{
 		Name: filepath.Base(s.cfg.RepoPath),
 		Path: s.cfg.RepoPath,
 	}}
@@ -149,9 +145,7 @@ func New(cfg Config) *Server {
 
 	// Populate fallback config so runWaveLoop can use it for cross-repo IMPLs
 	// that don't have their own saw.config.json.
-	sdkCfg := config.LoadOrDefault(cfg.RepoPath)
-	apiCfg := sdkConfigToAPI(sdkCfg)
-	fallbackSAWConfig = &apiCfg
+	fallbackSAWConfig = config.LoadOrDefault(cfg.RepoPath)
 
 	// Set the package-level pipeline tracker so runFinalizeSteps can use it.
 	defaultPipelineTracker = s.pipelineTracker

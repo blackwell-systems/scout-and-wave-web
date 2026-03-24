@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 )
 
@@ -143,13 +144,10 @@ func (s *Server) runPlannerAgent(ctx context.Context, runID, description, repoOv
 		sawRepo = filepath.Join(home, "code", "scout-and-wave")
 	}
 
-	// Read planner model from saw.config.json.
+	// Read planner model from config.
 	plannerModel := ""
-	if cfgData, err := os.ReadFile(filepath.Join(repoRoot, "saw.config.json")); err == nil {
-		var sawCfg SAWConfig
-		if json.Unmarshal(cfgData, &sawCfg) == nil {
-			plannerModel = sawCfg.Agent.PlannerModel
-		}
+	if sawCfg := config.LoadOrDefault(repoRoot); sawCfg != nil {
+		plannerModel = sawCfg.Agent.PlannerModel
 	}
 
 	onChunk := func(chunk string) {

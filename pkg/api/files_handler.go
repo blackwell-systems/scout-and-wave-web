@@ -2,7 +2,6 @@ package api
 
 import (
 	"bytes"
-	"encoding/json"
 	"net/http"
 	"os"
 	"os/exec"
@@ -105,30 +104,15 @@ var languageMap = map[string]string{
 // RepoPath directory and returns the absolute filesystem path for that repo.
 // Returns "", false if the repo name is not found.
 func (s *Server) resolveRepoPath(repoName string) (string, bool) {
-	configPath := filepath.Join(s.cfg.RepoPath, "saw.config.json")
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		// Fall back to the server's own RepoPath when no config file exists.
-		if filepath.Base(s.cfg.RepoPath) == repoName {
-			return s.cfg.RepoPath, true
-		}
-		return "", false
-	}
-
-	var cfg SAWConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return "", false
-	}
-
-	// Backward-compat: migrate legacy repo.path into repos list on-the-fly.
-	if len(cfg.Repos) == 0 && cfg.Repo.Path != "" {
-		cfg.Repos = []RepoEntry{{Name: "repo", Path: cfg.Repo.Path}}
-	}
-
-	for _, r := range cfg.Repos {
+	repos := s.getConfiguredRepos()
+	for _, r := range repos {
 		if r.Name == repoName {
 			return r.Path, true
 		}
+	}
+	// Fall back to the server's own RepoPath when name matches base dir.
+	if filepath.Base(s.cfg.RepoPath) == repoName {
+		return s.cfg.RepoPath, true
 	}
 	return "", false
 }

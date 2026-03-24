@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 	engine "github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 )
 
@@ -64,11 +65,8 @@ func (s *Server) runScaffoldAgent(ctx context.Context, slug, runID, implPath str
 
 	// Read scaffold model from config.
 	scaffoldModel := ""
-	if cfgData, err := os.ReadFile(filepath.Join(s.cfg.RepoPath, "saw.config.json")); err == nil {
-		var sawCfg SAWConfig
-		if json.Unmarshal(cfgData, &sawCfg) == nil {
-			scaffoldModel = sawCfg.Agent.ScaffoldModel
-		}
+	if sawCfg := config.LoadOrDefault(s.cfg.RepoPath); sawCfg != nil {
+		scaffoldModel = sawCfg.Agent.ScaffoldModel
 	}
 
 	if err := engine.RunScaffold(ctx, implPath, s.cfg.RepoPath, sawRepo, scaffoldModel, onEvent); err != nil {

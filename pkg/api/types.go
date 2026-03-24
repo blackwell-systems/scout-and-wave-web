@@ -1,6 +1,7 @@
 package api
 
 import (
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
@@ -242,92 +243,34 @@ type FileDiffResponse struct {
 	Diff   string `json:"diff"`
 }
 
-// RepoEntry is one named repository in the repo registry.
-type RepoEntry struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-}
+// RepoEntry is a type alias for config.RepoEntry. All API handlers use the
+// unified config.RepoEntry type directly.
+type RepoEntry = config.RepoEntry
 
-// RepoConfig is kept for backward-compat JSON deserialization of old configs.
-type RepoConfig struct {
-	Path string `json:"path"`
-}
+// SAWConfig is a type alias for config.SAWConfig. All API handlers use the
+// unified config.SAWConfig type directly.
+type SAWConfig = config.SAWConfig
 
-// ProvidersConfig holds credential configuration for all supported LLM providers.
-type ProvidersConfig struct {
-	Anthropic AnthropicProviderConfig `json:"anthropic"`
-	OpenAI    OpenAIProviderConfig    `json:"openai"`
-	Bedrock   BedrockProviderConfig   `json:"bedrock"`
-}
+// AgentConfig is a type alias for config.AgentConfig.
+type AgentConfig = config.AgentConfig
 
-// AnthropicProviderConfig holds Anthropic API credentials.
-type AnthropicProviderConfig struct {
-	APIKey string `json:"api_key,omitempty"`
-}
+// QualityConfig is a type alias for config.QualityConfig.
+type QualityConfig = config.QualityConfig
 
-// OpenAIProviderConfig holds OpenAI API credentials.
-type OpenAIProviderConfig struct {
-	APIKey string `json:"api_key,omitempty"`
-}
+// CodeReviewCfg is a type alias for config.CodeReviewCfg.
+type CodeReviewCfg = config.CodeReviewCfg
 
-// BedrockProviderConfig holds AWS Bedrock credentials.
-type BedrockProviderConfig struct {
-	Region         string `json:"region,omitempty"`
-	AccessKeyID    string `json:"access_key_id,omitempty"`
-	SecretAccessKey string `json:"secret_access_key,omitempty"`
-	SessionToken   string `json:"session_token,omitempty"`
-	Profile        string `json:"profile,omitempty"`
-}
+// AppearConfig is a type alias for config.AppearConfig.
+type AppearConfig = config.AppearConfig
+
+// ProvidersConfig is a type alias for config.ProvidersConfig.
+type ProvidersConfig = config.ProvidersConfig
 
 // ProviderValidationResponse is the response from POST /api/config/providers/{provider}/validate.
 type ProviderValidationResponse struct {
 	Valid    bool   `json:"valid"`
 	Error    string `json:"error,omitempty"`
 	Identity string `json:"identity,omitempty"`
-}
-
-// SAWConfig is the shape of saw.config.json and the GET/POST /api/config body.
-type SAWConfig struct {
-	Repos     []RepoEntry     `json:"repos,omitempty"`   // authoritative registry
-	Repo      RepoConfig      `json:"repo,omitempty"`     // legacy, read-only for migration
-	Agent     AgentConfig     `json:"agent"`
-	Quality   QualityConfig   `json:"quality"`
-	Appear    AppearConfig    `json:"appearance"`
-	Providers ProvidersConfig `json:"providers,omitempty"`
-}
-
-type AgentConfig struct {
-	ScoutModel       string `json:"scout_model"`
-	WaveModel        string `json:"wave_model"`
-	ChatModel        string `json:"chat_model"`
-	ScaffoldModel    string `json:"scaffold_model"`
-	IntegrationModel string `json:"integration_model"`
-	PlannerModel     string `json:"planner_model"`
-	ReviewModel      string `json:"review_model"`
-}
-
-type QualityConfig struct {
-	RequireTests   bool          `json:"require_tests"`
-	RequireLint    bool          `json:"require_lint"`
-	BlockOnFailure bool          `json:"block_on_failure"`
-	CodeReview     CodeReviewCfg `json:"code_review"`
-}
-
-// CodeReviewCfg holds settings for the AI code review post-merge gate.
-type CodeReviewCfg struct {
-	Enabled   bool   `json:"enabled"`
-	Blocking  bool   `json:"blocking"`
-	Model     string `json:"model"`
-	Threshold int    `json:"threshold"`
-}
-
-type AppearConfig struct {
-	Theme               string   `json:"theme"`                         // "system", "light", "dark"
-	ColorTheme          string   `json:"color_theme,omitempty"`         // legacy single default
-	ColorThemeDark      string   `json:"color_theme_dark,omitempty"`    // dark mode default
-	ColorThemeLight     string   `json:"color_theme_light,omitempty"`   // light mode default
-	FavoriteThemesDark  []string `json:"favorite_themes_dark,omitempty"`
-	FavoriteThemesLight []string `json:"favorite_themes_light,omitempty"`
 }
 
 // ChatRequest is the JSON body for POST /api/impl/{slug}/chat.

@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
@@ -25,7 +26,7 @@ var gateChannels sync.Map
 
 // fallbackSAWConfig is populated once from the server's default repo path.
 // runWaveLoop uses it when the target repo has no saw.config.json of its own.
-var fallbackSAWConfig *SAWConfig
+var fallbackSAWConfig *config.SAWConfig
 
 // runWaveLoopFunc is the seam used by handleWaveStart. Tests can replace this
 // to inject a no-op and avoid real git/API calls in unit tests.
@@ -104,19 +105,16 @@ func runWaveLoop(
 		})
 	}
 
-	// Read saw.config.json to pick up configured models.
+	// Read config to pick up configured models.
 	// Try the target repo first; fall back to the server's default config
 	// for cross-repo IMPLs that don't have their own saw.config.json.
 	waveModel := ""
 	scaffoldModel := ""
 	integrationModel := ""
-	if cfgData, err := os.ReadFile(filepath.Join(repoPath, "saw.config.json")); err == nil {
-		var sawCfg SAWConfig
-		if json.Unmarshal(cfgData, &sawCfg) == nil {
-			waveModel = sawCfg.Agent.WaveModel
-			scaffoldModel = sawCfg.Agent.ScaffoldModel
-			integrationModel = sawCfg.Agent.IntegrationModel
-		}
+	if sawCfg := config.LoadOrDefault(repoPath); sawCfg != nil {
+		waveModel = sawCfg.Agent.WaveModel
+		scaffoldModel = sawCfg.Agent.ScaffoldModel
+		integrationModel = sawCfg.Agent.IntegrationModel
 	}
 	// Fill empty values from the server's fallback config (the web app's own saw.config.json).
 	// Cross-repo IMPLs may live in repos with empty model strings.
@@ -869,25 +867,8 @@ func (s *Server) handleWaveFinalize(w http.ResponseWriter, r *http.Request) {
 // Returns (implPath, repoPath, nil) on success, or ("", "", error) if not found.
 // This mirrors the logic in handleGetImpl and handleListImpls to support multi-repository workflows.
 func (s *Server) resolveIMPLPath(slug string) (string, string, error) {
-	// Read saw.config.json to get the list of repos
-	configPath := filepath.Join(s.cfg.RepoPath, "saw.config.json")
-	configData, err := os.ReadFile(configPath)
-
-	var repos []RepoEntry
-	if err == nil {
-		var cfg SAWConfig
-		if json.Unmarshal(configData, &cfg) == nil && len(cfg.Repos) > 0 {
-			repos = cfg.Repos
-		}
-	}
-
-	// Fallback: if no config or no repos, use the startup IMPLDir
-	if len(repos) == 0 {
-		repos = []RepoEntry{{
-			Name: filepath.Base(s.cfg.RepoPath),
-			Path: s.cfg.RepoPath,
-		}}
-	}
+	// Read config to get the list of repos
+	repos := s.getConfiguredRepos()
 
 	// Search all repos for the IMPL doc (both active and complete directories)
 	for _, repo := range repos {
