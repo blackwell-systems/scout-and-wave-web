@@ -17,6 +17,7 @@ import { Tooltip } from './ui/tooltip'
 import WorktreePanel from './WorktreePanel'
 import ChatPanel from './ChatPanel'
 import ManifestValidation from './ManifestValidation'
+import ValidationPanel from './ValidationPanel'
 
 interface ReviewScreenProps {
   slug: string
@@ -592,8 +593,9 @@ export default function ReviewScreen(props: ReviewScreenProps): JSX.Element {
 
       {activePanels.includes('validation') && (
         <div className="fixed inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-start justify-center p-4 overflow-y-auto">
-          <div className="w-full max-w-2xl mt-8">
+          <div className="w-full max-w-2xl mt-8 space-y-4">
             <ManifestValidation slug={slug} onClose={() => togglePanel('validation')} />
+            <ValidationPanel slug={slug} currentWave={diskStatus?.current_wave ?? (impl.waves.length > 0 ? 1 : undefined)} />
           </div>
         </div>
       )}
