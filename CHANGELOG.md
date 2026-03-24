@@ -2,6 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
+| [0.121.0] | 2026-03-24 | Sidebar visual hierarchy — Programs and Plans as top-level collapsible sections with theme-aware tinted headers; ProgramList enhanced with expandable tier/IMPL nesting, lazy-loaded ProgramStatus, progress counts, auto-refresh during execution; Resume Banner moved to top; nested IMPL click-through to detail view |
 | [0.120.0] | 2026-03-23 | Completion banner — ReviewScreen shows green banner with "Mark Complete" button when all waves merged but IMPL not archived; calls `close-impl` (archive + CONTEXT.md + cleanup) |
 | [0.119.0] | 2026-03-23 | Bedrock SSO device auth — OIDC device authorization flow (`pkg/service/sso_service.go`): RegisterClient + StartDeviceAuthorization + CreateToken polling + SSO token caching; `pkg/api/sso_handler.go` (start + poll endpoints); `SSOLoginButton.tsx` (6-state machine with verification URL, user code, countdown timer); route wiring in `server.go` + SettingsScreen integration |
 | [0.118.0] | 2026-03-23 | VS Code-style Settings UI — sidebar navigation with 6 sections (Repos, Providers, Agent, Quality, Appearance, Notifications); resizable drawer (800px default, drag left edge); icons via lucide-react; replaced single-scroll layout with focused section views |

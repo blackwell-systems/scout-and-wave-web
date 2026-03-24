@@ -1,4 +1,32 @@
 {
+  "agent": {
+    "scout_model": "bedrock:claude-opus-4-6",
+    "wave_model": "bedrock:claude-sonnet-4-5",
+    "chat_model": "bedrock:claude-haiku-4-5",
+    "scaffold_model": "bedrock:claude-sonnet-4-5",
+    "integration_model": "bedrock:claude-sonnet-4-5"
+  },
+  "appearance": {
+    "theme": "dark",
+    "contrast": "high",
+    "color_theme_dark": "ros-pine",
+    "color_theme_light": "shapeshifter"
+  },
+  "autonomy": {},
+  "providers": {
+    "anthropic": {},
+    "bedrock": {
+      "region": "us-west-2",
+      "profile": "dev-profile"
+    },
+    "openai": {}
+  },
+  "quality": {
+    "code_review": {}
+  },
+  "repo": {
+    "path": ""
+  },
   "repos": [
     {
       "name": "scout-and-wave-web",
@@ -20,41 +48,5 @@
       "name": "vaultmux-server",
       "path": "/Users/dayna.blackwell/code/vaultmux-server"
     }
-  ],
-  "repo": {
-    "path": ""
-  },
-  "agent": {
-    "scout_model": "bedrock:claude-opus-4-6",
-    "wave_model": "bedrock:claude-sonnet-4-5",
-    "chat_model": "bedrock:claude-haiku-4-5",
-    "scaffold_model": "bedrock:claude-sonnet-4-5",
-    "integration_model": "bedrock:claude-sonnet-4-5",
-    "planner_model": "",
-    "review_model": ""
-  },
-  "quality": {
-    "require_tests": false,
-    "require_lint": false,
-    "block_on_failure": false,
-    "code_review": {
-      "enabled": false,
-      "blocking": false,
-      "model": "",
-      "threshold": 0
-    }
-  },
-  "appearance": {
-    "theme": "dark",
-    "color_theme_dark": "ros-pine",
-    "color_theme_light": "shapeshifter"
-  },
-  "providers": {
-    "anthropic": {},
-    "openai": {},
-    "bedrock": {
-      "region": "us-west-2",
-      "profile": "dev-profile"
-    }
-  }
+  ]
 }
