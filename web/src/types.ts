@@ -274,10 +274,13 @@ export interface FileDiffResponse {
 
 // Settings (v0.18.0-C)
 
-/** One registered repository in the SAWConfig repo registry. */
+/** One registered repository in the SAWConfig repo registry.
+ *  Mirrors config.RepoEntry from the Go SDK (pkg/config). */
 export interface RepoEntry {
   name: string   // human-readable label, e.g. "web", "go"
   path: string   // absolute filesystem path
+  build_command?: string  // optional per-repo build gate command
+  test_command?: string   // optional per-repo test gate command
 }
 
 // Provider credential configuration (provider-credentials)
