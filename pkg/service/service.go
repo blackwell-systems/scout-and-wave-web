@@ -9,6 +9,8 @@ type Deps struct {
 	IMPLDir string
 	// Publisher is the event transport abstraction.
 	Publisher EventPublisher
-	// ConfigPath returns the path to saw.config.json for a given repo.
+	// Deprecated: ConfigPath is no longer used by GetConfig/SaveConfig which
+	// now delegate to config.Load/config.Save from the SDK. Kept to avoid
+	// cascading changes to every test file that constructs Deps.
 	ConfigPath func(repoPath string) string
 }

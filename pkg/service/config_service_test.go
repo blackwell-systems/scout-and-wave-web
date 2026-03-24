@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 )
 
 // testDeps creates a Deps pointing at a temp directory for testing.
@@ -48,7 +50,7 @@ func TestGetConfig_WithLegacyRepoPath(t *testing.T) {
 		"repo": map[string]string{"path": "/old/repo"},
 	}
 	data, _ := json.Marshal(legacy)
-	os.WriteFile(deps.ConfigPath(deps.RepoPath), data, 0644)
+	os.WriteFile(filepath.Join(deps.RepoPath, "saw.config.json"), data, 0644)
 
 	cfg, err := GetConfig(deps)
 	if err != nil {
@@ -61,18 +63,14 @@ func TestGetConfig_WithLegacyRepoPath(t *testing.T) {
 	if cfg.Repos[0].Path != "/old/repo" {
 		t.Errorf("expected legacy path /old/repo, got %s", cfg.Repos[0].Path)
 	}
-	// Legacy repo field should be cleared
-	if cfg.Repo.Path != "" {
-		t.Errorf("expected legacy repo field to be cleared, got %q", cfg.Repo.Path)
-	}
 }
 
 func TestSaveConfig_AtomicWrite(t *testing.T) {
 	deps := testDeps(t)
 
-	cfg := &SAWConfig{
-		Repos: []RepoEntry{{Name: "test", Path: "/test/path"}},
-		Agent: AgentConfig{ScoutModel: "claude-3"},
+	cfg := &config.SAWConfig{
+		Repos: []config.RepoEntry{{Name: "test", Path: "/test/path"}},
+		Agent: config.AgentConfig{ScoutModel: "claude-3"},
 	}
 
 	if err := SaveConfig(deps, cfg); err != nil {
@@ -80,13 +78,13 @@ func TestSaveConfig_AtomicWrite(t *testing.T) {
 	}
 
 	// Verify file was written
-	configPath := deps.ConfigPath(deps.RepoPath)
+	configPath := filepath.Join(deps.RepoPath, "saw.config.json")
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("failed to read saved config: %v", err)
 	}
 
-	var saved SAWConfig
+	var saved config.SAWConfig
 	if err := json.Unmarshal(data, &saved); err != nil {
 		t.Fatalf("failed to parse saved config: %v", err)
 	}
@@ -97,17 +95,13 @@ func TestSaveConfig_AtomicWrite(t *testing.T) {
 	if saved.Agent.ScoutModel != "claude-3" {
 		t.Errorf("expected scout_model claude-3, got %s", saved.Agent.ScoutModel)
 	}
-	// Legacy repo field should be cleared
-	if saved.Repo.Path != "" {
-		t.Errorf("legacy repo field should be cleared, got %q", saved.Repo.Path)
-	}
 }
 
 func TestSaveConfig_InvalidModel(t *testing.T) {
 	deps := testDeps(t)
 
-	cfg := &SAWConfig{
-		Agent: AgentConfig{ScoutModel: "bad model name!"},
+	cfg := &config.SAWConfig{
+		Agent: config.AgentConfig{ScoutModel: "bad model name!"},
 	}
 
 	err := SaveConfig(deps, cfg)
@@ -160,12 +154,12 @@ func TestGetConfiguredRepos_Fallback(t *testing.T) {
 func TestSaveConfig_ProvidersRoundTrip(t *testing.T) {
 	deps := testDeps(t)
 
-	cfg := &SAWConfig{
-		Repos: []RepoEntry{{Name: "test", Path: "/test/path"}},
-		Providers: ProvidersConfig{
-			Anthropic: AnthropicProviderConfig{APIKey: "sk-ant-test"},
-			OpenAI:    OpenAIProviderConfig{APIKey: "sk-openai-test"},
-			Bedrock: BedrockProviderConfig{
+	cfg := &config.SAWConfig{
+		Repos: []config.RepoEntry{{Name: "test", Path: "/test/path"}},
+		Providers: config.ProvidersConfig{
+			Anthropic: config.AnthropicProvider{APIKey: "sk-ant-test"},
+			OpenAI:    config.OpenAIProvider{APIKey: "sk-openai-test"},
+			Bedrock: config.BedrockProvider{
 				Region:         "us-east-1",
 				AccessKeyID:    "AKIATEST",
 				SecretAccessKey: "secret123",
@@ -206,8 +200,8 @@ func TestSaveConfig_ProvidersRoundTrip(t *testing.T) {
 func TestSaveConfig_EmptyProviders_OmittedFromJSON(t *testing.T) {
 	deps := testDeps(t)
 
-	cfg := &SAWConfig{
-		Repos: []RepoEntry{{Name: "test", Path: "/test/path"}},
+	cfg := &config.SAWConfig{
+		Repos: []config.RepoEntry{{Name: "test", Path: "/test/path"}},
 	}
 
 	if err := SaveConfig(deps, cfg); err != nil {
@@ -215,7 +209,8 @@ func TestSaveConfig_EmptyProviders_OmittedFromJSON(t *testing.T) {
 	}
 
 	// Read raw JSON and verify providers is omitted when empty
-	data, err := os.ReadFile(deps.ConfigPath(deps.RepoPath))
+	configPath := filepath.Join(deps.RepoPath, "saw.config.json")
+	data, err := os.ReadFile(configPath)
 	if err != nil {
 		t.Fatalf("failed to read config: %v", err)
 	}
@@ -276,14 +271,14 @@ func TestValidateBedrockCredentials_MissingFields(t *testing.T) {
 func TestGetConfiguredRepos_FromFile(t *testing.T) {
 	deps := testDeps(t)
 
-	cfg := SAWConfig{
-		Repos: []RepoEntry{
+	cfg := config.SAWConfig{
+		Repos: []config.RepoEntry{
 			{Name: "alpha", Path: "/alpha"},
 			{Name: "beta", Path: "/beta"},
 		},
 	}
 	data, _ := json.Marshal(cfg)
-	os.WriteFile(deps.ConfigPath(deps.RepoPath), data, 0644)
+	os.WriteFile(filepath.Join(deps.RepoPath, "saw.config.json"), data, 0644)
 
 	repos := GetConfiguredRepos(deps)
 	if len(repos) != 2 {

@@ -2,10 +2,8 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net/http"
-	"os"
 	"path/filepath"
 	"regexp"
 	"time"
@@ -13,91 +11,32 @@ import (
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/service/sts"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
-// RepoEntry is one named repository in the repo registry.
-type RepoEntry struct {
-	Name string `json:"name"`
-	Path string `json:"path"`
-}
+// Type aliases for backward compatibility. Other files in the service package
+// and in pkg/api/ reference these types by their old local names.
+// These aliases allow a gradual migration: callers continue to use
+// service.SAWConfig, service.RepoEntry, etc. while the canonical definitions
+// live in the SDK's config package.
+type (
+	SAWConfig              = config.SAWConfig
+	RepoEntry              = config.RepoEntry
+	ProvidersConfig        = config.ProvidersConfig
+	AnthropicProviderConfig = config.AnthropicProvider
+	OpenAIProviderConfig   = config.OpenAIProvider
+	BedrockProviderConfig  = config.BedrockProvider
+	AgentConfig            = config.AgentConfig
+	QualityConfig          = config.QualityConfig
+	CodeReviewCfg          = config.CodeReviewCfg
+	AppearConfig           = config.AppearConfig
+)
 
 // RepoConfig is kept for backward-compat JSON deserialization of old configs.
+// The SDK's config.Load handles legacy repo.path migration internally.
 type RepoConfig struct {
 	Path string `json:"path"`
-}
-
-// ProvidersConfig holds credential configuration for all supported LLM providers.
-type ProvidersConfig struct {
-	Anthropic AnthropicProviderConfig `json:"anthropic"`
-	OpenAI    OpenAIProviderConfig    `json:"openai"`
-	Bedrock   BedrockProviderConfig   `json:"bedrock"`
-}
-
-// AnthropicProviderConfig holds Anthropic API credentials.
-type AnthropicProviderConfig struct {
-	APIKey string `json:"api_key,omitempty"`
-}
-
-// OpenAIProviderConfig holds OpenAI API credentials.
-type OpenAIProviderConfig struct {
-	APIKey string `json:"api_key,omitempty"`
-}
-
-// BedrockProviderConfig holds AWS Bedrock credentials.
-type BedrockProviderConfig struct {
-	Region         string `json:"region,omitempty"`
-	AccessKeyID    string `json:"access_key_id,omitempty"`
-	SecretAccessKey string `json:"secret_access_key,omitempty"`
-	SessionToken   string `json:"session_token,omitempty"`
-	Profile        string `json:"profile,omitempty"`
-}
-
-// SAWConfig is the shape of saw.config.json and the GET/POST /api/config body.
-type SAWConfig struct {
-	Repos     []RepoEntry     `json:"repos,omitempty"`
-	Repo      RepoConfig      `json:"repo,omitempty"`
-	Agent     AgentConfig     `json:"agent"`
-	Quality   QualityConfig   `json:"quality"`
-	Appear    AppearConfig    `json:"appearance"`
-	Providers ProvidersConfig `json:"providers,omitempty"`
-}
-
-// AgentConfig holds model names for each agent type.
-type AgentConfig struct {
-	ScoutModel       string `json:"scout_model"`
-	WaveModel        string `json:"wave_model"`
-	ChatModel        string `json:"chat_model"`
-	ScaffoldModel    string `json:"scaffold_model"`
-	IntegrationModel string `json:"integration_model"`
-	PlannerModel     string `json:"planner_model"`
-	ReviewModel      string `json:"review_model"`
-}
-
-// QualityConfig holds quality enforcement settings.
-type QualityConfig struct {
-	RequireTests   bool          `json:"require_tests"`
-	RequireLint    bool          `json:"require_lint"`
-	BlockOnFailure bool          `json:"block_on_failure"`
-	CodeReview     CodeReviewCfg `json:"code_review"`
-}
-
-// CodeReviewCfg holds settings for the AI code review post-merge gate.
-type CodeReviewCfg struct {
-	Enabled   bool   `json:"enabled"`
-	Blocking  bool   `json:"blocking"`
-	Model     string `json:"model"`
-	Threshold int    `json:"threshold"`
-}
-
-// AppearConfig holds appearance/theme settings.
-type AppearConfig struct {
-	Theme               string   `json:"theme"`
-	Contrast            string   `json:"contrast,omitempty"`
-	ColorTheme          string   `json:"color_theme,omitempty"`
-	ColorThemeDark      string   `json:"color_theme_dark,omitempty"`
-	ColorThemeLight     string   `json:"color_theme_light,omitempty"`
-	FavoriteThemesDark  []string `json:"favorite_themes_dark,omitempty"`
-	FavoriteThemesLight []string `json:"favorite_themes_light,omitempty"`
 }
 
 // ValidateModelName ensures a model name contains only safe characters.
@@ -116,44 +55,27 @@ func ValidateModelName(model string) error {
 	return nil
 }
 
-// GetConfig reads saw.config.json from the repo and returns a SAWConfig.
+// GetConfig reads saw.config.json from the repo and returns a config.SAWConfig.
 // If the config file does not exist, returns a default config with the
 // repo from deps.RepoPath as the single entry.
-func GetConfig(deps Deps) (*SAWConfig, error) {
-	configPath := deps.ConfigPath(deps.RepoPath)
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			repoName := filepath.Base(deps.RepoPath)
-			return &SAWConfig{
-				Repos: []RepoEntry{{Name: repoName, Path: deps.RepoPath}},
-			}, nil
-		}
-		return nil, fmt.Errorf("failed to read config: %w", err)
+func GetConfig(deps Deps) (*config.SAWConfig, error) {
+	res := config.Load(deps.RepoPath)
+	if res.IsSuccess() {
+		return res.GetData(), nil
 	}
-
-	var cfg SAWConfig
-	if err := json.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("failed to parse config: %w", err)
+	// If not found, return default with repo from deps
+	if len(res.Errors) > 0 && res.Errors[0].Code == result.CodeConfigNotFound {
+		repoName := filepath.Base(deps.RepoPath)
+		return &config.SAWConfig{
+			Repos: []config.RepoEntry{{Name: repoName, Path: deps.RepoPath}},
+		}, nil
 	}
-
-	// Backward-compat: if no repos registry, use legacy repo.path or server startup repo
-	if len(cfg.Repos) == 0 {
-		if cfg.Repo.Path != "" {
-			cfg.Repos = []RepoEntry{{Name: "repo", Path: cfg.Repo.Path}}
-		} else {
-			repoName := filepath.Base(deps.RepoPath)
-			cfg.Repos = []RepoEntry{{Name: repoName, Path: deps.RepoPath}}
-		}
-	}
-	cfg.Repo = RepoConfig{} // clear legacy field from response
-
-	return &cfg, nil
+	return nil, fmt.Errorf("config load failed: %s", res.Errors[0].Message)
 }
 
 // SaveConfig validates model names and atomically writes the config to
-// saw.config.json (temp file + rename).
-func SaveConfig(deps Deps, cfg *SAWConfig) error {
+// saw.config.json using the SDK's config.Save (temp file + rename).
+func SaveConfig(deps Deps, cfg *config.SAWConfig) error {
 	// Validate all model name fields
 	models := map[string]string{
 		"scout_model":       cfg.Agent.ScoutModel,
@@ -168,34 +90,10 @@ func SaveConfig(deps Deps, cfg *SAWConfig) error {
 		}
 	}
 
-	cfg.Repo = RepoConfig{} // ensure legacy field is never written back
-
-	data, err := json.MarshalIndent(cfg, "", "  ")
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
+	res := config.Save(deps.RepoPath, cfg)
+	if !res.IsSuccess() {
+		return fmt.Errorf("config save failed: %s", res.Errors[0].Message)
 	}
-
-	configPath := deps.ConfigPath(deps.RepoPath)
-
-	// Atomic write: write to temp file in same directory, then rename
-	tmpFile, err := os.CreateTemp(filepath.Dir(configPath), "saw-config-*.json.tmp")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file: %w", err)
-	}
-	tmpPath := tmpFile.Name()
-	defer os.Remove(tmpPath) // clean up if rename fails
-
-	if _, err := tmpFile.Write(data); err != nil {
-		tmpFile.Close()
-		return fmt.Errorf("failed to write temp file: %w", err)
-	}
-	if err := tmpFile.Close(); err != nil {
-		return fmt.Errorf("failed to close temp file: %w", err)
-	}
-	if err := os.Rename(tmpPath, configPath); err != nil {
-		return fmt.Errorf("failed to save config: %w", err)
-	}
-
 	return nil
 }
 
@@ -280,11 +178,11 @@ func ValidateBedrockCredentials(region, accessKeyID, secretKey, sessionToken, pr
 		if region != "" {
 			opts = append(opts, awsconfig.WithRegion(region))
 		}
-		cfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
+		awsCfg, err := awsconfig.LoadDefaultConfig(ctx, opts...)
 		if err != nil {
 			return "", fmt.Errorf("failed to load profile %q: %w", profile, err)
 		}
-		stsClient = sts.NewFromConfig(cfg)
+		stsClient = sts.NewFromConfig(awsCfg)
 	} else {
 		// Static credentials path
 		if region == "" {
@@ -301,25 +199,25 @@ func ValidateBedrockCredentials(region, accessKeyID, secretKey, sessionToken, pr
 		})
 	}
 
-	result, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
+	stsResult, err := stsClient.GetCallerIdentity(ctx, &sts.GetCallerIdentityInput{})
 	if err != nil {
 		return "", fmt.Errorf("invalid credentials: %w", err)
 	}
 
 	arn := ""
-	if result.Arn != nil {
-		arn = *result.Arn
+	if stsResult.Arn != nil {
+		arn = *stsResult.Arn
 	}
 	return arn, nil
 }
 
 // GetConfiguredRepos reads the config and returns the repo list.
 // Falls back to a single entry using deps.RepoPath if no config exists.
-func GetConfiguredRepos(deps Deps) []RepoEntry {
+func GetConfiguredRepos(deps Deps) []config.RepoEntry {
 	cfg, err := GetConfig(deps)
 	if err != nil || len(cfg.Repos) == 0 {
 		repoName := filepath.Base(deps.RepoPath)
-		return []RepoEntry{{Name: repoName, Path: deps.RepoPath}}
+		return []config.RepoEntry{{Name: repoName, Path: deps.RepoPath}}
 	}
 	return cfg.Repos
 }
