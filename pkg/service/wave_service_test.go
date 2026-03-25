@@ -343,6 +343,70 @@ func TestTargetRepoNames(t *testing.T) {
 	}
 }
 
+func TestRunWaveLoop_PrepareWaveFailure_PublishesRunFailed(t *testing.T) {
+	// Create a minimal IMPL doc that will pass protocol.Load but fail at
+	// engine.PrepareWave (because the repo directory is not a real git repo).
+	tmpDir := t.TempDir()
+	implPath := filepath.Join(tmpDir, "IMPL-test.yaml")
+
+	implContent := `title: test
+slug: test-prep-fail
+status: in_progress
+waves:
+  - number: 1
+    agents:
+      - id: A
+        task: "do something"
+file_ownership:
+  - file: pkg/foo.go
+    agent: A
+    wave: 1
+interface_contracts: []
+quality_gates:
+  level: standard
+  gates: []
+`
+	if err := os.WriteFile(implPath, []byte(implContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	var mu sync.Mutex
+	var events []Event
+
+	publish := func(event string, data interface{}) {
+		mu.Lock()
+		defer mu.Unlock()
+		events = append(events, Event{Name: event, Data: data})
+	}
+
+	// runWaveLoop should fail at PrepareWave because tmpDir is not a git repo.
+	runWaveLoop(implPath, "test-prep-fail", tmpDir, publish)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	// Verify that a "run_failed" event was published.
+	var foundRunFailed bool
+	for _, ev := range events {
+		if ev.Name == "run_failed" {
+			foundRunFailed = true
+			break
+		}
+	}
+	if !foundRunFailed {
+		t.Fatalf("expected run_failed event when PrepareWave fails, got events: %v", eventNames(events))
+	}
+}
+
+// eventNames extracts event names for debugging output.
+func eventNames(events []Event) []string {
+	names := make([]string, len(events))
+	for i, ev := range events {
+		names[i] = ev.Name
+	}
+	return names
+}
+
 func TestTargetRepoNames_Nil(t *testing.T) {
 	names := targetRepoNames(nil)
 	if names != nil {
