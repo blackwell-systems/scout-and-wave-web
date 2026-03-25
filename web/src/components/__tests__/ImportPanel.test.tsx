@@ -27,7 +27,7 @@ describe('ImportPanel', () => {
     expect(screen.getByLabelText('Program slug')).toBeInTheDocument()
     expect(screen.getByLabelText('IMPL paths (one per line)')).toBeInTheDocument()
     expect(
-      screen.getByLabelText('Auto-discover IMPLs from docs/IMPL/'),
+      screen.getByLabelText('Auto-discover plans from docs/IMPL/'),
     ).toBeInTheDocument()
     expect(
       screen.getByRole('button', { name: /Import IMPLs/i }),
@@ -38,7 +38,7 @@ describe('ImportPanel', () => {
     render(<ImportPanel />)
 
     const textarea = screen.getByLabelText('IMPL paths (one per line)')
-    const checkbox = screen.getByLabelText('Auto-discover IMPLs from docs/IMPL/')
+    const checkbox = screen.getByLabelText('Auto-discover plans from docs/IMPL/')
 
     // Initially textarea is enabled
     expect(textarea).not.toBeDisabled()
@@ -96,7 +96,7 @@ describe('ImportPanel', () => {
     const slugInput = screen.getByLabelText('Program slug')
     fireEvent.change(slugInput, { target: { value: 'discover-program' } })
 
-    const checkbox = screen.getByLabelText('Auto-discover IMPLs from docs/IMPL/')
+    const checkbox = screen.getByLabelText('Auto-discover plans from docs/IMPL/')
     fireEvent.click(checkbox)
 
     fireEvent.click(screen.getByRole('button', { name: /Import IMPLs/i }))
