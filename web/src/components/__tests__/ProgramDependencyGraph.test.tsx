@@ -311,12 +311,11 @@ describe('ProgramDependencyGraph', () => {
       const nestedAlpha = svg.querySelector('[data-testid="nested-agents-impl-alpha"]')
       expect(nestedAlpha).not.toBeNull()
 
-      const waveLabels = Array.from(nestedAlpha!.querySelectorAll('text')).filter(
-        t => t.textContent?.match(/^W\d+$/)
-      )
-      expect(waveLabels.length).toBeGreaterThanOrEqual(2)
-      expect(waveLabels.map(t => t.textContent)).toContain('W1')
-      expect(waveLabels.map(t => t.textContent)).toContain('W2')
+      const texts = Array.from(nestedAlpha!.querySelectorAll('text')).map(t => t.textContent)
+      // Component renders "WAVE" label + wave number as separate text elements
+      expect(texts.filter(t => t === 'WAVE').length).toBeGreaterThanOrEqual(2)
+      expect(texts).toContain('1')
+      expect(texts).toContain('2')
     })
   })
 
