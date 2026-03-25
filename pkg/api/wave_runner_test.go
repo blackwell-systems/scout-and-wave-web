@@ -444,6 +444,65 @@ func TestMakeEnginePublisher_CachesAutoRetryEvents(t *testing.T) {
 	}
 }
 
+// TestRunWaveLoop_EmitsPrepareStepBeforeExecution verifies that when runWaveLoop
+// reaches a wave that needs execution (not resumed from existing commits), it
+// emits prepare_step SSE events from engine.PrepareWave before any wave
+// execution events. With no real git repo, PrepareWave will fail — we verify
+// the prepare_step event appears before the run_failed event.
+func TestRunWaveLoop_EmitsPrepareStepBeforeExecution(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a minimal IMPL doc with one wave.
+	implDir := filepath.Join(tmpDir, "docs", "IMPL")
+	if err := os.MkdirAll(implDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	implPath := filepath.Join(implDir, "IMPL-prepare-test.yaml")
+	implContent := `feature: prepare-test
+waves:
+  - number: 1
+    agents:
+      - id: A
+        files: ["test.go"]
+        task: "test"
+`
+	if err := os.WriteFile(implPath, []byte(implContent), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	publish, getEvents := capturePublishWithData()
+
+	// runWaveLoop with a valid IMPL but no git repo. PrepareWave will fail
+	// because it cannot create worktrees, which results in run_failed.
+	runWaveLoop(implPath, "prepare-test", tmpDir, func(event string, data interface{}) {
+		publish(event, data)
+	}, func(ExecutionStage, StageStatus, int, string) {})
+
+	events := getEvents()
+
+	// Find the first prepare_step event and verify it comes before run_failed.
+	prepareIdx := -1
+	failedIdx := -1
+	for i, ev := range events {
+		if ev.Event == "prepare_step" && prepareIdx == -1 {
+			prepareIdx = i
+		}
+		if ev.Event == "run_failed" && failedIdx == -1 {
+			failedIdx = i
+		}
+	}
+
+	if prepareIdx == -1 {
+		t.Error("expected at least one prepare_step event from PrepareWave")
+	}
+	if failedIdx == -1 {
+		t.Error("expected run_failed event (PrepareWave should fail with no git repo)")
+	}
+	if prepareIdx != -1 && failedIdx != -1 && prepareIdx >= failedIdx {
+		t.Errorf("prepare_step (idx=%d) should appear before run_failed (idx=%d)", prepareIdx, failedIdx)
+	}
+}
+
 // TestHandleWaveStart_DelegatesToService verifies that handleWaveStart
 // delegates to service.StartWave and returns the expected HTTP status codes.
 func TestHandleWaveStart_DelegatesToService(t *testing.T) {

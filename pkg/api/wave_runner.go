@@ -15,6 +15,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
 	"github.com/blackwell-systems/scout-and-wave-web/pkg/service"
@@ -206,23 +207,9 @@ func runWaveLoop(
 		wave := waves[i]
 		waveNum := wave.Number
 
-		opts := engine.RunWaveOpts{
-			IMPLPath:         implPath,
-			RepoPath:         repoPath,
-			Slug:             slug,
-			WaveModel:        waveModel,
-			ScaffoldModel:    scaffoldModel,
-			IntegrationModel: integrationModel,
-		}
-
-		enginePublisher := func(ev engine.Event) {
-			// auto_retry_started and auto_retry_exhausted events from E19 flow through here.
-			publish(ev.Event, ev.Data)
-		}
-
 		// If all agents in this wave already have commits on their branches
 		// (e.g. agents ran in a previous server session but merge was not reached),
-		// skip re-launching them and go straight to FinalizeWave.
+		// skip PrepareWave and re-launching them — go straight to FinalizeWave.
 		if waveAgentsHaveCommitsWithManifest(repoPath, implPath, slug, waveNum, wave.Agents) {
 			publish("wave_resumed", map[string]interface{}{
 				"wave":   waveNum,
@@ -230,8 +217,53 @@ func runWaveLoop(
 			})
 			onStage(StageWaveExecute, StageStatusComplete, waveNum, "")
 		} else {
+			// Stage: wave_prepare — run PrepareWave to create worktrees, extract briefs, etc.
+			onStage("wave_prepare", StageStatusRunning, waveNum, "")
+			prepResult, prepErr := engine.PrepareWave(ctx, engine.PrepareWaveOpts{
+				IMPLPath: implPath,
+				RepoPath: repoPath,
+				WaveNum:  waveNum,
+				OnEvent: func(step, status, detail string) {
+					publish("prepare_step", map[string]interface{}{
+						"slug":   slug,
+						"wave":   waveNum,
+						"step":   step,
+						"status": status,
+						"detail": detail,
+					})
+				},
+			})
+			if prepErr != nil {
+				onStage("wave_prepare", StageStatusFailed, waveNum, prepErr.Error())
+				publish("run_failed", map[string]string{"error": prepErr.Error()})
+				return
+			}
+			onStage("wave_prepare", StageStatusComplete, waveNum, "")
+
+			// Create orchestrator and run wave (replaces engine.RunSingleWave).
+			orch, orchErr := orchestrator.New(repoPath, implPath)
+			if orchErr != nil {
+				publish("run_failed", map[string]string{"error": orchErr.Error()})
+				return
+			}
+			if waveModel != "" {
+				orch.SetDefaultModel(waveModel)
+			}
+			orch.SetEventPublisher(func(ev orchestrator.OrchestratorEvent) {
+				publish(ev.Event, ev.Data)
+			})
+			// Feed worktree paths from PrepareWave result so the orchestrator
+			// does not redundantly create worktrees.
+			if len(prepResult.Worktrees) > 0 {
+				paths := make(map[string]string, len(prepResult.Worktrees))
+				for _, wt := range prepResult.Worktrees {
+					paths[wt.Agent] = wt.Path
+				}
+				orch.SetWorktreePaths(paths)
+			}
+
 			onStage(StageWaveExecute, StageStatusRunning, waveNum, "")
-			if err := engine.RunSingleWave(ctx, opts, waveNum, enginePublisher); err != nil {
+			if err := orch.RunWave(waveNum); err != nil {
 				onStage(StageWaveExecute, StageStatusFailed, waveNum, err.Error())
 				publish("run_failed", map[string]string{"error": err.Error()})
 				return
