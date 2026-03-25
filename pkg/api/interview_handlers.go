@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -21,6 +23,11 @@ type InterviewStartRequest struct {
 // InterviewStartResponse is the JSON response for POST /api/interview/start.
 type InterviewStartResponse struct {
 	RunID string `json:"run_id"`
+}
+
+// InterviewResumeRequest is the JSON body for POST /api/interview/resume.
+type InterviewResumeRequest struct {
+	DocPath string `json:"doc_path"` // path to INTERVIEW-<slug>.yaml
 }
 
 // InterviewQuestionEvent is the SSE event data for "question" events.
@@ -107,6 +114,58 @@ func (s *Server) handleInterviewStart(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusAccepted, InterviewStartResponse{RunID: runID})
 }
 
+// handleInterviewResume handles POST /api/interview/resume.
+// Loads an existing INTERVIEW-<slug>.yaml from disk and resumes the interview,
+// returning a new run ID so the client can subscribe to SSE and submit answers.
+func (s *Server) handleInterviewResume(w http.ResponseWriter, r *http.Request) {
+	var req InterviewResumeRequest
+	if err := decodeJSON(r, &req); err != nil {
+		respondError(w, "invalid request body: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	if req.DocPath == "" {
+		respondError(w, "doc_path is required", http.StatusBadRequest)
+		return
+	}
+
+	// Verify file exists.
+	if _, err := os.Stat(req.DocPath); os.IsNotExist(err) {
+		respondError(w, "interview doc not found: "+req.DocPath, http.StatusNotFound)
+		return
+	}
+
+	// Determine docsDir from the file's directory.
+	docsDir := filepath.Dir(req.DocPath)
+	mgr := interview.NewDeterministicManager(docsDir)
+
+	doc, firstQ, err := mgr.Resume(req.DocPath)
+	if err != nil {
+		respondError(w, "failed to resume interview: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	// If already complete, return 409 Conflict.
+	if doc.Status == "complete" || firstQ == nil {
+		respondError(w, "interview is already complete", http.StatusConflict)
+		return
+	}
+
+	runID := fmt.Sprintf("interview-%d", time.Now().UnixNano())
+	ctx, cancel := context.WithCancel(s.serverCtx)
+
+	run := &interviewRun{
+		cancel:  cancel,
+		mgr:     mgr,
+		doc:     doc,
+		answers: make(chan string, 1),
+	}
+	s.interviewRuns.Store(runID, run)
+
+	go s.runInterviewLoop(ctx, runID, run, firstQ)
+
+	respondJSON(w, http.StatusAccepted, InterviewStartResponse{RunID: runID})
+}
+
 // runInterviewLoop drives the interview state machine in a goroutine.
 // It emits SSE events for questions and completion, processing answers
 // as they arrive from the answers channel.
@@ -148,8 +207,10 @@ func (s *Server) runInterviewLoop(ctx context.Context, runID string, run *interv
 			return
 
 		case answer := <-run.answers:
+			// Capture phase BEFORE updating doc.
 			run.docMu.Lock()
 			doc := run.doc
+			previousPhase := run.doc.Phase
 			run.docMu.Unlock()
 
 			updatedDoc, nextQ, err := run.mgr.Answer(doc, answer)
@@ -170,6 +231,17 @@ func (s *Server) runInterviewLoop(ctx context.Context, runID string, run *interv
 				Event: "answer_recorded",
 				Data:  map[string]string{"status": "recorded"},
 			})
+
+			// Emit phase_complete if phase changed.
+			if string(updatedDoc.Phase) != string(previousPhase) && updatedDoc.Phase != "complete" {
+				s.broker.Publish(brokerKey, SSEEvent{
+					Event: "phase_complete",
+					Data: map[string]string{
+						"phase":      string(previousPhase),
+						"next_phase": string(updatedDoc.Phase),
+					},
+				})
+			}
 
 			if updatedDoc.Status == "complete" || nextQ == nil {
 				// Interview complete.

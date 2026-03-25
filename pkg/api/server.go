@@ -296,6 +296,7 @@ func New(cfg Config) *Server {
 
 	// Interview layer — launch interview agent to refine feature descriptions
 	s.mux.HandleFunc("POST /api/interview/start", s.handleInterviewStart)
+	s.mux.HandleFunc("POST /api/interview/resume", s.handleInterviewResume)
 	s.mux.HandleFunc("GET /api/interview/{runID}/events", s.handleInterviewEvents)
 	s.mux.HandleFunc("POST /api/interview/{runID}/answer", s.handleInterviewAnswer)
 	s.mux.HandleFunc("POST /api/interview/{runID}/cancel", s.handleInterviewCancel)
