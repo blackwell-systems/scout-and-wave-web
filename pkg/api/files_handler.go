@@ -33,6 +33,13 @@ type FileContentResponse struct {
 	Size     int64  `json:"size"`
 }
 
+// FileResolveResponse is the JSON body for GET /api/files/resolve.
+type FileResolveResponse struct {
+	Repo  string `json:"repo"`
+	Path  string `json:"path"`
+	Found bool   `json:"found"`
+}
+
 // GitFileStatus represents one file entry from git status.
 type GitFileStatus struct {
 	Path   string `json:"path"`
@@ -394,6 +401,35 @@ func (s *Server) handleFilesStatus(w http.ResponseWriter, r *http.Request) {
 		Files: files,
 	}
 	respondJSON(w, http.StatusOK, resp)
+}
+
+// handleFilesResolve serves GET /api/files/resolve?path=<relpath>
+// Searches all configured repos for a file matching the given relative path.
+// Returns {"repo": "...", "path": "...", "found": true} on success,
+// or {"found": false} if the file is not found in any repo.
+func (s *Server) handleFilesResolve(w http.ResponseWriter, r *http.Request) {
+	relPath := r.URL.Query().Get("path")
+	if relPath == "" {
+		http.Error(w, "missing path query param", http.StatusBadRequest)
+		return
+	}
+
+	for _, repo := range s.getConfiguredRepos() {
+		absPath, ok := safeRepoPath(repo.Path, relPath)
+		if !ok {
+			continue
+		}
+		if _, err := os.Stat(absPath); err == nil {
+			respondJSON(w, http.StatusOK, FileResolveResponse{
+				Repo:  repo.Name,
+				Path:  relPath,
+				Found: true,
+			})
+			return
+		}
+	}
+
+	respondJSON(w, http.StatusOK, FileResolveResponse{Found: false})
 }
 
 // collectGitStatus runs git status --porcelain and returns a map from
