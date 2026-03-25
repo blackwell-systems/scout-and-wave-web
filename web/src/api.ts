@@ -4,7 +4,7 @@
 
 import { sawClient } from './lib/apiClient'
 import type { IMPLDocResponse, IMPLListEntry, WorktreeListResponse, WorktreeBatchDeleteRequest, WorktreeBatchDeleteResponse, FileDiffResponse, SAWConfig, ChatMessage, AgentContextResponse, ScoutContext, InterruptedSession } from './types'
-import type { FileTreeResponse, FileContentResponse, GitStatusResponse } from './types/filebrowser'
+import type { FileTreeResponse, FileContentResponse, GitStatusResponse, FileResolveResponse } from './types/filebrowser'
 
 // Re-export types that consumers may import from this file
 export type { BrowseResult, DiskAgentStatus, DiskWaveStatus } from './lib/apiClient'
@@ -196,6 +196,10 @@ export async function fetchFileDiffForBrowser(repo: string, path: string): Promi
 
 export async function fetchGitStatus(repo: string): Promise<GitStatusResponse> {
   return sawClient.files.gitStatus(repo)
+}
+
+export async function fetchResolveFile(path: string): Promise<FileResolveResponse> {
+  return sawClient.files.resolve(path)
 }
 
 // Pipeline recovery controls

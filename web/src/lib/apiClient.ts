@@ -47,6 +47,7 @@ import type {
   FileTreeResponse,
   FileContentResponse,
   GitStatusResponse,
+  FileResolveResponse,
 } from '../types/filebrowser'
 
 // Re-export types that api.ts currently exports so consumers can migrate
@@ -207,6 +208,7 @@ export interface SawClient {
     read(repo: string, path: string): Promise<FileContentResponse>
     diff(repo: string, path: string): Promise<{ repo: string; path: string; diff: string }>
     gitStatus(repo: string): Promise<GitStatusResponse>
+    resolve(path: string): Promise<FileResolveResponse>
   }
 }
 
@@ -920,6 +922,13 @@ export function createHttpClient(): SawClient {
         const r = await fetch(`/api/files/status?${params}`)
         await check(r)
         return r.json() as Promise<GitStatusResponse>
+      },
+
+      async resolve(path: string): Promise<FileResolveResponse> {
+        const params = new URLSearchParams({ path })
+        const r = await fetch(`/api/files/resolve?${params}`)
+        await check(r)
+        return r.json() as Promise<FileResolveResponse>
       },
     },
   }

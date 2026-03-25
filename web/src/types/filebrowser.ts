@@ -28,3 +28,9 @@ export interface GitStatusResponse {
     status: 'M' | 'A' | 'U' | 'D'
   }>
 }
+
+export interface FileResolveResponse {
+  repo: string
+  path: string
+  found: boolean
+}
