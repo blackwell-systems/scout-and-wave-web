@@ -7,6 +7,7 @@ import DirPicker from './DirPicker'
 import ModelPicker from './ModelPicker'
 import { Button } from './ui/button'
 import NotificationSettings from './NotificationSettings'
+import WebhookSettings from './WebhookSettings'
 import { useNotifications } from '../hooks/useNotifications'
 import ProviderCard from './ProviderCard'
 import type { ProviderFieldDef, ProviderValidationResponse } from './ProviderCard'
@@ -270,7 +271,9 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
                 <h3 className="text-sm font-medium">Repositories</h3>
 
                 {config.repos.length === 0 && (
-                  <p className="text-xs text-muted-foreground">No repositories configured. Add one below.</p>
+                  <div className="text-xs text-muted-foreground space-y-1">
+                    <p>No repositories configured. Add one below, or run <code className="bg-muted px-1 py-0.5 rounded text-[11px]">sawtools init</code> in your project directory to auto-generate a config.</p>
+                  </div>
                 )}
 
                 {config.repos.map((repo, index) => {
@@ -536,12 +539,17 @@ export default function SettingsScreen({ onClose, onReposChange }: SettingsScree
             )}
 
             {activeSection === 'notifications' && (
-              <NotificationSettings
-                preferences={preferences}
-                onUpdate={updatePreferences}
-                browserPermission={browserPermission}
-                onRequestPermission={requestPermission}
-              />
+              <div className="flex flex-col gap-6">
+                <NotificationSettings
+                  preferences={preferences}
+                  onUpdate={updatePreferences}
+                  browserPermission={browserPermission}
+                  onRequestPermission={requestPermission}
+                />
+                <div className="rounded-lg border border-border bg-card p-4">
+                  <WebhookSettings />
+                </div>
+              </div>
             )}
           </div>
         </div>

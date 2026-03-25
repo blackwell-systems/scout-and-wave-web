@@ -43,4 +43,9 @@ func (nb *NotificationBus) Notify(event NotificationEvent) {
 
 	// Broadcast the notification event as JSON via the global broker
 	nb.broker.broadcastJSON("notification", event)
+
+	// Forward to webhook bridge for external delivery (Slack, Discord, etc.)
+	if pkgWebhookBridge != nil {
+		pkgWebhookBridge.HandleNotification(event)
+	}
 }

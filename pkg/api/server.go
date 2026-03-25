@@ -2,13 +2,17 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"net/http"
+	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/notify"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/observability"
 	"github.com/blackwell-systems/scout-and-wave-web/build"
 	"github.com/blackwell-systems/scout-and-wave-web/pkg/service"
@@ -30,6 +34,7 @@ type Server struct {
 	broker           *sseBroker      // unexported; used by wave.go handlers
 	globalBroker     *globalBroker   // fans out global SSE events (impl_list_updated, etc.)
 	notificationBus  *NotificationBus // central hub for user-facing notifications
+	webhookBridge    *WebhookBridge    // bridges notifications to external webhook adapters
 	serverCtx        context.Context  // cancelled on server shutdown; passed to long-running goroutines
 	serverCancel     context.CancelFunc // cancels serverCtx
 	activeRuns       sync.Map        // slug -> struct{}; tracks in-progress wave runs
@@ -143,6 +148,9 @@ func New(cfg Config) *Server {
 		svcDeps:         svcDeps,
 	}
 
+	// Initialize webhook bridge from saw.config.json "webhooks" key.
+	s.webhookBridge = initWebhookBridge(filepath.Join(cfg.RepoPath, "saw.config.json"))
+
 	// Populate fallback config so runWaveLoop can use it for cross-repo IMPLs
 	// that don't have their own saw.config.json.
 	fallbackSAWConfig = config.LoadOrDefault(cfg.RepoPath)
@@ -153,6 +161,10 @@ func New(cfg Config) *Server {
 	// Expose notification bus at package level for standalone functions
 	// (runWaveLoop, runFinalizeSteps) that don't have the Server receiver.
 	pkgNotificationBus = s.notificationBus
+
+	// Expose webhook bridge at package level so NotificationBus.Notify()
+	// can forward events to external webhook adapters.
+	pkgWebhookBridge = s.webhookBridge
 
 	// Watch the IMPL directory for new/changed docs so connected clients
 	// get an impl_list_updated event without needing to poll or refresh.
@@ -223,6 +235,11 @@ func New(cfg Config) *Server {
 	// Notification preferences
 	s.mux.HandleFunc("GET /api/notifications/preferences", s.handleGetNotificationPrefs)
 	s.mux.HandleFunc("POST /api/notifications/preferences", s.handleSaveNotificationPrefs)
+
+	// Webhook adapter management
+	s.mux.HandleFunc("GET /api/webhooks", s.handleGetWebhookAdapters)
+	s.mux.HandleFunc("POST /api/webhooks", s.handleSaveWebhookAdapters)
+	s.mux.HandleFunc("POST /api/webhooks/test", s.handleTestWebhook)
 
 	// v0.18.0-G — CONTEXT.md viewer
 	s.mux.HandleFunc("GET /api/context", s.handleGetContext)
@@ -317,6 +334,69 @@ func New(cfg Config) *Server {
 	go s.StartStaleCleanupLoop(serverCtx)
 
 	return s
+}
+
+// pkgWebhookBridge is the package-level webhook bridge, set by Server.New().
+// Used by NotificationBus.Notify to forward events to external services.
+var pkgWebhookBridge *WebhookBridge
+
+// initWebhookBridge reads webhook config from saw.config.json and creates
+// a WebhookBridge with configured adapters. Returns nil if no webhooks
+// are configured or if the config cannot be read.
+func initWebhookBridge(configPath string) *WebhookBridge {
+	data, err := os.ReadFile(configPath)
+	if err != nil {
+		return nil
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil
+	}
+
+	webhooksRaw, ok := raw["webhooks"]
+	if !ok {
+		return nil
+	}
+
+	var wc WebhookConfig
+	if err := json.Unmarshal(webhooksRaw, &wc); err != nil {
+		return nil
+	}
+
+	if !wc.Enabled || len(wc.Adapters) == 0 {
+		return nil
+	}
+
+	var adapters []notify.Adapter
+	for _, ac := range wc.Adapters {
+		cfg := map[string]string{}
+		if ac.WebhookURL != "" {
+			cfg["webhook_url"] = ac.WebhookURL
+		}
+		if ac.Channel != "" {
+			cfg["channel"] = ac.Channel
+		}
+		if ac.BotToken != "" {
+			cfg["bot_token"] = ac.BotToken
+		}
+		if ac.ChatID != "" {
+			cfg["chat_id"] = ac.ChatID
+		}
+		adapter, err := notify.NewFromConfig(ac.Type, cfg)
+		if err != nil {
+			log.Printf("webhook: failed to create %s adapter: %v", ac.Type, err)
+			continue
+		}
+		adapters = append(adapters, adapter)
+	}
+
+	if len(adapters) == 0 {
+		return nil
+	}
+
+	dispatcher := notify.NewDispatcher(adapters...)
+	return NewWebhookBridge(dispatcher)
 }
 
 // Start starts the HTTP server and blocks until ctx is cancelled or a fatal
