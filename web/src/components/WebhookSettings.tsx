@@ -22,8 +22,9 @@ interface AdapterFieldDef {
 
 const ADAPTER_FIELDS: Record<WebhookAdapter['type'], AdapterFieldDef[]> = {
   slack: [
-    { key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://hooks.slack.com/services/...' },
-    { key: 'channel', label: 'Channel (optional)', placeholder: '#general' },
+    { key: 'webhook_url', label: 'Webhook URL (or leave empty for bot token mode)', placeholder: 'https://hooks.slack.com/services/...' },
+    { key: 'bot_token', label: 'Bot Token (alternative to webhook URL)', placeholder: 'xoxb-...' },
+    { key: 'channel', label: 'Channel (required for bot token, optional for webhook)', placeholder: '#saw-notifications' },
   ],
   discord: [
     { key: 'webhook_url', label: 'Webhook URL', placeholder: 'https://discord.com/api/webhooks/...' },

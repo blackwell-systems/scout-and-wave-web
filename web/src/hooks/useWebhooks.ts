@@ -71,7 +71,7 @@ export function useWebhooks(): UseWebhooksReturn {
   useEffect(() => {
     fetchWebhookConfig()
       .then((cfg) => {
-        setConfig(cfg)
+        setConfig({ enabled: cfg.enabled ?? false, adapters: cfg.adapters ?? [] })
         setLoading(false)
       })
       .catch((err) => {

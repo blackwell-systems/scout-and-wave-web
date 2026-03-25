@@ -48,5 +48,8 @@
       "name": "vaultmux-server",
       "path": "/Users/dayna.blackwell/code/vaultmux-server"
     }
-  ]
+  ],
+  "webhooks": {
+    "enabled": true
+  }
 }

@@ -142,39 +142,52 @@ func (s *Server) handleSaveWebhookAdapters(w http.ResponseWriter, r *http.Reques
 // Sends a test notification event through the webhook bridge and returns success/failure.
 func (s *Server) handleTestWebhook(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Type       string `json:"type"`
-		WebhookURL string `json:"webhook_url,omitempty"`
-		Channel    string `json:"channel,omitempty"`
-		BotToken   string `json:"bot_token,omitempty"`
-		ChatID     string `json:"chat_id,omitempty"`
+		AdapterIndex *int `json:"adapter_index"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		respondError(w, "invalid test request JSON", http.StatusBadRequest)
 		return
 	}
 
-	if req.Type == "" {
-		respondError(w, "adapter type is required", http.StatusBadRequest)
+	if req.AdapterIndex == nil {
+		respondError(w, "adapter_index is required", http.StatusBadRequest)
 		return
 	}
 
-	// Build config map from request fields
+	// Look up adapter config by index from saved config
+	configPath := filepath.Join(s.cfg.RepoPath, "saw.config.json")
+	wc, err := readWebhookConfig(configPath)
+	if err != nil {
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"success": false,
+			"error":   "failed to read webhook config: " + err.Error(),
+		})
+		return
+	}
+
+	idx := *req.AdapterIndex
+	if idx < 0 || idx >= len(wc.Adapters) {
+		respondError(w, "adapter_index out of range", http.StatusBadRequest)
+		return
+	}
+
+	ac := wc.Adapters[idx]
 	cfg := map[string]string{}
-	if req.WebhookURL != "" {
-		cfg["webhook_url"] = req.WebhookURL
+	if ac.WebhookURL != "" {
+		cfg["webhook_url"] = ac.WebhookURL
 	}
-	if req.Channel != "" {
-		cfg["channel"] = req.Channel
+	if ac.Channel != "" {
+		cfg["channel"] = ac.Channel
 	}
-	if req.BotToken != "" {
-		cfg["bot_token"] = req.BotToken
+	if ac.BotToken != "" {
+		cfg["bot_token"] = ac.BotToken
 	}
-	if req.ChatID != "" {
-		cfg["chat_id"] = req.ChatID
+	if ac.ChatID != "" {
+		cfg["chat_id"] = ac.ChatID
 	}
 
 	// Create adapter from registry
-	adapter, err := notify.NewFromConfig(req.Type, cfg)
+	adapter, err := notify.NewFromConfig(ac.Type, cfg)
 	if err != nil {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"success": false,

@@ -161,11 +161,11 @@ func TestWebhookHandler_SaveAdapters_InvalidJSON(t *testing.T) {
 	}
 }
 
-func TestWebhookHandler_TestWebhook_MissingType(t *testing.T) {
+func TestWebhookHandler_TestWebhook_MissingIndex(t *testing.T) {
 	tmpDir := t.TempDir()
 	s := &Server{cfg: Config{RepoPath: tmpDir}}
 
-	body, _ := json.Marshal(map[string]string{"webhook_url": "https://example.com"})
+	body, _ := json.Marshal(map[string]string{"foo": "bar"})
 	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/test", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 
@@ -176,29 +176,22 @@ func TestWebhookHandler_TestWebhook_MissingType(t *testing.T) {
 	}
 }
 
-func TestWebhookHandler_TestWebhook_UnknownAdapter(t *testing.T) {
+func TestWebhookHandler_TestWebhook_IndexOutOfRange(t *testing.T) {
 	tmpDir := t.TempDir()
 	s := &Server{cfg: Config{RepoPath: tmpDir}}
 
-	body, _ := json.Marshal(map[string]string{"type": "nonexistent"})
+	// Write empty webhook config
+	configData := []byte(`{"webhooks":{"enabled":true,"adapters":[]}}`)
+	os.WriteFile(filepath.Join(tmpDir, "saw.config.json"), configData, 0644)
+
+	idx := 5
+	body, _ := json.Marshal(map[string]interface{}{"adapter_index": idx})
 	req := httptest.NewRequest(http.MethodPost, "/api/webhooks/test", bytes.NewReader(body))
 	w := httptest.NewRecorder()
 
 	s.handleTestWebhook(w, req)
 
-	if w.Code != http.StatusOK {
-		t.Fatalf("expected 200, got %d", w.Code)
-	}
-
-	var resp map[string]interface{}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("failed to decode response: %v", err)
-	}
-
-	if resp["success"] != false {
-		t.Error("expected success=false for unknown adapter")
-	}
-	if resp["error"] == nil || resp["error"] == "" {
-		t.Error("expected error message for unknown adapter")
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400, got %d", w.Code)
 	}
 }
