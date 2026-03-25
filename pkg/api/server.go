@@ -248,11 +248,12 @@ func New(cfg Config) *Server {
 	// Observability API — metrics, events, rollups, cost breakdown
 	s.RegisterObservabilityRoutes()
 
-	// File browser API — tree, read, diff, status
+	// File browser API — tree, read, diff, status, resolve
 	s.mux.HandleFunc("GET /api/files/tree", s.handleFilesTree)
 	s.mux.HandleFunc("GET /api/files/read", s.handleFilesRead)
 	s.mux.HandleFunc("GET /api/files/diff", s.handleFilesDiff)
 	s.mux.HandleFunc("GET /api/files/status", s.handleFilesStatus)
+	s.mux.HandleFunc("GET /api/files/resolve", s.handleFilesResolve)
 
 	// Journal API — Tool journaling for Observatory UI
 	s.mux.HandleFunc("GET /api/journal/{wave}/{agent}", s.handleJournalGet)
