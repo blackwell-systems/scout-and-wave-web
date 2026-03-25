@@ -11,6 +11,7 @@ import (
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
 )
 
@@ -210,7 +211,7 @@ func runWaveLoop(
 	}
 
 	// Read saw.config.json to pick up configured models.
-	waveModel, scaffoldModel, integrationModel := resolveModelsFromPath(repoPath)
+	waveModel, scaffoldModel, _ := resolveModelsFromPath(repoPath)
 
 	// Load the YAML manifest to get wave structure.
 	manifest, err := protocol.Load(implPath)
@@ -220,21 +221,6 @@ func runWaveLoop(
 	}
 	if manifest == nil {
 		publish("run_failed", map[string]string{"error": "failed to load IMPL manifest: " + implPath})
-		return
-	}
-
-	// Pre-wave gate: check readiness before proceeding.
-	if gateResult := protocol.PreWaveGate(manifest); !gateResult.Ready {
-		var failedChecks []string
-		for _, check := range gateResult.Checks {
-			if check.Status == "fail" {
-				failedChecks = append(failedChecks, check.Name+": "+check.Message)
-			}
-		}
-		publish("run_failed", map[string]interface{}{
-			"error":         "pre-wave gate failed",
-			"failed_checks": failedChecks,
-		})
 		return
 	}
 
@@ -279,12 +265,13 @@ func runWaveLoop(
 		// Override repoPath for the remainder of this wave loop.
 		repoPath = resolvedPath
 		// Re-resolve models from the target repo's saw.config.json.
-		waveModel, scaffoldModel, integrationModel = resolveModelsFromPath(repoPath)
+		waveModel, scaffoldModel, _ = resolveModelsFromPath(repoPath)
 	}
 
 	ctx := context.Background()
 
 	// Run scaffold agent only when scaffolds exist and are not yet committed.
+	// RunScaffold MUST run before PrepareWave (which validates scaffolds are committed).
 	if !protocol.AllScaffoldsCommitted(manifest) {
 		publish("stage_scaffold_running", nil)
 		if err := engine.RunScaffold(ctx, implPath, repoPath, "", scaffoldModel, func(ev engine.Event) {
@@ -339,19 +326,6 @@ func runWaveLoop(
 		wave := waves[i]
 		waveNum := wave.Number
 
-		opts := engine.RunWaveOpts{
-			IMPLPath:         implPath,
-			RepoPath:         repoPath,
-			Slug:             slug,
-			WaveModel:        waveModel,
-			ScaffoldModel:    scaffoldModel,
-			IntegrationModel: integrationModel,
-		}
-
-		enginePublisher := func(ev engine.Event) {
-			publish(ev.Event, ev.Data)
-		}
-
 		// If all agents in this wave already have commits on their branches,
 		// skip re-launching them and go straight to finalization.
 		if waveAgentsHaveCommitsWithManifest(repoPath, implPath, slug, waveNum, wave.Agents) {
@@ -360,7 +334,47 @@ func runWaveLoop(
 				"reason": "agent branches already have commits from previous session; skipping to merge",
 			})
 		} else {
-			if err := engine.RunSingleWave(ctx, opts, waveNum, enginePublisher); err != nil {
+			// PrepareWave performs all pre-flight checks (pre_wave_gate, worktree
+			// creation, agent brief extraction, journal init, hook verification).
+			prepResult, prepErr := engine.PrepareWave(ctx, engine.PrepareWaveOpts{
+				IMPLPath: implPath,
+				RepoPath: repoPath,
+				WaveNum:  waveNum,
+				OnEvent: func(step, status, detail string) {
+					publish("prepare_step", map[string]interface{}{
+						"slug":   slug,
+						"wave":   waveNum,
+						"step":   step,
+						"status": status,
+						"detail": detail,
+					})
+				},
+			})
+			if prepErr != nil {
+				publish("run_failed", map[string]string{"error": prepErr.Error()})
+				return
+			}
+
+			// Create orchestrator and run wave (replaces RunSingleWave).
+			orch, orchErr := orchestrator.New(repoPath, implPath)
+			if orchErr != nil {
+				publish("run_failed", map[string]string{"error": orchErr.Error()})
+				return
+			}
+			if waveModel != "" {
+				orch.SetDefaultModel(waveModel)
+			}
+			orch.SetEventPublisher(func(ev orchestrator.OrchestratorEvent) {
+				publish(ev.Event, ev.Data)
+			})
+			if prepResult != nil && len(prepResult.Worktrees) > 0 {
+				paths := make(map[string]string, len(prepResult.Worktrees))
+				for _, wt := range prepResult.Worktrees {
+					paths[wt.Agent] = wt.Path
+				}
+				orch.SetWorktreePaths(paths)
+			}
+			if err := orch.RunWave(waveNum); err != nil {
 				publish("run_failed", map[string]string{"error": err.Error()})
 				return
 			}
