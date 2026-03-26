@@ -17,7 +17,7 @@ import (
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/gatecache"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/orchestrator"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/protocol"
-	"github.com/blackwell-systems/scout-and-wave-go/pkg/retryctx"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/retry"
 	"github.com/blackwell-systems/scout-and-wave-web/pkg/service"
 )
 
@@ -850,7 +850,7 @@ func (s *Server) handleWaveAgentRerun(w http.ResponseWriter, r *http.Request) {
 	}
 
 	scopeHint := body.ScopeHint
-	if rc, err := retryctx.BuildRetryContext(implPath, letter, 2); err == nil {
+	if rc, err := retry.BuildRetryAttempt(implPath, letter, 2); err == nil {
 		if rc.PromptText != "" {
 			if scopeHint != "" {
 				scopeHint = rc.PromptText + "\n" + scopeHint
