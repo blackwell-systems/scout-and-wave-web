@@ -245,7 +245,15 @@ export default function ProgramDependencyGraph({
     return () => observer.disconnect()
   }, [])
 
-  // Fetch program status if not provided
+  // Sync programStatus state when parent's status prop updates (e.g. switching programs)
+  useEffect(() => {
+    if (status) {
+      setProgramStatus(status)
+      setLoading(false)
+    }
+  }, [status])
+
+  // Fetch program status if not provided by parent
   useEffect(() => {
     if (status) return
     let cancelled = false
