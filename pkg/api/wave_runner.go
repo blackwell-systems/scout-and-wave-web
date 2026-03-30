@@ -335,32 +335,24 @@ func runWaveLoop(
 					}
 				}
 			}
-			// Wiring gap events (E35): run wiring validation post-finalize and
-			// emit per-gap and summary SSE events. Non-blocking — does not abort
-			// the wave. The engine's FinalizeWaveResult does not carry a WiringReport,
-			// so we run it inline here.
-			if manifest != nil && len(manifest.Wiring) > 0 {
-				if wiringRes := protocol.ValidateWiringDeclarations(manifest, repoPath); wiringRes.IsSuccess() || wiringRes.IsPartial() {
-					wiringResult := wiringRes.GetData()
-					if wiringResult != nil && !wiringResult.Valid {
-						for _, gap := range wiringResult.Gaps {
-							publish("wiring_gap", map[string]interface{}{
-								"wave":                waveNum,
-								"symbol":              gap.Declaration.Symbol,
-								"defined_in":          gap.Declaration.DefinedIn,
-								"must_be_called_from": gap.Declaration.MustBeCalledFrom,
-								"agent":               gap.Declaration.Agent,
-								"reason":              gap.Reason,
-								"severity":            gap.Severity,
-							})
-						}
-						publish("wiring_gaps_summary", map[string]interface{}{
-							"wave":      waveNum,
-							"gap_count": len(wiringResult.Gaps),
-							"summary":   wiringResult.Summary,
-						})
-					}
+			// Wiring gap events (E35): engine now carries WiringReport in FinalizeWaveResult.
+			if finalizeResult.WiringReport != nil && !finalizeResult.WiringReport.Valid {
+				for _, gap := range finalizeResult.WiringReport.Gaps {
+					publish("wiring_gap", map[string]interface{}{
+						"wave":                waveNum,
+						"symbol":              gap.Declaration.Symbol,
+						"defined_in":          gap.Declaration.DefinedIn,
+						"must_be_called_from": gap.Declaration.MustBeCalledFrom,
+						"agent":               gap.Declaration.Agent,
+						"reason":              gap.Reason,
+						"severity":            gap.Severity,
+					})
 				}
+				publish("wiring_gaps_summary", map[string]interface{}{
+					"wave":      waveNum,
+					"gap_count": len(finalizeResult.WiringReport.Gaps),
+					"summary":   finalizeResult.WiringReport.Summary,
+				})
 			}
 		}
 		onStage(StageWaveMerge, StageStatusComplete, waveNum, "")
