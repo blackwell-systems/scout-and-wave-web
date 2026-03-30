@@ -322,15 +322,17 @@ func runWaveLoop(
 			if finalizeResult.StubReport != nil && len(finalizeResult.StubReport.Hits) > 0 {
 				publish("stub_report", finalizeResult.StubReport)
 			}
-			for _, gate := range finalizeResult.GateResults {
-				publish("quality_gate_result", gate)
-				if gate.FromCache {
-					publish("gate_cache_hit", map[string]interface{}{
-						"gate_type": gate.Type,
-						"command":   gate.Command,
-						"wave":      waveNum,
-						"sha":       gate.SkipReason,
-					})
+			for _, gates := range finalizeResult.GateResults {
+				for _, gate := range gates {
+					publish("quality_gate_result", gate)
+					if gate.FromCache {
+						publish("gate_cache_hit", map[string]interface{}{
+							"gate_type": gate.Type,
+							"command":   gate.Command,
+							"wave":      waveNum,
+							"sha":       gate.SkipReason,
+						})
+					}
 				}
 			}
 			// Wiring gap events (E35): run wiring validation post-finalize and
