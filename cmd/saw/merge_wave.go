@@ -90,7 +90,7 @@ func runMergeWave(args []string) error {
 		}
 
 		if exists {
-			agentStat.Status = report.Status
+			agentStat.Status = string(report.Status)
 		}
 
 		status.Agents = append(status.Agents, agentStat)

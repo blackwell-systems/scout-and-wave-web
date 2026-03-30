@@ -289,7 +289,7 @@ func runStatus(args []string) error {
 		for _, ag := range wave.Agents {
 			r := agentResult{waveNum: wave.Number, letter: ag.ID}
 			if report, ok := doc.CompletionReports[ag.ID]; ok {
-				r.status = report.Status
+				r.status = string(report.Status)
 			} else {
 				r.status = "pending"
 				r.missing = true

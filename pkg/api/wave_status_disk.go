@@ -95,7 +95,7 @@ func (s *Server) handleWaveDiskStatus(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if report, ok := manifest.CompletionReports[agent.ID]; ok {
-				ds.Status = report.Status
+				ds.Status = string(report.Status)
 				ds.Commit = report.Commit
 				if report.Branch != "" {
 					ds.Branch = report.Branch
