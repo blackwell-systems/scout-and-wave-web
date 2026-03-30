@@ -45,7 +45,7 @@ func runRunGates(args []string) error {
 	}
 
 	// Run gates
-	gateResults := protocol.RunGates(manifest, *waveFlag, *repoDirFlag)
+	gateResults := protocol.RunGatesWithCache(manifest, *waveFlag, *repoDirFlag, nil)
 	if gateResults.IsFatal() {
 		return fmt.Errorf("run-gates fatal error")
 	}
