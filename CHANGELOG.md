@@ -2,6 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
+| [0.124.2] | 2026-04-05 | codereview bridge API fix — `codereview_bridge.go` updated from two-return `(*ReviewResult, error)` to `result.Result[ReviewResult]` API; bridge now compiles correctly when `codereview` build tag is active |
 | [0.124.1] | 2026-04-05 | SDK type alias compatibility — `AutonomyConfig` in `pkg/config` is now a type alias for `autonomy.Config`; `autonomy_handler.go`, `daemon_handler.go`, and `pipeline_handler.go` updated to use `sawCfg.Autonomy` directly (no field-by-field conversion); `pipeline_handler.go` adds explicit `string()` cast for `autonomy.Level` typed string; `.bak`/`.bak2` scratch files removed |
 | [0.124.0] | 2026-03-30 | Engine unification (wave 3) — `wave_runner.go` migrated from inline wiring validation to engine `WiringReport`; `GateResults` SSE loop fixed to iterate map values correctly; `RunGates` caller updated to `RunGatesWithCache`; `pkg/retryctx` replaced with `pkg/retry`; `CompletionStatus` casts and validation error codes updated to match engine 1.3.0 typed constants |
 | [0.123.0] | 2026-03-25 | Interview mode web fixes (G4/G9/G10) — `POST /api/interview/resume` endpoint (calls `DeterministicManager.Resume()`); `phase_complete` SSE event emitted on phase transitions; frontend `PHASES` array replaced with `PHASE_KEYS`/`PHASE_LABELS` map (progress bar now tracks actual phases); `sawClient.interview.resume()` TS client method |

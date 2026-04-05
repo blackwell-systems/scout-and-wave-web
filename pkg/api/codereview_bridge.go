@@ -18,7 +18,7 @@ import (
 	"fmt"
 	"log"
 
-	codereview "github.com/blackwell-systems/scout-and-wave-go/pkg/codereview"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/codereview"
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/config"
 )
 
@@ -53,36 +53,35 @@ func runCodeReviewStep(
 		return nil
 	}
 
-	reviewResult, reviewErr := codereview.RunCodeReview(ctx, repoPath, reviewCfg)
-	if reviewErr != nil {
-		log.Printf("runFinalizeSteps: code-review non-fatal error: %v", reviewErr)
+	reviewRes := codereview.RunCodeReview(ctx, repoPath, reviewCfg)
+	if reviewRes.IsFatal() {
+		log.Printf("runFinalizeSteps: code-review non-fatal error: %v", reviewRes.Errors[0].Message)
 		_ = tracker.Complete(slug, waveNum, StepCodeReview)
 		publishPipelineStep(publish, slug, waveNum, StepCodeReview, StepComplete,
-			fmt.Sprintf("non-fatal: %v", reviewErr))
+			fmt.Sprintf("non-fatal: %v", reviewRes.Errors[0].Message))
 		return nil
 	}
 
-	if reviewResult != nil {
-		payload := map[string]interface{}{
-			"slug":       slug,
-			"wave":       waveNum,
-			"dimensions": reviewResult.Dimensions,
-			"overall":    reviewResult.Overall,
-			"passed":     reviewResult.Passed,
-			"summary":    reviewResult.Summary,
-			"model":      reviewResult.Model,
-			"diff_bytes": reviewResult.DiffBytes,
-		}
-		publish("code_review_result", payload)
-		_ = tracker.Complete(slug, waveNum, StepCodeReview)
-		if !reviewResult.Passed && reviewCfg.Blocking {
-			publishPipelineStep(publish, slug, waveNum, StepCodeReview, StepFailed,
-				fmt.Sprintf("review score %d below threshold %d", reviewResult.Overall, reviewCfg.Threshold))
-			return fmt.Errorf("code review failed: overall score %d < threshold %d",
-				reviewResult.Overall, reviewCfg.Threshold)
-		}
-		publishPipelineStep(publish, slug, waveNum, StepCodeReview, StepComplete, "")
+	reviewResult := reviewRes.GetData()
+	payload := map[string]interface{}{
+		"slug":       slug,
+		"wave":       waveNum,
+		"dimensions": reviewResult.Dimensions,
+		"overall":    reviewResult.Overall,
+		"passed":     reviewResult.Passed,
+		"summary":    reviewResult.Summary,
+		"model":      reviewResult.Model,
+		"diff_bytes": reviewResult.DiffBytes,
 	}
+	publish("code_review_result", payload)
+	_ = tracker.Complete(slug, waveNum, StepCodeReview)
+	if !reviewResult.Passed && reviewCfg.Blocking {
+		publishPipelineStep(publish, slug, waveNum, StepCodeReview, StepFailed,
+			fmt.Sprintf("review score %d below threshold %d", reviewResult.Overall, reviewCfg.Threshold))
+		return fmt.Errorf("code review failed: overall score %d < threshold %d",
+			reviewResult.Overall, reviewCfg.Threshold)
+	}
+	publishPipelineStep(publish, slug, waveNum, StepCodeReview, StepComplete, "")
 
 	return nil
 }
