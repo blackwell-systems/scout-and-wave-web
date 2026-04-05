@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/blackwell-systems/scout-and-wave-go/pkg/engine"
+	"github.com/blackwell-systems/scout-and-wave-go/pkg/result"
 )
 
 // mergeTestPublisher implements EventPublisher for testing.
@@ -83,11 +84,11 @@ func TestMergeWave_ConcurrentGuard(t *testing.T) {
 
 	started := make(chan struct{})
 	block := make(chan struct{})
-	MergeFunc = func(_ context.Context, _ engine.RunMergeOpts) error {
+	MergeFunc = func(_ context.Context, _ engine.RunMergeOpts) result.Result[engine.MergeData] {
 		// Signal that we've started, then block
 		close(started)
 		<-block
-		return nil
+		return result.NewSuccess(engine.MergeData{})
 	}
 
 	pub := &mergeTestPublisher{}
