@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -60,7 +61,7 @@ func ListImpls(deps Deps) ([]ImplListEntry, error) {
 				var isMultiRepo bool
 				var involvedRepos []string
 
-				if m, err := protocol.Load(fullPath); err == nil {
+				if m, err := protocol.Load(context.Background(), fullPath); err == nil {
 					for _, w := range m.Waves {
 						waveCount++
 						agentCount += len(w.Agents)
@@ -119,7 +120,7 @@ func GetImpl(deps Deps, slug string) (*protocol.IMPLManifest, string, config.Rep
 		return nil, "", config.RepoEntry{}, err
 	}
 
-	manifest, loadErr := protocol.Load(implPath)
+	manifest, loadErr := protocol.Load(context.Background(), implPath)
 	if loadErr != nil {
 		if os.IsNotExist(loadErr) {
 			return nil, "", config.RepoEntry{}, fmt.Errorf("IMPL doc not found for slug: %s", slug)
