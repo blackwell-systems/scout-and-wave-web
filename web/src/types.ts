@@ -92,7 +92,8 @@ export interface IMPLDocResponse {
   repo: string // repo name this IMPL belongs to
   repo_path: string // absolute path to the repo
   doc_status: string // "active" or "complete" (lowercase)
-  completed_at?: string // ISO date, present only when complete
+  completed_at?: string      // ISO date, present only when complete
+  original_branch?: string   // git branch active when prepare-wave first ran
   suitability: SuitabilityInfo
   file_ownership: FileOwnershipEntry[]
   file_ownership_col4_name: string // detected 4th column header (e.g. "Action", "Depends On")

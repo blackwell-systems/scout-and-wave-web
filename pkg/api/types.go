@@ -62,7 +62,8 @@ type IMPLDocResponse struct {
 	Repo                   string               `json:"repo"`                   // repo name this IMPL belongs to
 	RepoPath               string               `json:"repo_path"`              // absolute path to the repo
 	DocStatus              string               `json:"doc_status"`             // "active" or "complete"
-	CompletedAt            string               `json:"completed_at,omitempty"` // ISO date, present only when COMPLETE
+	CompletedAt            string               `json:"completed_at,omitempty"`     // ISO date, present only when COMPLETE
+	OriginalBranch         string               `json:"original_branch,omitempty"`  // git branch active when prepare-wave first ran
 	Suitability            SuitabilityInfo      `json:"suitability"`
 	FileOwnership          []FileOwnershipEntry `json:"file_ownership"`
 	FileOwnershipCol4Name  string               `json:"file_ownership_col4_name"` // detected 4th column header (e.g. "Action", "Depends On")

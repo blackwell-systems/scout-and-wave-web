@@ -40,7 +40,7 @@ require (
 )
 
 require (
-	github.com/blackwell-systems/scout-and-wave-go v0.0.0-20260316040448-256aee8ca53b
+	github.com/blackwell-systems/scout-and-wave-go v0.98.0
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/tidwall/gjson v1.18.0 // indirect
 	github.com/tidwall/match v1.1.1 // indirect

@@ -422,9 +422,10 @@ func implDocResponseFromManifest(slug string, m *protocol.IMPLManifest) IMPLDocR
 	depGraphBuf.WriteString("```\n")
 
 	return IMPLDocResponse{
-		Slug:        slug,
-		DocStatus:   docStatus,
-		CompletedAt: m.CompletionDate,
+		Slug:           slug,
+		DocStatus:      docStatus,
+		CompletedAt:    m.CompletionDate,
+		OriginalBranch: m.OriginalBranch,
 		Suitability: SuitabilityInfo{
 			Verdict:   m.Verdict,
 			Rationale: m.SuitabilityAssessment,
