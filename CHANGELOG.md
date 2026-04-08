@@ -2,6 +2,7 @@
 
 All notable changes to this project will be documented in this file.
 
+| [0.124.3] | 2026-04-07 | original_branch in API response — `IMPLDocResponse` now includes `original_branch` (the git branch active when `prepare-wave` first ran); propagated from `IMPLManifest.OriginalBranch` via `implDocResponseFromManifest`; TypeScript `IMPLDocResponse` interface updated with optional `original_branch` field; SDK bumped to v0.98.0 |
 | [0.124.2] | 2026-04-05 | codereview bridge API fix — `codereview_bridge.go` updated from two-return `(*ReviewResult, error)` to `result.Result[ReviewResult]` API; bridge now compiles correctly when `codereview` build tag is active |
 | [0.124.1] | 2026-04-05 | SDK type alias compatibility — `AutonomyConfig` in `pkg/config` is now a type alias for `autonomy.Config`; `autonomy_handler.go`, `daemon_handler.go`, and `pipeline_handler.go` updated to use `sawCfg.Autonomy` directly (no field-by-field conversion); `pipeline_handler.go` adds explicit `string()` cast for `autonomy.Level` typed string; `.bak`/`.bak2` scratch files removed |
 | [0.124.0] | 2026-03-30 | Engine unification (wave 3) — `wave_runner.go` migrated from inline wiring validation to engine `WiringReport`; `GateResults` SSE loop fixed to iterate map values correctly; `RunGates` caller updated to `RunGatesWithCache`; `pkg/retryctx` replaced with `pkg/retry`; `CompletionStatus` casts and validation error codes updated to match engine 1.3.0 typed constants |
